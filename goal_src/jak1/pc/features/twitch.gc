@@ -297,4 +297,27 @@
         (let ((out (new 'stack 'file-stream *pc-temp-string-1* 'write)))
           (if (file-stream-valid? out) (file-stream-close out))))))
   (when (-> *pc-settings* twitch-show-chat?) (twitch-poll-chat!))
+  (run-start-poll!)
+  (none))
+
+;; ---------------------------------------------------------- run start ------
+
+;; When a run really begins. Speedrunner mode already computes this, but only
+;; while it is enabled, and enabling it forces 60fps -- a trade worth refusing
+;; if you are timing yourself for fun rather than submitting. So the same
+;; condition is evaluated here, ungated and costing nothing: out of the blackout,
+;; not fading, and Jak has touched ground. That is the moment a real timer
+;; starts, rather than the moment the title screen goes away.
+(define *run-started* #f)
+
+(defun run-start-poll! ()
+  (when (and (not *run-started*) *target*
+             (>= (-> *display* base-frame-counter) (-> *game-info* blackout-time))
+             (!= (-> *setting-control* current bg-a-force) 1.0)
+             (or (logtest? (-> *target* control status)
+                           (cshape-moving-flags onground onsurf on-water))
+                 (= (-> *target* next-state name) 'target-hit-ground)))
+    (set! *run-started* #t))
+  ;; back to the title means the next run is a new one
+  (when (and *run-started* (not *target*)) (set! *run-started* #f))
   (none))

@@ -13,3 +13,7 @@
 ;; the rolling log itself: the archipelago state file mirrors it into the
 ;; overlay panel, so it is read across files as well as written here
 (define-extern *twitch-log* (array string))
+
+;; when the run actually began, for the overlay's timer
+(define-extern *run-started* symbol)
+(define-extern run-start-poll! (function none))
