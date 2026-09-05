@@ -10,3 +10,6 @@
 (define-extern twitch-banner! (function symbol int none))
 (define-extern twitch-warp! (function none))
 (define-extern *twitch-warp-target* string)
+;; the rolling log itself: the archipelago state file mirrors it into the
+;; overlay panel, so it is read across files as well as written here
+(define-extern *twitch-log* (array string))
