@@ -99,6 +99,12 @@
             :name (text-id sound-options)
             :scale #t
             :param3 (game-option-menu sound-settings))
+       (new 'static
+            'game-option
+            :option-type (game-option-type menu)
+            :name (text-id twitch-options)
+            :scale #t
+            :param3 (game-option-menu twitch-options))
        (new 'static 'game-option :option-type (game-option-type button) :name (text-id back) :scale #t)))
 
 (define *main-options-demo*
