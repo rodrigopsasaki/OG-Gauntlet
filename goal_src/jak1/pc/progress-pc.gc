@@ -309,7 +309,7 @@
             :scale #t
             :option-disabled-func
             (lambda ()
-              (or (-> *pc-settings* speedrunner-mode?) (<= (pc-get-active-display-refresh-rate) 60))))
+              (<= (pc-get-active-display-refresh-rate) 60)))
        (new 'static
             'game-option
             :option-type (game-option-type menu)
