@@ -22,11 +22,6 @@
     (('ap-trip)
      ;; external effect channel: chat made him fall over
      (go target-ap-trip))
-    (('get-archipelago)
-     ;; receive an item mapped by the archipelago seed (grafted from ArchipelaGOAL)
-     (let ((s4-0 (-> arg3 param 0))
-           (f28-0 (the-as float (-> arg3 param 1))))
-       (ap-pickup-collectable! (-> self fact) (the-as pickup-type s4-0) f28-0 (process->handle arg0))))
     (('reset-pickup) (reset! (-> self fact) (the-as symbol (-> arg3 param 0))))
     (('reset-collide)
      (cond
@@ -41,9 +36,8 @@
            (let ((v1-22 (-> s5-1 buzzer)))
              (if (zero? v1-22)
                (set! (-> self fact buzzer) 0.0)
-               ;; archipelago: the hud counts received flies under a seed;
-               ;; ap-buzzer-count falls back to the vanilla reminder-bit count without one
-               (set! (-> self fact buzzer) (the float (ap-buzzer-count (the-as uint v1-22))))))
+               (set! (-> self fact buzzer)
+                     (pickup-collectable! (-> self fact) (pickup-type buzzer) (the float (logior -65536 v1-22)) (the-as handle #f)))))
            (if (and (zero? (-> *game-info* enter-level-time (-> s5-1 index))) (>= (-> *level-task-data-remap* length) (-> s5-1 index)))
              (set-time! (-> *game-info* enter-level-time (-> *level-task-data-remap* (+ (-> s5-1 index) -1))))))
          (send-event (ppointer->process (-> *hud-parts* buzzers)) 'sync)
