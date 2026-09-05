@@ -185,10 +185,19 @@
           ;; unchanged one means nothing new rather than requiring us to diff text
           (when (not (string= *pc-temp-string* *twitch-chat-seen*))
             (format (clear *twitch-chat-seen*) "~S" *pc-temp-string*)
-            (file-stream-seek-past-whitespace file)
-            (file-stream-read-word file)
-            (format (clear *twitch-scratch*) "~S" *pc-temp-string*)
-            (twitch-log-push! *twitch-scratch*))
+            ;; the rest of the line, word by word. file-stream-read-word is the
+            ;; only reader here and it stops at whitespace, so a sentence has to
+            ;; be reassembled; the cap is what stops a malformed file spinning.
+            (clear *twitch-scratch*)
+            (dotimes (w 12)
+              (file-stream-seek-past-whitespace file)
+              (file-stream-read-word file)
+              (when (nonzero? (length *pc-temp-string*))
+                (if (zero? (length *twitch-scratch*))
+                  (format *twitch-scratch* "~S" *pc-temp-string*)
+                  (format *twitch-scratch* " ~S" *pc-temp-string*))))
+            (when (nonzero? (length *twitch-scratch*))
+              (twitch-log-push! *twitch-scratch*)))
           (file-stream-close file)))))
   (none))
 
