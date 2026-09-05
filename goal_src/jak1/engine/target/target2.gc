@@ -43,6 +43,59 @@
       (go target-stance))
   :post target-no-stick-post)
 
+;; ---- twitch effect states: chat can trip you or root you ----
+(defstate target-ap-freeze (target)
+  "Jak stands rooted for five seconds. Same shape as target-ap-trip: no stick
+   input for the duration, always exits to target-stance, so an external trigger
+   cannot strand him. Gravity still applies, so freezing mid-air drops him first,
+   which is the funny outcome rather than a bug."
+  :event target-standard-event-handler
+  :exit target-exit
+  :code
+    (behavior ()
+      (set! (-> self control unknown-surface00) *walk-no-turn-mods*)
+      (ja-channel-push! 1 (seconds 0.2))
+      (ja-no-eval :group! eichar-stance-loop-ja :num! (seek!) :frame-num 0.0)
+      (let ((start (current-time)))
+        (until (>= (- (current-time) start) (seconds 5))
+          (suspend)
+          (ja :num! (seek!))))
+      (go target-stance))
+  :post target-no-stick-post)
+
+(defstate target-ap-trip (target)
+  "Jak trips and picks himself up. Lifted from target-load-wait, which plays this
+   same sequence while a level streams in: trip, painful land, get up, back to
+   stance. Under target-no-stick-post so the player has no control for its
+   duration, and it always ends in target-stance, so an external trigger cannot
+   strand him in it."
+  :event target-standard-event-handler
+  :exit target-exit
+  :code
+    (behavior ()
+      (set! (-> self control unknown-surface00) *walk-no-turn-mods*)
+      (ja-channel-push! 1 (seconds 0.1))
+      (ja-no-eval :group! eichar-trip-ja :num! (seek!) :frame-num 0.0)
+      (until (ja-done? 0)
+        (compute-alignment! (-> self align))
+        (align! (-> self align) (align-opts adjust-xz-vel) (the-as float 1.0) (the-as float 1.0) (the-as float 1.0))
+        (suspend)
+        (ja :num! (seek!)))
+      (suspend-for (seconds 0.3)
+        (suspend)
+        (ja :num! (seek! (ja-aframe (the-as float 19.0) 0) 0.05)))
+      (ja-channel-push! 1 (seconds 0.3))
+      (ja-no-eval :group! eichar-painful-land-ja :num! (seek!) :frame-num (ja-aframe (the-as float 40.0) 0))
+      (until (ja-done? 0)
+        (suspend)
+        (ja :num! (seek!)))
+      (ja-no-eval :group! eichar-painful-land-end-ja :num! (seek!) :frame-num 0.0)
+      (until (ja-done? 0)
+        (suspend)
+        (ja :num! (seek!)))
+      (go target-stance))
+  :post target-no-stick-post)
+
 (defstate target-stance-ambient (target)
   :event
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
