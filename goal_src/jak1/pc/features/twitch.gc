@@ -2,8 +2,8 @@
 ;;-*-Lisp-*-
 (in-package goal)
 
-;; Twitch integration: chat effects, the on-screen log, and the publishers the
-;; stream panels read.
+;; Stream plumbing: chat effects, the on-screen log, and the publishers the
+;; overlay panels read, including run splits.
 ;;
 ;; This lived inside ap-struct.gc, which meant it only existed in the
 ;; archipelago build: the randomizer build had no chat, no input panel and no
@@ -163,6 +163,10 @@
 
 (define *twitch-chat-countdown* 0)
 (define *twitch-chat-seen* (new 'global 'string 64 ""))
+;; The chat file outlives the game, so the first poll of a fresh boot would find
+;; whatever was said before you launched and draw it as new. The first read
+;; therefore only records where the counter is: chat starts when the game does.
+(define *twitch-chat-primed* #f)
 
 (defun twitch-poll-chat! ()
   "Pull the newest chat line and put it in the same log the effects announce
@@ -185,6 +189,11 @@
           ;; unchanged one means nothing new rather than requiring us to diff text
           (when (not (string= *pc-temp-string* *twitch-chat-seen*))
             (format (clear *twitch-chat-seen*) "~S" *pc-temp-string*)
+            ;; swallow whatever was already in the file at boot
+            (when (not *twitch-chat-primed*)
+              (set! *twitch-chat-primed* #t)
+              (file-stream-close file)
+              (return (none)))
             ;; the rest of the line, word by word. file-stream-read-word is the
             ;; only reader here and it stops at whitespace, so a sentence has to
             ;; be reassembled; the cap is what stops a malformed file spinning.
