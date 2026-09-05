@@ -189,11 +189,6 @@
           ;; unchanged one means nothing new rather than requiring us to diff text
           (when (not (string= *pc-temp-string* *twitch-chat-seen*))
             (format (clear *twitch-chat-seen*) "~S" *pc-temp-string*)
-            ;; swallow whatever was already in the file at boot
-            (when (not *twitch-chat-primed*)
-              (set! *twitch-chat-primed* #t)
-              (file-stream-close file)
-              (return (none)))
             ;; the rest of the line, word by word. file-stream-read-word is the
             ;; only reader here and it stops at whitespace, so a sentence has to
             ;; be reassembled; the cap is what stops a malformed file spinning.
@@ -205,8 +200,13 @@
                 (if (zero? (length *twitch-scratch*))
                   (format *twitch-scratch* "~S" *pc-temp-string*)
                   (format *twitch-scratch* " ~S" *pc-temp-string*))))
-            (when (nonzero? (length *twitch-scratch*))
-              (twitch-log-push! *twitch-scratch*)))
+            ;; The first read of a boot only records where the counter is. The
+            ;; chat file outlives the game, so without this the first poll finds
+            ;; whatever was said before launch and draws it as new.
+            (if (not *twitch-chat-primed*)
+              (set! *twitch-chat-primed* #t)
+              (when (nonzero? (length *twitch-scratch*))
+                (twitch-log-push! *twitch-scratch*))))
           (file-stream-close file)))))
   (none))
 
