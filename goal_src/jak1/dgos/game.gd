@@ -193,7 +193,8 @@
   "entity-table.o"
   "loader.o"
   "task-control-h.o"
-  "speedruns-h.o" ;; added
+  "speedruns-h.o"
+  "twitch-h.o" ;; added (twitch integration)
   "game-info.o"
   "game-save.o"
   "settings.o"

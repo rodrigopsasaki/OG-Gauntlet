@@ -1,0 +1,14 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; Declarations for the twitch module. main.gc calls the per-frame poll and
+;; compiles long before pc/features/twitch.gc, so the poll needs declaring here
+;; the way ap-struct-h does for archipelago.
+
+(define-extern twitch-poll! (function none))
+(define-extern twitch-log-push! (function string none))
+(define-extern twitch-banner! (function symbol int none))
+(define-extern twitch-warp! (function none))
+(define-extern *twitch-show-chat* symbol)
+(define-extern *twitch-effects-on* symbol)
+(define-extern *twitch-warp-target* string)
