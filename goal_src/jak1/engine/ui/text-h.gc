@@ -607,6 +607,8 @@
   (60fps #x1061)
   (100fps #x1062)
   (150fps #x1063)
+  (240fps #x1064)
+  (120fps #x1065)
   (lod-bg #x1070)
   (lod-fg #x1071)
   (lod-highest #x1072)

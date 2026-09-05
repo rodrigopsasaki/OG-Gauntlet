@@ -98,6 +98,9 @@
 (def-progress-carousell *carousell-speaker* (speaker-always speaker-never speaker-auto))
 
 (def-progress-carousell *carousell-frame-rate-150fps* (60fps 100fps 150fps))
+;; a 240Hz panel can drive the game at 240: nothing in the engine caps the
+;; target rate, the menu simply never offered it.
+(def-progress-carousell *carousell-frame-rate-240fps* (60fps 100fps 120fps 150fps 240fps))
 
 (def-progress-carousell *carousell-frame-rate-100fps* (60fps 100fps))
 
@@ -2056,6 +2059,7 @@
   (set! (-> *options-remap* (progress-screen graphic-settings)) *graphic-options-pc*)
   (let ((max-refresh-rate (pc-get-active-display-refresh-rate)))
     (cond
+      ((> max-refresh-rate 150) (set! *carousell-frame-rate* *carousell-frame-rate-240fps*))
       ((> max-refresh-rate 100) (set! *carousell-frame-rate* *carousell-frame-rate-150fps*))
       ((> max-refresh-rate 60) (set! *carousell-frame-rate* *carousell-frame-rate-100fps*))))
   (set! (-> *options-remap* (progress-screen sound-settings)) *sound-options-pc*)
@@ -2698,7 +2702,9 @@
                   (case (-> *pc-settings* target-fps)
                     ((60) (set! (-> *progress-carousell* int-backup) 0))
                     ((100) (set! (-> *progress-carousell* int-backup) 1))
-                    ((150) (set! (-> *progress-carousell* int-backup) 2))))
+                    ((120) (set! (-> *progress-carousell* int-backup) 2))
+                    ((150) (set! (-> *progress-carousell* int-backup) 3))
+                    ((240) (set! (-> *progress-carousell* int-backup) 4))))
                  (((game-option-type language-subtitles))
                   (let ((cur-lang (get-language-name (-> *pc-settings* subtitle-language))))
                     (dotimes (i (-> *subtitle-languages* length))
@@ -2795,7 +2801,9 @@
                (case (-> *progress-carousell* int-backup)
                  ((0) (set-frame-rate! *pc-settings* 60 #t))
                  ((1) (set-frame-rate! *pc-settings* 100 #t))
-                 ((2) (set-frame-rate! *pc-settings* 150 #t)))
+                 ((2) (set-frame-rate! *pc-settings* 120 #t))
+                 ((3) (set-frame-rate! *pc-settings* 150 #t))
+                 ((4) (set-frame-rate! *pc-settings* 240 #t)))
                (set-video-mode (-> *setting-control* default video-mode))))
             ;; if the option has a `on-confirm` function, run it
             (when (nonzero? (-> options (-> obj option-index) on-confirm))
@@ -3442,8 +3450,7 @@
 (set! (-> progress-normal post)
       (lambda :behavior progress ()
         (when (progress-scrolling?)
-          (seek! (-> *progress-scroll* transition)
-                 1.0
+          (seek! (-> *progress-scroll* transition) 1.0
                  (* (/ 1.75 512) (-> self transition-speed) (-> *display* time-adjust-ratio))))
         (when (!= (-> self display-state) (-> *progress-scroll* last-screen))
           (progress-scroll-reset)

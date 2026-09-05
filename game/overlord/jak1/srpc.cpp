@@ -467,7 +467,17 @@ s32 VBlank_Handler(void*) {
   gFrameNum++;
 
   if (gFakeVAGClockRunning && !gFakeVAGClockPaused) {
-    gFakeVAGClock += (s32)(1024 / Gfx::g_global_settings.target_fps);
+    // 1024 clock units per second, advanced once per frame. Truncating the
+    // per-frame step to an integer loses whatever falls off the end EVERY
+    // frame, so the whole clock runs slow by that fraction: at 150fps the step
+    // is 6.827 and 6 is used, a 12% drift; at 240 it is 4.267 against 4, ~6%.
+    // Carrying the remainder makes the long-run rate exact at any frame rate,
+    // and is a no-op at 60 where the step is 17.067 and the drift was 0.4%.
+    static double vag_clock_remainder = 0.0;
+    vag_clock_remainder += 1024.0 / Gfx::g_global_settings.target_fps;
+    const s32 whole = (s32)vag_clock_remainder;
+    gFakeVAGClock += whole;
+    vag_clock_remainder -= whole;
   }
 
   // We don't need this, our DMA's are instant

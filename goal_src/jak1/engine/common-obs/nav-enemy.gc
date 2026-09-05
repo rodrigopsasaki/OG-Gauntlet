@@ -978,7 +978,12 @@ nav-enemy-default-event-handler
 (defbehavior nav-enemy-jump-land-post nav-enemy ()
   (compute-alignment! (-> self align))
   (nav-control-method-11 (-> self nav) (-> self nav target-pos))
-  (seek! (-> self target-speed) (-> self nav-info run-travel-speed) 2048.0)
+  ;; per-frame acceleration back up to running speed after a landing. Unscaled,
+  ;; an enemy reaches full speed four times sooner at 240fps than at 60, which
+  ;; is felt as the game being quicker rather than smoother. Upstream fixed 50
+  ;; sites like this and marked them; this one it missed.
+  (seek! (-> self target-speed) (-> self nav-info run-travel-speed)
+         (* 2048.0 (-> *display* time-adjust-ratio)))  ;; og: changed for high fps
   (set! (-> self momentum-speed) (-> self target-speed))
   (let* ((f0-7 (fmin (* (-> self speed-scale) (-> self momentum-speed))
                      (* (vector-length (-> self nav travel)) (-> *display* frames-per-second))))
