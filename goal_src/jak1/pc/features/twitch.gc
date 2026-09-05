@@ -157,8 +157,9 @@
 
 ;; Both default on, which is what a stream wants; the menu turns them off for a
 ;; run where chat should watch rather than participate.
-(define *twitch-show-chat* #t)      ;; draw chat messages in the on-screen log
-(define *twitch-effects-on* #t)     ;; let !trip / !freeze / !warp / !say land
+;; The menu writes these, and pckernel persists them, so a choice survives a
+;; restart. Read through accessors rather than copied into globals: a copy is a
+;; second source of truth that goes stale the moment the menu writes one.
 
 (define *twitch-chat-countdown* 0)
 (define *twitch-chat-seen* (new 'global 'string 64 ""))
@@ -227,7 +228,7 @@
     (when (zero? *twitch-lang-restore*)
       (set-language *twitch-lang-saved*)))
   ;; the whole of chat's reach into the game hangs on this one flag
-  (when *twitch-effects-on*
+  (when (-> *pc-settings* twitch-effects?)
     (+! *twitch-cmd-countdown* -1)
     (when (>= 0 *twitch-cmd-countdown*)
       (set! *twitch-cmd-countdown* 20)
@@ -277,5 +278,5 @@
         ;; truncate so the command fires once
         (let ((out (new 'stack 'file-stream *pc-temp-string-1* 'write)))
           (if (file-stream-valid? out) (file-stream-close out))))))
-  (when *twitch-show-chat* (twitch-poll-chat!))
+  (when (-> *pc-settings* twitch-show-chat?) (twitch-poll-chat!))
   (none))

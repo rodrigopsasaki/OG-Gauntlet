@@ -139,6 +139,12 @@
        (new 'static
             'game-option
             :option-type (game-option-type menu)
+            :name (text-id twitch-options)
+            :scale #t
+            :param3 (game-option-menu twitch-options))
+       (new 'static
+            'game-option
+            :option-type (game-option-type menu)
             :name (text-id load-game)
             :scale #t
             :param3 (game-option-menu load-game))
@@ -185,6 +191,12 @@
             :name (text-id sound-options)
             :scale #t
             :param3 (game-option-menu sound-settings))
+       (new 'static
+            'game-option
+            :option-type (game-option-type menu)
+            :name (text-id twitch-options)
+            :scale #t
+            :param3 (game-option-menu twitch-options))
        (new 'static
             'game-option
             :option-type (game-option-type menu)
@@ -248,6 +260,17 @@
             :name (text-id misc-options)
             :scale #t
             :param3 (game-option-menu misc-options))
+       (new 'static 'game-option :option-type (game-option-type button) :name (text-id back) :scale #t)))
+
+;; Twitch options. Global rather than per-mod: chat integration is not a feature
+;; of any randomizer, it is part of the port, and it now exists in every build.
+(define *twitch-options-pc*
+  (new 'static
+       'boxed-array
+       :type
+       game-option
+       (new 'static 'game-option :option-type (game-option-type on-off) :name (text-id twitch-show-chat) :scale #t)
+       (new 'static 'game-option :option-type (game-option-type on-off) :name (text-id twitch-effects) :scale #t)
        (new 'static 'game-option :option-type (game-option-type button) :name (text-id back) :scale #t)))
 
 (define *graphic-options-pc*
@@ -2063,6 +2086,7 @@
       ((> max-refresh-rate 100) (set! *carousell-frame-rate* *carousell-frame-rate-150fps*))
       ((> max-refresh-rate 60) (set! *carousell-frame-rate* *carousell-frame-rate-100fps*))))
   (set! (-> *options-remap* (progress-screen sound-settings)) *sound-options-pc*)
+  (set! (-> *options-remap* (progress-screen twitch-options)) *twitch-options-pc*)
   (set! (-> *options-remap* (progress-screen memcard-no-space)) *ok-options*)
   (set! (-> *options-remap* (progress-screen memcard-not-inserted)) *ok-options*)
   (set! (-> *options-remap* (progress-screen memcard-not-formatted)) *ok-options*)
@@ -2120,6 +2144,8 @@
   (set! (-> *progress-state* yes-no-choice) #f)
   ;; set variable pointers
   (set! (-> *game-options* 1 value-to-modify) (&-> *pc-settings* memcard-play-hints?))
+  (set! (-> *twitch-options-pc* 0 value-to-modify) (&-> *pc-settings* twitch-show-chat?))
+  (set! (-> *twitch-options-pc* 1 value-to-modify) (&-> *pc-settings* twitch-effects?))
   (set! (-> *game-options* 2 value-to-modify) (&-> *setting-control* default language))
   (set! (-> *game-options-japan* 0 value-to-modify) (&-> *pc-settings* memcard-vibration?))
   (set! (-> *game-options-japan* 1 value-to-modify) (&-> *pc-settings* memcard-play-hints?))

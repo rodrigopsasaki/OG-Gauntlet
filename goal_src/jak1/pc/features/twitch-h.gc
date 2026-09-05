@@ -9,6 +9,4 @@
 (define-extern twitch-log-push! (function string none))
 (define-extern twitch-banner! (function symbol int none))
 (define-extern twitch-warp! (function none))
-(define-extern *twitch-show-chat* symbol)
-(define-extern *twitch-effects-on* symbol)
 (define-extern *twitch-warp-target* string)

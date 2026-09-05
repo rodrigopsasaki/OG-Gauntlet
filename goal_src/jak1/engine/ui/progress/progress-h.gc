@@ -129,6 +129,7 @@
      (speedrun-options)
      (speedrun-il-options)
      (speedrun-cat-ext-options)
+     (twitch-options)
      ;; the last one!
      (max))
    (defenum game-option-type

@@ -444,6 +444,8 @@
     (("text-language") (set! (-> obj text-language) (the-as pc-language (file-stream-read-int file))))
     (("scenes-seen") (dotimes (i PC_SPOOL_LOG_LENGTH) (set! (-> obj scenes-seen i) (file-stream-read-int file))))
     (("memcard-play-hints?") (set! (-> obj memcard-play-hints?) (file-stream-read-symbol file)))
+    (("twitch-show-chat?") (set! (-> obj twitch-show-chat?) (file-stream-read-symbol file)))
+    (("twitch-effects?") (set! (-> obj twitch-effects?) (file-stream-read-symbol file)))
     (("secrets")
      (dosettings (file)
                  (case-str *pc-temp-string*
@@ -472,6 +474,8 @@
   "handle the text writing output for the 'settings' group"
   ((method-of-type pc-settings handle-output-settings) obj file)
   (format file "  (money-starburst? ~A)~%" (-> obj money-starburst?))
+  (format file "  (twitch-show-chat? ~A)~%" (-> obj twitch-show-chat?))
+  (format file "  (twitch-effects? ~A)~%" (-> obj twitch-effects?))
   (format file "  (extra-hud? ~A)~%" (-> obj extra-hud?))
   (format file "  (skip-movies? ~A)~%" (-> obj skip-movies?))
   (format file "  (subtitles? ~A)~%" (-> obj subtitles?))
