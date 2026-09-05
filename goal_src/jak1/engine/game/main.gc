@@ -423,7 +423,10 @@
       (add-ee-profile-frame 'draw :g #x80)
       (with-profiler "menu"
         (#when PC_PORT
-          (if (and *display-sha* *debug-segment*) (draw-build-revision)))
+          (if (and *display-sha* *debug-segment*) (draw-build-revision))
+          ;; chat effects, the input publisher and the on-screen log. PC-only:
+          ;; everything it touches is pc-settings and the filesystem.
+          (twitch-poll!))
         (*menu-hook*)
         (add-ee-profile-frame 'draw :g #x40)
         ;; finally, update hints/text

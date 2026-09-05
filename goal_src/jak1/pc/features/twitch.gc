@@ -1,0 +1,281 @@
+
+;;-*-Lisp-*-
+(in-package goal)
+
+;; Twitch integration: chat effects, the on-screen log, and the publishers the
+;; stream panels read.
+;;
+;; This lived inside ap-struct.gc, which meant it only existed in the
+;; archipelago build: the randomizer build had no chat, no input panel and no
+;; state file, so the overlay sat empty against it. None of it was ever
+;; archipelago-specific -- the extracted code referenced no seed, no ledger and
+;; no check table -- it was simply written in the wrong place. It is global now,
+;; and the mods add only what they actually add.
+;;
+;; The file paths keep their archipelago- names so the existing streamkit server
+;; keeps working untouched; renaming them is a two-sided change for no gain.
+
+(define *twitch-log* (new 'global 'boxed-array string 4))
+(dotimes (i 4)
+  (set! (-> *twitch-log* i) (new 'global 'string 64 "")))
+;; log placement, in the 2D text space draw-build-revision uses. Tune here.
+;; Calibrated from an on-screen ruler: this 2D text space runs y 0 (top) to about
+;; 222 (bottom) and x 0 to about 512. The old 352 was well below the screen, which
+;; is why the log was never visible at all.
+(defconstant TWITCH_LOG_X 16.0)
+(defconstant TWITCH_LOG_Y 190.0)
+(defconstant TWITCH_LOG_LINE 9.0)
+;; Font size is fixed on this path, and that is fine: measured against a real
+;; ArchipelaGOAL capture, its in-game log uses this same jak1 font at ~18px/char
+;; against our ~20. Tried and rejected: draw-string-xy-scaled (draws nothing),
+;; the pc-hack flag (shifts x, does not resize), and font-context's scale field
+;; (draw-string ignores it).
+(define *twitch-log-time* (the-as time-frame 0))
+
+(define *twitch-scratch* (new 'global 'string 128 ""))
+
+(defun twitch-log-push! ((text string))
+  "shift the rolling log and put text on top, then hand it to the overlay"
+  (format (clear (-> *twitch-log* 3)) "~S" (-> *twitch-log* 2))
+  (format (clear (-> *twitch-log* 2)) "~S" (-> *twitch-log* 1))
+  (format (clear (-> *twitch-log* 1)) "~S" (-> *twitch-log* 0))
+  (format (clear (-> *twitch-log* 0)) "~S" text)
+  (set! *twitch-log-time* (current-time))
+  ;; arm the overlay here rather than only at seed load, so effects are visible
+  ;; in a no-seed run too
+  (pc-ap-log-active 1)
+  (dotimes (i 3)
+    (pc-ap-log-set i (-> *twitch-log* i)))
+  (none))
+
+(defun twitch-banner! ((name symbol) (amount int))
+  ;; ~A on a symbol is right; ~S is what you need for string-to-string, because
+  ;; ~A prints a GOAL string *with its quotes*.
+  (if (> amount 0)
+    (format (clear *twitch-scratch*) "FOUND ~D ~A" amount name)
+    (format (clear *twitch-scratch*) "FOUND ~A" name))
+  (twitch-log-push! *twitch-scratch*)
+  (none))
+
+(defun twitch-draw-banner ()
+  "kept as main.gc's hook, but the log is drawn by the imgui overlay now"
+  (none))
+
+
+(define *twitch-warp-points*
+  (new 'static 'boxed-array :type string
+    "village1-warp" "beach-start" "jungle-start" "misty-start"
+    "firecanyon-start" "village2-warp" "swamp-start" "sunken-start"
+    "rolling-start" "ogre-start" "village3-warp" "snow-start"
+    "maincave-start" "lavatube-start" "citadel-start"))
+
+(define *twitch-warp-target* (new 'global 'string 64 ""))
+
+(defun twitch-warp! ()
+  "Drop Jak at a random checkpoint.
+
+   The two steps are the level-select menu's own, but WHERE they run matters:
+   initialize! tears levels down and streams new ones in, and the command poll
+   runs inside main.gc's per-frame hook. Doing it from there crashed the game
+   mid-stream. The menu performs it from a process, so this does too, on the same
+   pattern ap-auto-save! already uses. The suspend lets the current frame finish
+   before anything is torn down."
+  ;; empty target means the caller asked for a random one
+  (when (string= *twitch-warp-target* "")
+    (format (clear *twitch-warp-target*) "~S"
+            (-> *twitch-warp-points* (rand-vu-int-count (-> *twitch-warp-points* length)))))
+  (process-spawn-function process
+    (lambda :behavior process ()
+      (suspend)
+      (let ((dest (get-continue-by-name *game-info* *twitch-warp-target*)))
+        ;; an unknown name would null the continue and strand the reload
+        (when dest
+          (set! (-> *game-info* current-continue) dest)
+          (initialize! *game-info* 'die (the-as game-save #f) (the-as string #f))))))
+  (none))
+
+(define *twitch-cmd-countdown* 0)
+(define *twitch-pad-countdown* 0)
+;; last pad state actually written, so an unchanging pad costs nothing
+(define *twitch-pad-last-b* 0)
+(define *twitch-pad-last-axes* 0)
+
+(defun twitch-write-pad! ()
+  "Publish the pad THE GAME received, for the input panel.
+   A browser is only handed gamepad data while its page has focus, so a panel
+   that reads the controller itself goes dead exactly when you are playing and
+   the game holds focus. Reading it from here is both focus-proof and more
+   honest: the panel shows what the game acted on, not a second opinion about
+   the hardware."
+  (let ((pad (-> *cpad-list* cpads 0)))
+    (format (clear *pc-temp-string-1*) "~S/Mods/archipelago-pad.js" *pc-settings-folder*)
+    (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'write)))
+      (when (file-stream-valid? file)
+        ;; two writes, not one: a GOAL call takes at most eight parameters
+        (format file
+                "window.AP_PAD={\"on\":~D,\"b\":~D,\"lx\":~D,\"ly\":~D,"
+                (if (zero? (-> pad valid)) 1 0)
+                (the-as int (-> pad button0-abs 0))
+                (-> pad leftx) (-> pad lefty))
+        (format file
+                "\"rx\":~D,\"ry\":~D,\"l2\":~D,\"r2\":~D}~%"
+                (-> pad rightx) (-> pad righty)
+                (-> pad abutton (abutton-idx l2))
+                (-> pad abutton (abutton-idx r2)))
+        (file-stream-close file))))
+  (none))
+
+;; A spooled voice line is read out of VAGWAD.<LANG>, so which take you hear is
+;; decided by the game's audio language, not by the cue name. !despair wants the
+;; japanese warrior cry whether or not the run itself is in japanese, so `say`
+;; takes an optional language, flips to it for the length of the clip, and puts
+;; the player's own language back. The countdown is frames.
+(define *twitch-lang-restore* 0)
+(define *twitch-lang-saved* (language-enum english))
+
+(defun twitch-language-for ((name string))
+  "Language named by a command word, or -1 when it names no language."
+  (cond
+    ((or (string= name "jap") (string= name "japanese")) (language-enum japanese))
+    ((or (string= name "eng") (string= name "english"))  (language-enum english))
+    ((string= name "french")   (language-enum french))
+    ((string= name "german")   (language-enum german))
+    ((string= name "spanish")  (language-enum spanish))
+    ((string= name "italian")  (language-enum italian))
+    (else (the language-enum -1))))
+
+(defun twitch-announce ((file file-stream) (what string))
+  "the command file is \"<verb> <who>\"; credit the viewer by name"
+  (file-stream-seek-past-whitespace file)
+  (file-stream-read-word file)
+  (format (clear *twitch-scratch*) "~S ~S" *pc-temp-string* what)
+  (twitch-log-push! *twitch-scratch*)
+  (none))
+
+
+;; ---------------------------------------------------------------- settings --
+
+;; Both default on, which is what a stream wants; the menu turns them off for a
+;; run where chat should watch rather than participate.
+(define *twitch-show-chat* #t)      ;; draw chat messages in the on-screen log
+(define *twitch-effects-on* #t)     ;; let !trip / !freeze / !warp / !say land
+
+(define *twitch-chat-countdown* 0)
+(define *twitch-chat-seen* (new 'global 'string 64 ""))
+
+(defun twitch-poll-chat! ()
+  "Pull the newest chat line and put it in the same log the effects announce
+   through. The log is already an on-screen overlay, so seeing chat in game
+   costs a file read rather than a renderer.
+
+   The server writes one line per message and we only ever look at the newest,
+   so a burst shows the last of it rather than replaying a backlog into a
+   four-line window."
+  (+! *twitch-chat-countdown* -1)
+  (when (>= 0 *twitch-chat-countdown*)
+    (set! *twitch-chat-countdown* 30)
+    (format (clear *pc-temp-string-1*) "~S/Mods/twitch-chat.txt" *pc-settings-folder*)
+    (when (pc-filepath-exists? *pc-temp-string-1*)
+      (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'read)))
+        (when (file-stream-valid? file)
+          (file-stream-seek-past-whitespace file)
+          (file-stream-read-word file)
+          ;; the first word is a counter the server bumps per message, so an
+          ;; unchanged one means nothing new rather than requiring us to diff text
+          (when (not (string= *pc-temp-string* *twitch-chat-seen*))
+            (format (clear *twitch-chat-seen*) "~S" *pc-temp-string*)
+            (file-stream-seek-past-whitespace file)
+            (file-stream-read-word file)
+            (format (clear *twitch-scratch*) "~S" *pc-temp-string*)
+            (twitch-log-push! *twitch-scratch*))
+          (file-stream-close file)))))
+  (none))
+
+;; -------------------------------------------------------------------- poll --
+
+(defun twitch-poll! ()
+  "Per-frame hook: publish the pad, drain one chat effect, show one chat line.
+
+   Effects are deliberately additive or self-terminating, and nothing here may
+   touch a mod's own state. Chat can shove you; it can never strand a run."
+  ;; Every third frame, ~50Hz at the 150fps target. This was cut to 12 frames on
+  ;; the theory that the file write was making the GAME choppy; it was not --
+  ;; only the panel ever was, and cutting the publisher is what made it so. The
+  ;; write has run at this rate since it was written with no effect on the game.
+  ;; An unchanged pad is still skipped, so menus and cutscenes cost nothing.
+  (+! *twitch-pad-countdown* -1)
+  (when (>= 0 *twitch-pad-countdown*)
+    ;; Publish at roughly 60Hz whatever the game is running at. A fixed frame
+    ;; interval is a different publish rate at every fps -- three frames is 50Hz
+    ;; at 150 but only 20Hz at 60, which is where the panel actually lives, and
+    ;; that is why it never felt like realtime.
+    (set! *twitch-pad-countdown*
+          (max 1 (/ (the int (-> *pc-settings* target-fps)) 60)))
+    (let* ((pad (-> *cpad-list* cpads 0))
+           (b (the-as int (-> pad button0-abs 0)))
+           (axes (+ (* (the int (-> pad leftx)) 16777216)
+                    (* (the int (-> pad lefty)) 65536)
+                    (* (the int (-> pad rightx)) 256)
+                    (the int (-> pad righty)))))
+      (when (or (!= b *twitch-pad-last-b*) (!= axes *twitch-pad-last-axes*))
+        (set! *twitch-pad-last-b* b)
+        (set! *twitch-pad-last-axes* axes)
+        (twitch-write-pad!))))
+  ;; put the player's language back once a borrowed line has had time to play
+  (when (nonzero? *twitch-lang-restore*)
+    (+! *twitch-lang-restore* -1)
+    (when (zero? *twitch-lang-restore*)
+      (set-language *twitch-lang-saved*)))
+  ;; the whole of chat's reach into the game hangs on this one flag
+  (when *twitch-effects-on*
+    (+! *twitch-cmd-countdown* -1)
+    (when (>= 0 *twitch-cmd-countdown*)
+      (set! *twitch-cmd-countdown* 20)
+      (format (clear *pc-temp-string-1*) "~S/Mods/archipelago-command.gc" *pc-settings-folder*)
+      (when (pc-filepath-exists? *pc-temp-string-1*)
+        (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'read)))
+          (when (file-stream-valid? file)
+            (file-stream-seek-past-whitespace file)
+            (file-stream-read-word file)
+            (case-str *pc-temp-string*
+              (("trip")
+               (twitch-announce file "TRIPPED YOU")
+               (when *target* (send-event *target* 'ap-trip)))
+              (("freeze")
+               (twitch-announce file "FROZE YOU")
+               (when *target* (send-event *target* 'ap-freeze)))
+              (("say")
+               ;; play a spooled voice line by name. The cue comes from the
+               ;; command file rather than being baked in, so which line !despair
+               ;; uses is a server-side edit, not a rebuild. 'camera kills any
+               ;; hint already playing so this always lands.
+               (twitch-announce file "CUED A LINE")
+               (file-stream-seek-past-whitespace file)
+               (file-stream-read-word file)
+               (format (clear *twitch-scratch*) "~S" *pc-temp-string*)
+               ;; optional fourth word: the language this one line plays in
+               (file-stream-seek-past-whitespace file)
+               (file-stream-read-word file)
+               (let ((lang (twitch-language-for *pc-temp-string*)))
+                 (when (>= (the int lang) 0)
+                   (when (zero? *twitch-lang-restore*)
+                     (set! *twitch-lang-saved* (-> *setting-control* current language)))
+                   (set-language lang)
+                   (set! *twitch-lang-restore* 360)))
+               (ambient-hint-spawn *twitch-scratch* (the-as vector #f) *entity-pool* 'camera))
+              (("warp")
+               (twitch-announce file "WARPED YOU")
+               ;; third word is the destination continue point, or "random"
+               (file-stream-seek-past-whitespace file)
+               (file-stream-read-word file)
+               (if (string= *pc-temp-string* "random")
+                 (clear *twitch-warp-target*)
+                 (format (clear *twitch-warp-target*) "~S" *pc-temp-string*))
+               (twitch-warp!))
+              (else #f))
+            (file-stream-close file)))
+        ;; truncate so the command fires once
+        (let ((out (new 'stack 'file-stream *pc-temp-string-1* 'write)))
+          (if (file-stream-valid? out) (file-stream-close out)))))))
+    (when *twitch-show-chat* (twitch-poll-chat!))
+  (none))

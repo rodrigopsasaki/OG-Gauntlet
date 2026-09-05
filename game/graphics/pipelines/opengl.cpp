@@ -23,6 +23,12 @@
 #include "game/graphics/gfx.h"
 #include "game/graphics/opengl_renderer/OpenGLRenderer.h"
 #include "game/graphics/opengl_renderer/debug_gui.h"
+#include <algorithm>
+#include <cfloat>
+
+static ImFont* g_ap_font = nullptr;
+
+#include "game/kernel/common/ap_log.h"
 #include "game/graphics/screenshot.h"
 #include "game/graphics/texture/TexturePool.h"
 #include "game/runtime.h"
@@ -165,6 +171,21 @@ static void init_imgui(SDL_Window* window,
   g_gfx_data->imgui_log_filename = file_util::get_file_path({"imgui_log.txt"});
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+  // The archipelago log gets its own font, always from the TTF. The block above
+  // is skipped entirely when monospaced_font is set, which leaves imgui on its
+  // built-in ProggyClean: a 13px BITMAP font. Scaling that up for an overlay is
+  // the same mistake as magnifying the game's own bitmap font, just in a
+  // different renderer. Built large and drawn smaller, so it only ever downscales.
+  {
+    const std::string ap_font_path =
+        (file_util::get_jak_project_dir() / "game" / "assets" / "fonts" / "NotoSansJP-Medium.ttf")
+            .string();
+    if (file_util::file_exists(ap_font_path)) {
+      static const ImWchar latin[] = {0x0020, 0x00FF, 0};
+      g_ap_font = io.Fonts->AddFontFromFileTTF(ap_font_path.c_str(), 96.0f, nullptr, latin);
+    }
+  }
+
   io.IniFilename = g_gfx_data->imgui_filename.c_str();
   io.LogFilename = g_gfx_data->imgui_log_filename.c_str();
 
@@ -673,6 +694,53 @@ void GLDisplay::render() {
   if (is_imgui_visible()) {
     auto p = scoped_prof("debug-gui");
     g_gfx_data->debug_gui.draw(g_gfx_data->dma_copier.get_last_result().stats);
+  }
+  // Archipelago item log. Drawn straight into the foreground draw list rather
+  // than as a window: a window with AlwaysAutoResize plus SetWindowFontScale
+  // oscillates, because the scale changes the layout size, auto-resize measures
+  // it a frame late, and the bottom-left pivot re-anchors against the stale size.
+  // That is the "two boxes competing" flicker. A draw list has no layout pass and
+  // takes an explicit pixel size, so there is nothing to disagree about.
+  if (ap_log::active) {
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    const float win_w = vp->WorkSize.x, win_h = vp->WorkSize.y;
+    // The game is 4:3 letterboxed inside the window and OBS crops the pillarbox
+    // away, so anchor inside the picture, not the window. A 4:3 window gives 0.
+    const float game_w = std::min(win_w, win_h * 4.0f / 3.0f);
+    const float bar = (win_w - game_w) * 0.5f;
+
+    // size as a fraction of the picture: correct at any resolution or backing scale
+    const float px = 0.030f * win_h;
+    const float pad = 0.30f * px;
+    const float line_h = px * 1.35f;
+
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImFont* font = g_ap_font ? g_ap_font : ImGui::GetFont();
+    const ImU32 col_verb = IM_COL32(178, 184, 191, 255);
+    const ImU32 col_item = IM_COL32(90, 216, 255, 255);
+    const ImU32 col_bg = IM_COL32(0, 0, 0, 110);
+
+    float y = vp->WorkPos.y + win_h - 0.030f * win_h - line_h;
+    const float x0 = vp->WorkPos.x + bar + 0.020f * game_w;
+    for (int i = 0; i < ap_log::kLines; ++i) {  // 0 is newest, drawn lowest
+      const std::string& line = ap_log::lines[i];
+      if (!line.empty()) {
+        const size_t sp = line.find(' ');
+        const std::string verb = (sp == std::string::npos) ? line : line.substr(0, sp);
+        const std::string item = (sp == std::string::npos) ? "" : line.substr(sp + 1);
+        const ImVec2 vsz = font->CalcTextSizeA(px, FLT_MAX, 0.0f, verb.c_str());
+        const ImVec2 isz = font->CalcTextSizeA(px, FLT_MAX, 0.0f, item.c_str());
+        const float sp_w = font->CalcTextSizeA(px, FLT_MAX, 0.0f, " ").x;
+        dl->AddRectFilled(ImVec2(x0 - pad, y - pad * 0.5f),
+                          ImVec2(x0 + vsz.x + sp_w + isz.x + pad, y + px + pad * 0.5f),
+                          col_bg, pad * 0.6f);
+        dl->AddText(font, px, ImVec2(x0, y), col_verb, verb.c_str());
+        if (!item.empty()) {
+          dl->AddText(font, px, ImVec2(x0 + vsz.x + sp_w, y), col_item, item.c_str());
+        }
+      }
+      y -= line_h;
+    }
   }
   {
     auto p = scoped_prof("imgui-render");

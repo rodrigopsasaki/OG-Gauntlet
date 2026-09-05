@@ -206,7 +206,8 @@
   "autosplit.o" ;; added
   "speedruns.o" ;; added
   "pckernel-common.o" ;; added
-  "pckernel.o" ;; added
+  "pckernel.o"
+  "twitch.o" ;; added (twitch integration)
   "mood-tables.o"
   "mood.o"
   "weather-part.o"

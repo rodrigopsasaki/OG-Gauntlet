@@ -1,3 +1,4 @@
+#include "game/kernel/common/ap_log.h"
 #include "kmachine.h"
 
 #include <random>
@@ -980,6 +981,21 @@ void pc_set_msaa(int samples) {
   Gfx::g_global_settings.msaa_samples = samples;
 }
 
+namespace ap_log {
+std::array<std::string, kLines> lines = {"", "", ""};
+bool active = false;
+}  // namespace ap_log
+
+void pc_ap_log_set(u32 slot, u32 str_ptr) {
+  if (slot < ap_log::kLines) {
+    ap_log::lines[slot] = std::string(Ptr<String>(str_ptr).c()->data());
+  }
+}
+
+void pc_ap_log_active(u32 on) {
+  ap_log::active = on != 0;
+}
+
 void pc_set_frame_rate(int rate) {
   Gfx::g_global_settings.target_fps = rate;
 }
@@ -1193,6 +1209,8 @@ void init_common_pc_port_functions(
   make_func_symbol_func("pc-set-vsync", (void*)pc_set_vsync);
   make_func_symbol_func("pc-set-msaa", (void*)pc_set_msaa);
   make_func_symbol_func("pc-set-frame-rate", (void*)pc_set_frame_rate);
+  make_func_symbol_func("pc-ap-log-set", (void*)pc_ap_log_set);
+  make_func_symbol_func("pc-ap-log-active", (void*)pc_ap_log_active);
   make_func_symbol_func("pc-set-game-resolution", (void*)pc_set_game_resolution);
   make_func_symbol_func("pc-set-brightness-contrast", (void*)pc_set_brightness_contrast);
   make_func_symbol_func("pc-set-letterbox", (void*)pc_set_letterbox);

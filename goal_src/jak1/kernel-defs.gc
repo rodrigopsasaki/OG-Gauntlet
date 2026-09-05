@@ -551,6 +551,8 @@
 (define-extern pc-is-supported-resolution? (function int int symbol))
 
 (define-extern pc-set-frame-rate (function int none))
+(define-extern pc-ap-log-set (function int string none))
+(define-extern pc-ap-log-active (function int none))
 
 (define-extern pc-set-vsync (function symbol none))
 
