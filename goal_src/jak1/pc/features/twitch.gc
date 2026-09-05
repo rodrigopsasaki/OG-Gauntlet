@@ -276,6 +276,6 @@
             (file-stream-close file)))
         ;; truncate so the command fires once
         (let ((out (new 'stack 'file-stream *pc-temp-string-1* 'write)))
-          (if (file-stream-valid? out) (file-stream-close out)))))))
-    (when *twitch-show-chat* (twitch-poll-chat!))
+          (if (file-stream-valid? out) (file-stream-close out))))))
+  (when *twitch-show-chat* (twitch-poll-chat!))
   (none))
