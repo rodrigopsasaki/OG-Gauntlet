@@ -186,3 +186,9 @@
   (function control-info collide-shape-intersect vector vector cshape-moving-flags))
 
 (define-extern start-sequence-a (function none))
+
+;; twitch: the chat effect channel makes Jak trip. target-handler.gc
+;; compiles before target2.gc where the state lives, and this codebase has no
+;; other forward-declared target states, so it needs one here.
+(define-extern target-ap-trip (state target))
+(define-extern target-ap-freeze (state target))
