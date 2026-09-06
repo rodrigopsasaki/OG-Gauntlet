@@ -16,4 +16,5 @@
 
 ;; when the run actually began, for the overlay's timer
 (define-extern *run-started* symbol)
+(define-extern *run-ended* symbol)
 (define-extern run-start-poll! (function none))

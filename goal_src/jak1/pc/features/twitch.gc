@@ -309,6 +309,12 @@
 ;; not fading, and Jak has touched ground. That is the moment a real timer
 ;; starts, rather than the moment the title screen goes away.
 (define *run-started* #f)
+;; The run ends on the light eco, which is finalboss-movies closing at
+;; need-introduction. That is the community autosplitter's own finish condition
+;; (its "Collect Light Eco (finish run)" option reads exactly this flag), so the
+;; overlay stops where a real timer stops rather than at some cell count that
+;; only makes sense for one category.
+(define *run-ended* #f)
 
 (defun run-start-poll! ()
   (when (and (not *run-started*) *target*
@@ -318,6 +324,11 @@
                            (cshape-moving-flags onground onsurf on-water))
                  (= (-> *target* next-state name) 'target-hit-ground)))
     (set! *run-started* #t))
+  (set! *run-ended*
+        (and *run-started*
+             (task-closed? (game-task finalboss-movies) (task-status need-introduction))))
   ;; back to the title means the next run is a new one
-  (when (and *run-started* (not *target*)) (set! *run-started* #f))
+  (when (and *run-started* (not *target*))
+    (set! *run-started* #f)
+    (set! *run-ended* #f))
   (none))
