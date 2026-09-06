@@ -354,6 +354,14 @@
 (define *jump-apex* 0.0)      ;; best height above it this airborne stretch
 (define *jump-last* 0.0)      ;; the apex of the jump that just ended
 (define *jump-airborne* #f)
+;; A counter, not just a value: two identical jumps in a row are two jumps, and
+;; a reader watching the number change would see one. That flaw made the first
+;; lab session mix filler jumps into both sets.
+(define *jump-count* 0)
+(define *jump-air-start* (the-as time-frame 0))
+(define *jump-rise-start* (the-as time-frame 0))
+(define *jump-airtime* 0.0)   ;; ground to ground, seconds
+(define *jump-hang* 0.0)      ;; time spent within 10cm of the apex, seconds
 
 (defun jump-probe-poll! ()
   (when *target*
@@ -363,14 +371,25 @@
                                 (cshape-moving-flags onground onsurf))))
       (cond
         (on-ground
-         ;; landing closes the measurement; the value survives for the probe to read
+         ;; landing closes the measurement; the values survive for the probe
          (when *jump-airborne*
            (set! *jump-last* *jump-apex*)
+           (set! *jump-airtime*
+                 (* 0.0033333334 (the float (- (current-time) *jump-air-start*))))
+           (set! *jump-hang*
+                 (* 0.0033333334 (the float (- (current-time) *jump-rise-start*))))
+           (+! *jump-count* 1)
            (set! *jump-airborne* #f))
          (set! *jump-from* h)
          (set! *jump-apex* 0.0))
         (else
-         (set! *jump-airborne* #t)
+         (when (not *jump-airborne*)
+           (set! *jump-airborne* #t)
+           (set! *jump-air-start* (current-time))
+           (set! *jump-rise-start* (current-time)))
          (let ((rise (- h *jump-from*)))
-           (if (> rise *jump-apex*) (set! *jump-apex* rise)))))))
+           (when (> rise *jump-apex*)
+             (set! *jump-apex* rise)
+             ;; still climbing, so the hang has not begun
+             (set! *jump-rise-start* (current-time))))))))
   (none))
