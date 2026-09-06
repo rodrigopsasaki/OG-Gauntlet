@@ -299,6 +299,7 @@
   (when (-> *pc-settings* twitch-show-chat?) (twitch-poll-chat!))
   (run-start-poll!)
   (jump-probe-poll!)
+  (gravity-probe-poll!)
   (none))
 
 ;; ---------------------------------------------------------- run start ------
@@ -399,4 +400,36 @@
              (set! *jump-apex* rise)
              ;; still climbing, so the descent has not begun
              (set! *jump-rise-start* (current-time))))))))
+  (none))
+
+;; --------------------------------------------------------- gravity probe --
+
+;; The question this answers: is Jak's flight slow at 60fps because of a scaling
+;; bug, or because of Euler residue? Those have opposite conclusions. A bug has
+;; an address and can be fixed; residue cannot be fixed by scaling, and removing
+;; it moves the game further from what it shipped as.
+;;
+;; The test is the per-step velocity change. Correct scaling means gravity takes
+;; exactly (g * seconds-per-frame) out of vertical speed every frame, so the
+;; per-SECOND rate is identical at every frame rate. If the per-second rate
+;; differs, something is not scaling, and the ratio names it.
+(define *grav-last-v* 0.0)
+(define *grav-dv* 0.0)        ;; last per-frame change in vertical speed
+(define *grav-rate* 0.0)      ;; that change expressed per second
+(define *grav-expect* 0.0)    ;; g * seconds-per-frame, what it SHOULD be
+
+(defun gravity-probe-poll! ()
+  (when (and *target* *jump-airborne*)
+    (let* ((g (-> *target* control dynam gravity-normal))
+           (v (vector-dot g (-> *target* control transv)))
+           (dv (- v *grav-last-v*))
+           (spf (seconds-per-frame)))
+      ;; only while genuinely falling freely: a frame with a collision, a launch
+      ;; or a mid-air move in it is not a gravity sample
+      (when (and (< dv 0.0) (> spf 0.0) (nonzero? *grav-last-v*))
+        (set! *grav-dv* dv)
+        (set! *grav-rate* (/ dv spf))
+        (set! *grav-expect* (* -1.0 (-> *target* control dynam gravity-length) spf)))
+      (set! *grav-last-v* v)))
+  (when (and *target* (not *jump-airborne*)) (set! *grav-last-v* 0.0))
   (none))

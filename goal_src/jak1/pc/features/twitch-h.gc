@@ -28,3 +28,7 @@
 (define-extern *jump-v0* float)
 (define-extern *jump-rise* float)
 (define-extern *jump-apex* float)
+(define-extern gravity-probe-poll! (function none))
+(define-extern *grav-dv* float)
+(define-extern *grav-rate* float)
+(define-extern *grav-expect* float)
