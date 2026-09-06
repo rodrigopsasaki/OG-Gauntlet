@@ -25,4 +25,6 @@
 (define-extern *jump-count* int)
 (define-extern *jump-airtime* float)
 (define-extern *jump-hang* float)
+(define-extern *jump-v0* float)
+(define-extern *jump-rise* float)
 (define-extern *jump-apex* float)

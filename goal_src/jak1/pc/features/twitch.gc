@@ -361,7 +361,12 @@
 (define *jump-air-start* (the-as time-frame 0))
 (define *jump-rise-start* (the-as time-frame 0))
 (define *jump-airtime* 0.0)   ;; ground to ground, seconds
-(define *jump-hang* 0.0)      ;; time spent within 10cm of the apex, seconds
+(define *jump-hang* 0.0)      ;; apex to landing, seconds
+;; Vertical speed on the first airborne frame. With apex and airtime this pins
+;; the arc completely, so effective gravity can be computed rather than argued
+;; about: g = 2 * apex / (rise time)^2, and v0 should equal g * rise.
+(define *jump-v0* 0.0)
+(define *jump-rise* 0.0)      ;; ground to apex, seconds
 
 (defun jump-probe-poll! ()
   (when *target*
@@ -378,6 +383,7 @@
                  (* 0.0033333334 (the float (- (current-time) *jump-air-start*))))
            (set! *jump-hang*
                  (* 0.0033333334 (the float (- (current-time) *jump-rise-start*))))
+           (set! *jump-rise* (- *jump-airtime* *jump-hang*))
            (+! *jump-count* 1)
            (set! *jump-airborne* #f))
          (set! *jump-from* h)
@@ -386,10 +392,11 @@
          (when (not *jump-airborne*)
            (set! *jump-airborne* #t)
            (set! *jump-air-start* (current-time))
-           (set! *jump-rise-start* (current-time)))
+           (set! *jump-rise-start* (current-time))
+           (set! *jump-v0* (vector-dot g (-> *target* control transv))))
          (let ((rise (- h *jump-from*)))
            (when (> rise *jump-apex*)
              (set! *jump-apex* rise)
-             ;; still climbing, so the hang has not begun
+             ;; still climbing, so the descent has not begun
              (set! *jump-rise-start* (current-time))))))))
   (none))
