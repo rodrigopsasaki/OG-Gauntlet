@@ -18,3 +18,8 @@
 (define-extern *run-started* symbol)
 (define-extern *run-ended* symbol)
 (define-extern run-start-poll! (function none))
+
+;; jump lab
+(define-extern jump-probe-poll! (function none))
+(define-extern *jump-last* float)
+(define-extern *jump-apex* float)

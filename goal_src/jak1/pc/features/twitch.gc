@@ -298,6 +298,7 @@
           (if (file-stream-valid? out) (file-stream-close out))))))
   (when (-> *pc-settings* twitch-show-chat?) (twitch-poll-chat!))
   (run-start-poll!)
+  (jump-probe-poll!)
   (none))
 
 ;; ---------------------------------------------------------- run start ------
@@ -339,4 +340,37 @@
   (when (and *run-started* (> *run-away-frames* 300))
     (set! *run-started* #f)
     (set! *run-ended* #f))
+  (none))
+
+;; ------------------------------------------------------------- jump probe --
+
+;; Peak height of the last jump, measured in-game at full frame rate. Sampling
+;; this over the wire would fold the publish rate into the answer, which is the
+;; one thing the measurement is trying to isolate.
+;;
+;; Height is taken along the gravity normal, from wherever Jak last stood, so it
+;; reads the same on a slope as on flat ground.
+(define *jump-from* 0.0)      ;; height on the ground he left
+(define *jump-apex* 0.0)      ;; best height above it this airborne stretch
+(define *jump-last* 0.0)      ;; the apex of the jump that just ended
+(define *jump-airborne* #f)
+
+(defun jump-probe-poll! ()
+  (when *target*
+    (let* ((g (-> *target* control dynam gravity-normal))
+           (h (vector-dot g (-> *target* control trans)))
+           (on-ground (logtest? (-> *target* control status)
+                                (cshape-moving-flags onground onsurf))))
+      (cond
+        (on-ground
+         ;; landing closes the measurement; the value survives for the probe to read
+         (when *jump-airborne*
+           (set! *jump-last* *jump-apex*)
+           (set! *jump-airborne* #f))
+         (set! *jump-from* h)
+         (set! *jump-apex* 0.0))
+        (else
+         (set! *jump-airborne* #t)
+         (let ((rise (- h *jump-from*)))
+           (if (> rise *jump-apex*) (set! *jump-apex* rise)))))))
   (none))
