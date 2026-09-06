@@ -100,7 +100,7 @@
 (def-progress-carousell *carousell-frame-rate-150fps* (60fps 100fps 150fps))
 ;; a 240Hz panel can drive the game at 240: nothing in the engine caps the
 ;; target rate, the menu simply never offered it.
-(def-progress-carousell *carousell-frame-rate-240fps* (60fps 100fps 120fps 150fps 240fps))
+(def-progress-carousell *carousell-frame-rate-300fps* (60fps 100fps 120fps 150fps 300fps))
 
 (def-progress-carousell *carousell-frame-rate-100fps* (60fps 100fps))
 
@@ -2082,7 +2082,7 @@
   (set! (-> *options-remap* (progress-screen graphic-settings)) *graphic-options-pc*)
   (let ((max-refresh-rate (pc-get-active-display-refresh-rate)))
     (cond
-      ((> max-refresh-rate 150) (set! *carousell-frame-rate* *carousell-frame-rate-240fps*))
+      ((> max-refresh-rate 150) (set! *carousell-frame-rate* *carousell-frame-rate-300fps*))
       ((> max-refresh-rate 100) (set! *carousell-frame-rate* *carousell-frame-rate-150fps*))
       ((> max-refresh-rate 60) (set! *carousell-frame-rate* *carousell-frame-rate-100fps*))))
   (set! (-> *options-remap* (progress-screen sound-settings)) *sound-options-pc*)
@@ -2730,7 +2730,7 @@
                     ((100) (set! (-> *progress-carousell* int-backup) 1))
                     ((120) (set! (-> *progress-carousell* int-backup) 2))
                     ((150) (set! (-> *progress-carousell* int-backup) 3))
-                    ((240) (set! (-> *progress-carousell* int-backup) 4))))
+                    ((300) (set! (-> *progress-carousell* int-backup) 4))))
                  (((game-option-type language-subtitles))
                   (let ((cur-lang (get-language-name (-> *pc-settings* subtitle-language))))
                     (dotimes (i (-> *subtitle-languages* length))
@@ -2829,7 +2829,7 @@
                  ((1) (set-frame-rate! *pc-settings* 100 #t))
                  ((2) (set-frame-rate! *pc-settings* 120 #t))
                  ((3) (set-frame-rate! *pc-settings* 150 #t))
-                 ((4) (set-frame-rate! *pc-settings* 240 #t)))
+                 ((4) (set-frame-rate! *pc-settings* 300 #t)))
                (set-video-mode (-> *setting-control* default video-mode))))
             ;; if the option has a `on-confirm` function, run it
             (when (nonzero? (-> options (-> obj option-index) on-confirm))

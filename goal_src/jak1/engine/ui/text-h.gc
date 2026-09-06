@@ -609,6 +609,7 @@
   (150fps #x1063)
   (240fps #x1064)
   (120fps #x1065)
+  (300fps #x1066)
   (twitch-options               #x1200)
   (twitch-show-chat             #x1201)
   (twitch-effects               #x1202)
