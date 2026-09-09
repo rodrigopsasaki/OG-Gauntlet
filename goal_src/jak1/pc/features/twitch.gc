@@ -282,6 +282,8 @@
                    (set-language lang)
                    (set! *twitch-lang-restore* 360)))
                (ambient-hint-spawn *twitch-scratch* (the-as vector #f) *entity-pool* 'camera))
+              (("save-spot") (twitch-announce file "SAVED A SPOT") (practice-save!))
+              (("load-spot") (twitch-announce file "LOADED A SPOT") (practice-load!))
               (("warp")
                (twitch-announce file "WARPED YOU")
                ;; third word is the destination continue point, or "random"
@@ -432,4 +434,52 @@
         (set! *grav-expect* (* -1.0 (-> *target* control dynam gravity-length) spf)))
       (set! *grav-last-v* v)))
   (when (and *target* (not *jump-airborne*)) (set! *grav-last-v* 0.0))
+  (none))
+
+;; --------------------------------------------------------- practice spots --
+
+;; Not a savestate. Position, facing and level, restored exactly, which is what
+;; drilling one jump actually needs: the setup walk is the cost, not the game
+;; state. Cells and tasks are untouched, so a spot saved on one file works on
+;; another as long as the level is reachable.
+;;
+;; The coordinates travel through their own file rather than the command
+;; channel, because that channel reads whitespace-separated words and four
+;; floats through it would be four chances to lose precision.
+(defun practice-save! ()
+  "write where Jak is, for jakc to pick up"
+  (when *target*
+    (format (clear *pc-temp-string-1*) "~S/Mods/jak-practice-here.gc" *pc-settings-folder*)
+    (let ((out (new 'stack 'file-stream *pc-temp-string-1* 'write)))
+      (when (file-stream-valid? out)
+        (let ((pos (-> *target* control trans))
+              (rot (-> *target* control quat)))
+          ;; two writes: a GOAL call takes at most eight parameters
+          (format out "~F ~F ~F " (-> pos x) (-> pos y) (-> pos z))
+          (format out "~F ~F ~F ~F~%" (-> rot x) (-> rot y) (-> rot z) (-> rot w))))
+      (file-stream-close out)))
+  (none))
+
+(defun practice-load! ()
+  "put Jak back exactly where a spot was saved"
+  (format (clear *pc-temp-string-1*) "~S/Mods/jak-practice-goto.gc" *pc-settings-folder*)
+  (when (and *target* (pc-filepath-exists? *pc-temp-string-1*))
+    (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'read)))
+      (when (file-stream-valid? file)
+        (let ((v (new 'stack-no-clear 'vector))
+              (q (new 'stack-no-clear 'quaternion)))
+          (set! (-> v x) (file-stream-read-float file))
+          (set! (-> v y) (file-stream-read-float file))
+          (set! (-> v z) (file-stream-read-float file))
+          (set! (-> v w) 1.0)
+          (set! (-> q x) (file-stream-read-float file))
+          (set! (-> q y) (file-stream-read-float file))
+          (set! (-> q z) (file-stream-read-float file))
+          (set! (-> q w) (file-stream-read-float file))
+          ;; stop him dead: arriving with the old velocity is how a practice
+          ;; reload becomes a different jump than the one being drilled
+          (set-vector! (-> *target* control transv) 0.0 0.0 0.0 1.0)
+          (set! (-> *target* control trans quad) (-> v quad))
+          (set! (-> *target* control quat quad) (-> q quad)))
+        (file-stream-close file))))
   (none))
