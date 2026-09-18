@@ -96,6 +96,10 @@
 
 (define *twitch-cmd-countdown* 0)
 (define *twitch-pad-countdown* 0)
+;; six frames, matching archipelago's own *ap-state-countdown*: the overlay's
+;; splits detect a cell by watching this file change, and at a slower rate the
+;; number is stale before anything downstream can see it
+(define *run-state-countdown* 0)
 ;; last pad state actually written, so an unchanging pad costs nothing
 (define *twitch-pad-last-b* 0)
 (define *twitch-pad-last-axes* 0)
@@ -302,6 +306,14 @@
   (run-start-poll!)
   (jump-probe-poll!)
   (gravity-probe-poll!)
+  ;; only the build that owns Mods/jak-run-state.js writes it: archipelago's
+  ;; own ap-write-state! flips *run-state-owner?* off after the merge, so the
+  ;; two writers never race for the same file
+  (when *run-state-owner?*
+    (+! *run-state-countdown* -1)
+    (when (>= 0 *run-state-countdown*)
+      (set! *run-state-countdown* 6)
+      (run-state-write!)))
   (none))
 
 ;; ---------------------------------------------------------- run start ------

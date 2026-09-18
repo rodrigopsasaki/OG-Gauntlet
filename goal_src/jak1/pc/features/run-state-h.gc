@@ -1,0 +1,13 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; Declarations for the run-state module. twitch-poll! calls the per-frame
+;; publisher and compiles before pc/features/run-state.gc, so the write needs
+;; declaring here the way twitch-h.gc does for twitch.gc.
+
+(define-extern run-state-write! (function none))
+;; Whether this build owns Mods/jak-run-state.js. Archipelago's own, richer
+;; publisher (ap-write-state!) is the one true writer over there, so it flips
+;; this to #f once at load after merging shared-features; every other build
+;; keeps it #t and writes the game-owned fields itself.
+(define-extern *run-state-owner?* symbol)

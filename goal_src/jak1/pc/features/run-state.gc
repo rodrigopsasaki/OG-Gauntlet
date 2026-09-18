@@ -1,0 +1,281 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; Run-state publisher: mirrors Mods/jak-run-state.js for the stream overlay,
+;; using only facts a plain build already owns.
+;;
+;; Archipelago's ap-write-state! (pc/features/ap-struct.gc, own-archipelago
+;; branch) writes the same file with the same key set, but several of its
+;; fields come from the seed ledger (*ap-info-jak1*) that only exists there.
+;; This publisher reproduces every one of those as the zero or empty value of
+;; the same JSON type, so the overlay never has to special-case which build it
+;; is reading from: a seedless run just always reads zero where a seed would
+;; have reported progress.
+;;
+;; *run-state-owner?* is the handoff switch. Both this file and ap-struct.gc
+;; can be compiled into the same build (archipelago merges shared-features
+;; regularly), and only one of them may write the file: archipelago sets this
+;; to #f once at load, after the merge, so its own richer writer stays the only
+;; one touching Mods/jak-run-state.js there.
+(define *run-state-owner?* #t)
+
+;; ------------------------------------------------------------ level lookup --
+
+(defun run-level-index ((name symbol))
+  "The game's level symbol -> our level index, or -1 outside a tracked level.
+
+   Several places people call one level are more than one level to the game:
+   Spider Cave is maincave, robocave AND darkcave, the Forbidden Jungle has a
+   second half, so does the Lost Precursor City, and the final boss is inside
+   the citadel. Mapping only the first of each is what made a card say
+   `between levels` while standing in Spider Cave. Ported from ap-level-index
+   (ap-struct.gc) so the two builds report the same index for the same level."
+  (cond
+    ((= name 'training) 0)      ((= name 'village1) 1)   ((= name 'jungle) 2)
+    ((= name 'jungleb) 2)
+    ((= name 'beach) 3)         ((= name 'misty) 4)      ((= name 'firecanyon) 5)
+    ((= name 'village2) 6)      ((= name 'rolling) 7)    ((= name 'sunken) 8)
+    ((= name 'sunkenb) 8)
+    ((= name 'swamp) 9)         ((= name 'ogre) 10)      ((= name 'village3) 11)
+    ((= name 'maincave) 12)     ((= name 'robocave) 12)  ((= name 'darkcave) 12)
+    ((= name 'snow) 13)         ((= name 'lavatube) 14)
+    ((= name 'citadel) 15)      ((= name 'finalboss) 15)
+    (else -1)))
+
+(defun run-task-index ((li int))
+  "Our level order -> the game's level-task-data order. They are NOT the same:
+   the game lists beach before jungle, sunken and swamp before rolling, and
+   snow before cave. Every per-level table the game keeps (money-per-level,
+   the game counts, the task data) is in the game's order, so reading them
+   with our index is how Precursor Basin ended up reporting Lost Precursor
+   City's numbers. Ported from ap-task-index (ap-struct.gc)."
+  (cond
+    ((= li 0)  (level-task-data-index training))
+    ((= li 1)  (level-task-data-index village1))
+    ((= li 2)  (level-task-data-index jungle))
+    ((= li 3)  (level-task-data-index beach))
+    ((= li 4)  (level-task-data-index misty))
+    ((= li 5)  (level-task-data-index firecanyon))
+    ((= li 6)  (level-task-data-index village2))
+    ((= li 7)  (level-task-data-index rolling))
+    ((= li 8)  (level-task-data-index sunken))
+    ((= li 9)  (level-task-data-index swamp))
+    ((= li 10) (level-task-data-index ogre))
+    ((= li 11) (level-task-data-index village3))
+    ((= li 12) (level-task-data-index cave))
+    ((= li 13) (level-task-data-index snow))
+    ((= li 14) (level-task-data-index lavatube))
+    ((= li 15) (level-task-data-index citadel))
+    (else -1)))
+
+(defun run-cells-in ((li int))
+  "Cells collected in a level, counted the way the progress screen counts
+   them: a task that has dropped out of the task control list is a task you
+   finished. This is the game's own record, so it reads the same in a plain
+   run as in a seeded one. Ported from ap-game-cells-in (ap-struct.gc)."
+  (let ((n 0) (ti (run-task-index li)))
+    (when (and (>= ti 0) (< ti (-> *level-task-data* length)))
+      (let ((ltd (-> *level-task-data* ti)))
+        (dotimes (i (-> ltd nb-of-tasks))
+          (when (= (get-task-status (-> ltd task-info i task-id)) (task-status invalid))
+            (+! n 1)))))
+    n))
+
+(defun run-cells-total-in ((li int))
+  (let ((ti (run-task-index li)))
+    (if (and (>= ti 0) (< ti (-> *level-task-data* length)))
+      (-> *level-task-data* ti nb-of-tasks)
+      0)))
+
+(defun run-cell-bits ((li int))
+  "Which of the level's tasks are finished, as a bitmask in the order the
+   progress menu lists them. A count alone lights the first N glyphs, which
+   is not what the menu shows: having the third cell and not the first is a
+   real state, and the row should read like the menu reads. Ported from
+   ap-game-cell-bits (ap-struct.gc)."
+  (let ((bits 0) (ti (run-task-index li)))
+    (when (and (>= ti 0) (< ti (-> *level-task-data* length)))
+      (let ((ltd (-> *level-task-data* ti)))
+        (dotimes (i (-> ltd nb-of-tasks))
+          (when (= (get-task-status (-> ltd task-info i task-id)) (task-status invalid))
+            (set! bits (logior bits (ash 1 i)))))))
+    bits))
+
+(defun run-flies-in ((li int))
+  "Scout flies held in a level, from the buzzer task's own bitmask. Ported
+   from ap-game-flies-in (ap-struct.gc)."
+  (let ((n 0) (ti (run-task-index li)))
+    (when (and (>= ti 0) (< ti (-> *level-task-data* length)))
+      (let* ((ltd (-> *level-task-data* ti))
+             (bi (-> ltd buzzer-task-index)))
+        (when (!= bi -1)
+          (set! n (buzzer-count *game-info* (-> ltd task-info bi task-id))))))
+    n))
+
+;; ------------------------------------------------------------- gate rules --
+
+(defun run-warp-max ()
+  "Highest village warp-gate slot unlocked, exactly as warp-gate-init-by-other
+   computes max-slot (goal_src/jak1/levels/village_common/villagep-obs.gc,
+   ~line 261-265): each village's button raises the ceiling once its own hint
+   has been reached, and the base slot is 1 (Geyser Rock / Sandover)."
+  (cond
+    ((task-closed? (game-task village4-button) (task-status need-hint)) 4)
+    ((task-closed? (game-task village3-button) (task-status need-hint)) 3)
+    ((task-closed? (game-task village2-levitator) (task-status need-hint)) 2)
+    (else 1)))
+
+(defun run-training-open? ()
+  "All four training tasks complete, exactly as warp-gate-switch's pressable?
+   gates the training door (villagep-obs.gc, ~line 313-318)."
+  (and (task-complete? *game-info* (game-task training-door))
+       (task-complete? *game-info* (game-task training-gimmie))
+       (task-complete? *game-info* (game-task training-climb))
+       (task-complete? *game-info* (game-task training-buzzer))))
+
+(defun run-gondola-open? ()
+  "Whether the village3 gondola will carry you, replicating the ride gate in
+   goal_src/jak1/levels/village3/village3-obs.gc, ~line 148-161: the button's
+   task must be closed to need-hint, and fuel must clear the button's own
+   saved reminder (its second value) by 2, or clear 71 outright. The gondola's
+   cheat-mode and already-in-snowy shortcuts are player debug paths, not game
+   state, so they are left out of this published gate on purpose."
+  (and (task-closed? (game-task village3-button) (task-status need-hint))
+       (let ((reminder (get-reminder (get-task-control (game-task village3-button)) 2))
+             (fuel (the int (-> *game-info* fuel))))
+         (or (>= fuel (+ reminder 2)) (>= fuel 71)))))
+
+;; ------------------------------------------------------- zeroed key tables --
+
+;; Key names only: the values behind these are ledger-owned (moves, specials
+;; and flies received from a seed) and this build keeps no such ledger, so
+;; every value is 0. The names must still match *ap-move-names* exactly, or
+;; the overlay would see a run-state.js whose moves object has different keys
+;; than archipelago's.
+(define *run-move-names*
+  (new 'static 'boxed-array :type symbol
+    'crouch 'crouch-jump 'crouch-uppercut 'roll
+    'roll-jump 'double-jump 'jump-dive 'jump-kick
+    'punch 'punch-uppercut 'kick))
+
+(define *run-special-names*
+  (new 'static 'boxed-array :type symbol
+    'fishermans-boat 'jungle-elevator 'blue-eco-switch 'flut-flut
+    'warriors-pontoons 'gondola 'yellow-eco-switch 'snowy-fort-gate
+    'freed-the-blue-sage 'freed-the-red-sage 'freed-the-yellow-sage
+    'freed-the-green-sage))
+
+;; Fly-family names, in *ap-fly-names* order (one per level).
+(define *run-fly-names*
+  (new 'static 'boxed-array :type symbol
+    'geyser-rock 'sandover-village 'forbidden-jungle 'sentinel-beach
+    'misty-island 'fire-canyon 'rock-village 'precursor-basin
+    'lost-precursor-city 'boggy-swamp 'mountain-pass 'volcanic-crater
+    'spider-cave 'snowy-mountain 'lava-tube 'gol-and-maias-citadel))
+
+;; -------------------------------------------------------------- the write --
+
+(defun run-state-write! ()
+  "Mirror game-owned state to Mods/jak-run-state.js for the stream overlay.
+   Same key set and formats as ap-write-state!, so the overlay reads either
+   build without caring which one is running. Split across several format
+   calls throughout: a GOAL call takes at most eight parameters, the limit
+   ap-write-state! and ap-write-pad! already work around."
+  (format (clear *pc-temp-string-1*) "~S/Mods/jak-run-state.js" *pc-settings-folder*)
+  (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'write)))
+    (when (file-stream-valid? file)
+      ;; no seed ledger here, so seed/bundles/bundleSize are always zero and
+      ;; cells is always the game's own fuel count
+      (format file "window.AP_STATE={\"seed\":~D,\"cells\":~D,\"bundles\":~D,\"bundleSize\":~D,\"orbs\":~D,\"last\":\"~S\""
+              0
+              (the-as uint (the int (-> *game-info* fuel)))
+              0 0
+              (the int (-> *game-info* money))
+              (-> *twitch-log* 0))
+      (format file ",\"moves\":{")
+      (dotimes (i 11)
+        (format file "~S\"~A\":0" (if (zero? i) "" ",") (-> *run-move-names* i)))
+      (format file "},\"specials\":{")
+      (dotimes (i 12)
+        (format file "~S\"~A\":0" (if (zero? i) "" ",") (-> *run-special-names* i)))
+      (format file "},\"flies\":{")
+      (dotimes (i 16)
+        (format file "~S\"~A\":0" (if (zero? i) "" ",") (-> *run-fly-names* i)))
+      ;; where you are, and how this level is going. *target* is the guard,
+      ;; not a nicety: run-state-write! can run before any level exists, and
+      ;; asking level-get-target-inside then walks an uninitialised level
+      ;; group and takes the game down.
+      (let* ((lvl (if *target*
+                    (aif (level-get-target-inside *level*) (-> it name) 'none)
+                    'none))
+             (li (run-level-index lvl)))
+        (format file "},\"here\":{\"level\":\"~A\",\"index\":~D" lvl li)
+        (when (>= li 0)
+          ;; no seed means "checks" and "cells" are the same question, so both
+          ;; pairs read the game's own count
+          (format file ",\"checksDone\":~D,\"checksTotal\":~D"
+                  (run-cells-in li) (run-cells-total-in li))
+          (format file ",\"cells\":~D,\"cellsTotal\":~D"
+                  (run-cells-in li) (run-cells-total-in li))
+          (format file ",\"cellBits\":~D" (run-cell-bits li))
+          (format file ",\"flies\":~D" (run-flies-in li))
+          (let ((ti (run-task-index li)))
+            (when (>= ti 0)
+              (format file ",\"orbs\":~D,\"orbsTotal\":~D"
+                      (-> *game-info* money-per-level ti)
+                      (-> (get-game-count ti) money-count))))))
+      ;; no ledger to resync, so every kind reads zero
+      (format file "},\"ledger\":{\"cells\":~D,\"flies\":~D,\"specials\":~D,\"caches\":~D}"
+              0 0 0 0)
+      (format file ",\"fuel\":~D" (the int (-> *game-info* fuel)))
+      (format file ",\"jumpApex\":~F,\"jumpN\":~D,\"jumpAir\":~F,\"jumpHang\":~F"
+              *jump-last* *jump-count* *jump-airtime* *jump-hang*)
+      (format file ",\"jumpV0\":~F,\"jumpRise\":~F" *jump-v0* *jump-rise*)
+      (format file ",\"gravDv\":~F,\"gravRate\":~F,\"gravExpect\":~F"
+              *grav-dv* *grav-rate* *grav-expect*)
+      (format file ",\"runStarted\":~D,\"runEnded\":~D"
+              (if *run-started* 1 0) (if *run-ended* 1 0))
+      (format file ",\"gametime\":~D,\"targetFps\":~D"
+              (the int (current-time)) (the int (-> *pc-settings* target-fps)))
+      (format file ",\"speed\":~D,\"vspeed\":~D"
+              (if *target* (the int (vector-xz-length (-> *target* control transv))) 0)
+              (if *target* (the int (-> *target* control transv y)) 0))
+      (format file ",\"velX\":~D,\"velY\":~D,\"velZ\":~D"
+              (if *target* (the int (-> *target* control transv x)) 0)
+              (if *target* (the int (-> *target* control transv y)) 0)
+              (if *target* (the int (-> *target* control transv z)) 0))
+      (let ((fwd (new 'stack-no-clear 'vector)))
+        (if *target*
+          (vector-z-quaternion! fwd (-> *target* control unknown-quaternion00))
+          (set-vector! fwd 0.0 0.0 1.0 1.0))
+        (format file ",\"fwdX\":~F,\"fwdZ\":~F" (-> fwd x) (-> fwd z)))
+      (format file ",\"orbsAll\":~D,\"fliesAll\":~D"
+              (the int (-> *game-info* money-total))
+              (the int (-> *game-info* buzzer-total)))
+      ;; checkpoint: the continue the level-select menu would warp back to.
+      ;; No continue yet (e.g. the title screen) publishes an empty string
+      ;; rather than a null field, so the overlay never has to guard for one.
+      (format file ",\"checkpoint\":\"~S\",\"warpMax\":~D"
+              (let ((cp (-> *game-info* current-continue))) (if cp (-> cp name) ""))
+              (run-warp-max))
+      (format file ",\"gates\":{\"training\":~D,\"village1\":1,\"village2\":~D,\"village3\":~D,\"citadel\":~D}"
+              (if (run-training-open?) 1 0)
+              (if (task-closed? (game-task village2-levitator) (task-status need-hint)) 1 0)
+              (if (task-closed? (game-task village3-button) (task-status need-hint)) 1 0)
+              (if (task-closed? (game-task village4-button) (task-status need-hint)) 1 0))
+      (format file ",\"gondola\":~D" (if (run-gondola-open?) 1 0))
+      (format file ",\"levels\":[")
+      (dotimes (i 16)
+        ;; no seed, so done/total are always the game's own cell count, same
+        ;; as cells/cellsTotal below
+        (format file "~S{\"done\":~D,\"total\":~D,\"cells\":~D"
+                (if (zero? i) "" ",")
+                (run-cells-in i) (run-cells-total-in i) (run-cells-in i))
+        (format file ",\"cellsTotal\":~D,\"flies\":~D,\"cellBits\":~D}"
+                (run-cells-total-in i) (run-flies-in i) (run-cell-bits i)))
+      (format file "],\"log\":[")
+      (dotimes (i 3)
+        (format file "~S\"~S\"" (if (zero? i) "" ",") (-> *twitch-log* i)))
+      (format file "]};~%")
+      (file-stream-close file)))
+  (none))

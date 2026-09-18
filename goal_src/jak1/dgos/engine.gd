@@ -199,6 +199,7 @@
   "task-control-h.o"
   "speedruns-h.o"
   "twitch-h.o" ;; added (twitch integration)
+  "run-state-h.o" ;; added (run-state publisher)
   "game-info.o"
   "game-save.o"
   "settings.o"
@@ -209,6 +210,7 @@
   "pckernel-common.o" ;; added
   "pckernel.o"
   "twitch.o" ;; added (twitch integration)
+  "run-state.o" ;; added (run-state publisher)
   "mood-tables.o"
   "mood.o"
   "weather-part.o"
