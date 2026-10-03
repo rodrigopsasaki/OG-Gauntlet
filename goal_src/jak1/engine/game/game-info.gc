@@ -646,7 +646,9 @@
   0
   (none))
 
-(defun-debug game-task->string ((arg0 game-task))
+;; Always defined for the same reason as task-status->string: release error
+;; paths print with it, and a missing debug function returns register garbage.
+(defun game-task->string ((arg0 game-task))
   (enum->string game-task arg0))
 
 (defmethod debug-print ((this game-info) (arg0 symbol))

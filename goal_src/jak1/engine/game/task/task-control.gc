@@ -6,7 +6,11 @@
 
 ;; DECOMP BEGINS
 
-(defun-debug task-status->string ((arg0 task-status))
+;; Always defined, not defun-debug: the task-control error paths below call this
+;; in every build, and in a non-debug boot a debug function does not exist, so
+;; the call returned whatever was left in the return register and format ~S
+;; crashed on it (A Complicated Mod reopening a cell task hit this on arm64).
+(defun task-status->string ((arg0 task-status))
   (enum->string task-status arg0))
 
 (defmethod get-task ((this task-cstage))
