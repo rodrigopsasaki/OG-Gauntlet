@@ -17,8 +17,6 @@
                  (pickup-collectable! (-> self fact) (the-as pickup-type s4-0) f28-0 (process->handle arg0)))
            #t
            'full))))
-    (('ap-freeze)
-     (go target-ap-freeze))
     (('ap-trip)
      ;; external effect channel: chat made him fall over
      (go target-ap-trip))

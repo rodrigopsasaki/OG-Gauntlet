@@ -44,25 +44,6 @@
   :post target-no-stick-post)
 
 ;; ---- twitch effect states: chat can trip you or root you ----
-(defstate target-ap-freeze (target)
-  "Jak stands rooted for five seconds. Same shape as target-ap-trip: no stick
-   input for the duration, always exits to target-stance, so an external trigger
-   cannot strand him. Gravity still applies, so freezing mid-air drops him first,
-   which is the funny outcome rather than a bug."
-  :event target-standard-event-handler
-  :exit target-exit
-  :code
-    (behavior ()
-      (set! (-> self control unknown-surface00) *walk-no-turn-mods*)
-      (ja-channel-push! 1 (seconds 0.2))
-      (ja-no-eval :group! eichar-stance-loop-ja :num! (seek!) :frame-num 0.0)
-      (let ((start (current-time)))
-        (until (>= (- (current-time) start) (seconds 5))
-          (suspend)
-          (ja :num! (seek!))))
-      (go target-stance))
-  :post target-no-stick-post)
-
 (defstate target-ap-trip (target)
   "Jak trips and picks himself up. Lifted from target-load-wait, which plays this
    same sequence while a level streams in: trip, painful land, get up, back to

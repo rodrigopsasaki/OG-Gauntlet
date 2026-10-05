@@ -95,6 +95,13 @@
   (none))
 
 (define *twitch-cmd-countdown* 0)
+;; !freeze puts the target process to sleep, the trick A Complicated Mod's glare
+;; complication uses: a sleeping process is not updated at all, so Jak hangs in
+;; whatever pose and spot he was in, mid-jump or mid-punch, instead of being
+;; dropped into a standing animation. The handle is of the process we put to
+;; sleep, so a respawn in the meantime can never leave a new Jak asleep.
+(define *twitch-frozen* (the-as handle #f))
+(define *twitch-freeze-until* (the-as time-frame 0))
 (define *twitch-pad-countdown* 0)
 ;; six frames, matching archipelago's own *ap-state-countdown*: the overlay's
 ;; splits detect a cell by watching this file change, and at a slower rate the
@@ -249,6 +256,14 @@
     (+! *twitch-lang-restore* -1)
     (when (zero? *twitch-lang-restore*)
       (set-language *twitch-lang-saved*)))
+  ;; wake a frozen Jak. Checked every frame and outside the effects flag below,
+  ;; so switching chat effects off mid-freeze, or a cutscene starting, can never
+  ;; leave him asleep. current-time stops while paused, so a pause does not eat
+  ;; the freeze.
+  (when (handle->process *twitch-frozen*)
+    (when (or (>= (current-time) *twitch-freeze-until*) (movie?))
+      (logclear! (-> (handle->process *twitch-frozen*) mask) (process-mask sleep))
+      (set! *twitch-frozen* (the-as handle #f))))
   ;; the whole of chat's reach into the game hangs on this one flag
   (when (-> *pc-settings* twitch-effects?)
     (+! *twitch-cmd-countdown* -1)
@@ -266,7 +281,11 @@
                (when *target* (send-event *target* 'ap-trip)))
               (("freeze")
                (twitch-announce file "FROZE YOU")
-               (when *target* (send-event *target* 'ap-freeze)))
+               ;; never during a cutscene: a sleeping Jak cannot play his part
+               (when (and *target* (not (movie?)))
+                 (logior! (-> *target* mask) (process-mask sleep))
+                 (set! *twitch-frozen* (process->handle *target*))
+                 (set! *twitch-freeze-until* (+ (current-time) (seconds 5)))))
               (("say")
                ;; play a spooled voice line by name. The cue comes from the
                ;; command file rather than being baked in, so which line !despair

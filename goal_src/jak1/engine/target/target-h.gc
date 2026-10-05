@@ -191,4 +191,3 @@
 ;; compiles before target2.gc where the state lives, and this codebase has no
 ;; other forward-declared target states, so it needs one here.
 (define-extern target-ap-trip (state target))
-(define-extern target-ap-freeze (state target))
