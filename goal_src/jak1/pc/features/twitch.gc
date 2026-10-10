@@ -63,9 +63,19 @@
 (define *twitch-hud-tail* (new 'global 'string 128 ""))
 
 (defun twitch-copy-range! ((dst string) (src string) (start int) (end int))
-  "dst = src[start, end), terminated"
+  "dst = src[start, end), terminated, in characters the game font can draw.
+
+   jak1's font has no lowercase Latin: the byte values for a-z are the Japanese
+   kana glyphs, and every string the game itself prints is uppercase. Chat is
+   mostly lowercase, so it came out as kana. Lowercase is raised, and anything
+   outside plain ASCII (emoji, accents) becomes ? rather than a stray glyph."
   (dotimes (i (- end start))
-    (set! (-> dst data i) (-> src data (+ start i))))
+    (let ((c (-> src data (+ start i))))
+      (set! (-> dst data i)
+            (cond
+              ((and (>= c 97) (<= c 122)) (- c 32))
+              ((>= c 128) 63)
+              (else c)))))
   (set! (-> dst data (- end start)) 0)
   dst)
 
