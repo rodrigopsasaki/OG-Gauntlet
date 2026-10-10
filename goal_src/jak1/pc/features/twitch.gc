@@ -80,13 +80,17 @@
 
    jak1's font has no lowercase Latin: the byte values for a-z are the Japanese
    kana glyphs, and every string the game itself prints is uppercase. Chat is
-   mostly lowercase, so it came out as kana. Lowercase is raised, and anything
-   outside plain ASCII (emoji, accents) becomes ? rather than a stray glyph."
+   mostly lowercase, so it came out as kana. Lowercase is raised, _ becomes -,
+   and anything outside plain ASCII becomes ? rather than a stray glyph (the
+   stream server already folds accents and drops emoji before chat gets here)."
   (dotimes (i (- end start))
     (let ((c (-> src data (+ start i))))
       (set! (-> dst data i)
             (cond
               ((and (>= c 97) (<= c 122)) (- c 32))
+              ;; no underscore glyph either (it lands on a kanji); usernames
+              ;; are full of them, and a hyphen keeps the name reading as one
+              ((= c 95) 45)
               ((>= c 128) 63)
               (else c)))))
   (set! (-> dst data (- end start)) 0)
