@@ -139,12 +139,6 @@
        (new 'static
             'game-option
             :option-type (game-option-type menu)
-            :name (text-id twitch-options)
-            :scale #t
-            :param3 (game-option-menu twitch-options))
-       (new 'static
-            'game-option
-            :option-type (game-option-type menu)
             :name (text-id load-game)
             :scale #t
             :param3 (game-option-menu load-game))
@@ -191,12 +185,6 @@
             :name (text-id sound-options)
             :scale #t
             :param3 (game-option-menu sound-settings))
-       (new 'static
-            'game-option
-            :option-type (game-option-type menu)
-            :name (text-id twitch-options)
-            :scale #t
-            :param3 (game-option-menu twitch-options))
        (new 'static
             'game-option
             :option-type (game-option-type menu)
@@ -260,6 +248,14 @@
             :name (text-id misc-options)
             :scale #t
             :param3 (game-option-menu misc-options))
+       ;; Twitch lives with the other game options rather than on the top-level
+       ;; menu: it is a preference you set once, not somewhere you go
+       (new 'static
+            'game-option
+            :option-type (game-option-type menu)
+            :name (text-id twitch-options)
+            :scale #t
+            :param3 (game-option-menu twitch-options))
        (new 'static 'game-option :option-type (game-option-type button) :name (text-id back) :scale #t)))
 
 ;; Twitch options. Global rather than per-mod: chat integration is not a feature
