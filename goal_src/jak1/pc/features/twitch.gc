@@ -18,18 +18,11 @@
 (define *twitch-log* (new 'global 'boxed-array string 4))
 (dotimes (i 4)
   (set! (-> *twitch-log* i) (new 'global 'string 64 "")))
-;; log placement, in the 2D text space draw-build-revision uses. Tune here.
-;; Calibrated from an on-screen ruler: this 2D text space runs y 0 (top) to about
-;; 222 (bottom) and x 0 to about 512. The old 352 was well below the screen, which
-;; is why the log was never visible at all.
-(defconstant TWITCH_LOG_X 16.0)
-(defconstant TWITCH_LOG_Y 190.0)
-(defconstant TWITCH_LOG_LINE 9.0)
-;; Font size is fixed on this path, and that is fine: measured against a real
-;; ArchipelaGOAL capture, its in-game log uses this same jak1 font at ~18px/char
-;; against our ~20. Tried and rejected: draw-string-xy-scaled (draws nothing),
-;; the pc-hack flag (shifts x, does not resize), and font-context's scale field
-;; (draw-string ignores it).
+;; log placement, in the 2D text space draw-string-xy-scaled uses: y runs 0 (top)
+;; to about 222 (bottom), x 0 to about 512. Newest line lowest, at TWITCH_LOG_Y.
+(defconstant TWITCH_LOG_X 10.0)
+(defconstant TWITCH_LOG_Y 200.0)
+(defconstant TWITCH_LOG_LINE 10.0)
 (define *twitch-log-time* (the-as time-frame 0))
 
 (define *twitch-scratch* (new 'global 'string 128 ""))
@@ -41,11 +34,6 @@
   (format (clear (-> *twitch-log* 1)) "~S" (-> *twitch-log* 0))
   (format (clear (-> *twitch-log* 0)) "~S" text)
   (set! *twitch-log-time* (current-time))
-  ;; arm the overlay here rather than only at seed load, so effects are visible
-  ;; in a no-seed run too
-  (pc-ap-log-active 1)
-  (dotimes (i 3)
-    (pc-ap-log-set i (-> *twitch-log* i)))
   (none))
 
 (defun twitch-banner! ((name symbol) (amount int))
@@ -57,8 +45,72 @@
   (twitch-log-push! *twitch-scratch*)
   (none))
 
-(defun twitch-draw-banner ()
-  "kept as main.gc's hook, but the log is drawn by the imgui overlay now"
+;; ------------------------------------------------------------------ hud --
+;; The log is drawn in the game's own font, the way A Complicated Mod draws its
+;; rules: shadowed text through draw-string-xy-scaled, the first word in a
+;; colour and the rest in white. It used to be an imgui overlay with a desktop
+;; TTF, which was crisp but looked pasted on; Rodrigo preferred the mod's look.
+;; Every line already reads "<who> <what>": a chat line is "name: text", an
+;; effect is "viewer FROZE YOU", an item is "FOUND thing". So the first word is
+;; the speaker: teal for chat, orange for effects and updates.
+;;
+;; It draws from its own process, like the mod's countdown. An earlier attempt
+;; drew from main.gc's menu hook, where draw-string-xy-scaled put nothing on
+;; screen; from a process's frame it works, which is what the mod relies on.
+(defconstant TWITCH_HUD_SCALE 0.4)
+(define *twitch-hud* (the-as handle #f))
+(define *twitch-hud-head* (new 'global 'string 64 ""))
+(define *twitch-hud-tail* (new 'global 'string 128 ""))
+
+(defun twitch-copy-range! ((dst string) (src string) (start int) (end int))
+  "dst = src[start, end), terminated"
+  (dotimes (i (- end start))
+    (set! (-> dst data i) (-> src data (+ start i))))
+  (set! (-> dst data (- end start)) 0)
+  dst)
+
+(defun twitch-hud-width ((str string))
+  (let ((ctx (new 'stack 'font-context *font-default-matrix* 0 0 0.0 (font-color white)
+                  (font-flags shadow kerning large))))
+    (the int (* (get-string-length str ctx) TWITCH_HUD_SCALE))))
+
+(defun twitch-hud-draw ()
+  "the newest three log lines, newest lowest"
+  (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug-no-zbuf))
+    (dotimes (i 3)
+      (let* ((line (-> *twitch-log* i))
+             (n (length line))
+             (sp n)
+             (y (the int (- TWITCH_LOG_Y (* (the float i) TWITCH_LOG_LINE)))))
+        (when (nonzero? n)
+          (dotimes (k n)
+            (when (and (= sp n) (= (-> line data k) 32)) (set! sp k)))
+          (twitch-copy-range! *twitch-hud-head* line 0 sp)
+          ;; the tail keeps its leading space, so the two halves join naturally
+          (twitch-copy-range! *twitch-hud-tail* line sp n)
+          (draw-string-xy-scaled *twitch-hud-head* buf (the int TWITCH_LOG_X) y
+                                 (if (and (> sp 0) (= (-> line data (+ sp -1)) 58)) ;; ':' ends a chat name
+                                   (font-color triangleb)
+                                   (font-color orangeb))
+                                 (font-flags shadow kerning large) TWITCH_HUD_SCALE)
+          (when (< sp n)
+            (draw-string-xy-scaled *twitch-hud-tail* buf
+                                   (+ (the int TWITCH_LOG_X) (twitch-hud-width *twitch-hud-head*)) y
+                                   (font-color white) (font-flags shadow kerning large) TWITCH_HUD_SCALE))))))
+  (none))
+
+(defun twitch-hud-ensure! ()
+  "keep exactly one hud process alive; a reset can kill it, so check every frame"
+  (when (not (handle->process *twitch-hud*))
+    (set! *twitch-hud*
+          (ppointer->handle
+            (process-spawn-function process
+                                    (lambda :behavior process ()
+                                      (loop
+                                        (twitch-hud-draw)
+                                        (suspend)))
+                                    :to *active-pool*
+                                    :name 'twitch-hud))))
   (none))
 
 
@@ -228,6 +280,7 @@
 
    Effects are deliberately additive or self-terminating, and nothing here may
    touch a mod's own state. Chat can shove you; it can never strand a run."
+  (twitch-hud-ensure!)
   ;; Every third frame, ~50Hz at the 150fps target. This was cut to 12 frames on
   ;; the theory that the file write was making the GAME choppy; it was not --
   ;; only the panel ever was, and cutting the publisher is what made it so. The

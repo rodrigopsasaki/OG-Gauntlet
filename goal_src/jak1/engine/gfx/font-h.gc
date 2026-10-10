@@ -48,7 +48,21 @@
   (progress-percent 31)
   (credits 32)
   (red-reverse 33)
-  (red-obverse 34))
+  (red-obverse 34)
+  (rule-orange 35)
+  (hot-pink 36)
+  (purple 37)
+  (amber 38)
+  (lime 39)
+  (crimson 40)
+  (orangeb 41)
+  (redb 42)
+  (triangleb 43)
+  (vibrant-purple 44)
+  (dark-purple 45)
+  (lavender 46)
+  (amber-orange 47)
+  (sunset-orange 48))
 
 (defenum font-flags
   :type uint32
@@ -791,20 +805,174 @@
                       (static-rgba #x80 #x60 #x20 #x80)
                       (static-rgba #x60 #x00 #x00 #x80)
                       (static-rgba #x60 #x00 #x00 #x80)))
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
-            (new 'static 'char-color)
+            ;; 35 - rule-orange
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #x80 #x50 #x10 #x80)
+                      (static-rgba #x80 #x50 #x10 #x80)
+                      (static-rgba #x30 #x20 #x00 #x80)
+                      (static-rgba #x30 #x20 #x00 #x80)))
+            ;; 36 - hot-pink
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #x80 #x35 #x5a #x80)
+                      (static-rgba #x80 #x35 #x5a #x80)
+                      (static-rgba #x40 #x1a #x2d #x80)
+                      (static-rgba #x40 #x1a #x2d #x80)))
+            ;; 37 - purple
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #x70 #x30 #x80 #x80)
+                      (static-rgba #x70 #x30 #x80 #x80)
+                      (static-rgba #x30 #x00 #x40 #x80)
+                      (static-rgba #x30 #x00 #x40 #x80)))
+            ;; 38 - amber/gold
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #xFF #xA5 #x00 #x80)
+                      (static-rgba #xFF #xA5 #x00 #x80)
+                      (static-rgba #x60 #x30 #x00 #x80)
+                      (static-rgba #x60 #x30 #x00 #x80)))
+            ;; 39 - lime
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #x50 #xFF #x50 #x80)
+                      (static-rgba #x50 #xFF #x50 #x80)
+                      (static-rgba #x00 #x50 #x00 #x80)
+                      (static-rgba #x00 #x50 #x00 #x80)))
+            ;; 40 - crimson
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #xFF #x30 #x30 #x80)
+                      (static-rgba #xFF #x30 #x30 #x80)
+                      (static-rgba #x50 #x00 #x00 #x80)
+                      (static-rgba #x50 #x00 #x00 #x80)))
+            ;; 41 - orangeb
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #xFF #x5E #x00 #x80)
+                      (static-rgba #xFF #x5E #x00 #x80)
+                      (static-rgba #x50 #x1D #x00 #x80)
+                      (static-rgba #x50 #x1D #x00 #x80)))
+            ;; 42 - redb
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #xA8 #x38 #x38 #x80)
+                      (static-rgba #xA8 #x38 #x38 #x80)
+                      (static-rgba #x40 #x10 #x10 #x80)
+                      (static-rgba #x40 #x10 #x10 #x80)))
+            ;; 43 - triangleb
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #x14 #x7A #x5C #x80)
+                      (static-rgba #x14 #x7A #x5C #x80)
+                      (static-rgba #x09 #x38 #x2B #x80)
+                      (static-rgba #x09 #x38 #x2B #x80)))
+            ;; 44 - vibrant purple
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #x80 #x20 #x80 #x80)
+                      (static-rgba #x80 #x20 #x80 #x80)
+                      (static-rgba #x30 #x00 #x40 #x80)
+                      (static-rgba #x30 #x00 #x40 #x80)))
+            ;; 45 - dark eco violet
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #x60 #x10 #x80 #x80)
+                      (static-rgba #x60 #x10 #x80 #x80)
+                      (static-rgba #x15 #x00 #x30 #x80)
+                      (static-rgba #x15 #x00 #x30 #x80)))
+            ;; 46 - lavender
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #x78 #x60 #x80 #x80)
+                      (static-rgba #x78 #x60 #x80 #x80)
+                      (static-rgba #x35 #x20 #x40 #x80)
+                      (static-rgba #x35 #x20 #x40 #x80)))
+            ;; 47 - amber orange
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #x80 #x50 #x10 #x80)
+                      (static-rgba #x80 #x50 #x10 #x80)
+                      (static-rgba #x50 #x15 #x00 #x80)
+                      (static-rgba #x50 #x15 #x00 #x80)))
+            ;; 48 - sunset orange
+            (new 'static
+                 'char-color
+                 :color
+                 (new 'static
+                      'array
+                      rgba
+                      4
+                      (static-rgba #x80 #x48 #x10 #x80)
+                      (static-rgba #x80 #x48 #x10 #x80)
+                      (static-rgba #x46 #x1C #x00 #x80)
+                      (static-rgba #x46 #x1C #x00 #x80)))
             (new 'static 'char-color)
             (new 'static 'char-color)
             (new 'static 'char-color)
