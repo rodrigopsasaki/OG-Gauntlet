@@ -58,7 +58,20 @@
 ;; drew from main.gc's menu hook, where draw-string-xy-scaled put nothing on
 ;; screen; from a process's frame it works, which is what the mod relies on.
 (defconstant TWITCH_HUD_SCALE 0.4)
-(define *twitch-hud* (the-as handle #f))
+;; 64-bit state lives in a structure, never in a bare global: a jak1 symbol holds
+;; only 32 bits, so a handle stored in one loses its pid and handle->process can
+;; never match it again. That is how the hud first respawned every frame until the
+;; process pool ran dry, and how a frozen Jak would never have been woken.
+(deftype twitch-procs (structure)
+  ((hud          handle)
+   (frozen       handle)
+   (freeze-until time-frame)))
+(define *twitch-procs* (new 'global 'twitch-procs))
+;; #f, not zero: handle->process treats any non-#f process field as a real
+;; process and dereferences it, so an empty handle has to say #f explicitly
+(set! (-> *twitch-procs* hud) (the-as handle #f))
+(set! (-> *twitch-procs* frozen) (the-as handle #f))
+(set! (-> *twitch-procs* freeze-until) 0)
 (define *twitch-hud-head* (new 'global 'string 64 ""))
 (define *twitch-hud-tail* (new 'global 'string 128 ""))
 
@@ -111,8 +124,8 @@
 
 (defun twitch-hud-ensure! ()
   "keep exactly one hud process alive; a reset can kill it, so check every frame"
-  (when (not (handle->process *twitch-hud*))
-    (set! *twitch-hud*
+  (when (not (handle->process (-> *twitch-procs* hud)))
+    (set! (-> *twitch-procs* hud)
           (ppointer->handle
             (process-spawn-function process
                                     (lambda :behavior process ()
@@ -162,8 +175,6 @@
 ;; whatever pose and spot he was in, mid-jump or mid-punch, instead of being
 ;; dropped into a standing animation. The handle is of the process we put to
 ;; sleep, so a respawn in the meantime can never leave a new Jak asleep.
-(define *twitch-frozen* (the-as handle #f))
-(define *twitch-freeze-until* (the-as time-frame 0))
 (define *twitch-pad-countdown* 0)
 ;; six frames, matching archipelago's own *ap-state-countdown*: the overlay's
 ;; splits detect a cell by watching this file change, and at a slower rate the
@@ -323,10 +334,10 @@
   ;; so switching chat effects off mid-freeze, or a cutscene starting, can never
   ;; leave him asleep. current-time stops while paused, so a pause does not eat
   ;; the freeze.
-  (when (handle->process *twitch-frozen*)
-    (when (or (>= (current-time) *twitch-freeze-until*) (movie?))
-      (logclear! (-> (handle->process *twitch-frozen*) mask) (process-mask sleep))
-      (set! *twitch-frozen* (the-as handle #f))))
+  (when (handle->process (-> *twitch-procs* frozen))
+    (when (or (>= (current-time) (-> *twitch-procs* freeze-until)) (movie?))
+      (logclear! (-> (handle->process (-> *twitch-procs* frozen)) mask) (process-mask sleep))
+      (set! (-> *twitch-procs* frozen) (the-as handle #f))))
   ;; the whole of chat's reach into the game hangs on this one flag
   (when (-> *pc-settings* twitch-effects?)
     (+! *twitch-cmd-countdown* -1)
@@ -347,8 +358,8 @@
                ;; never during a cutscene: a sleeping Jak cannot play his part
                (when (and *target* (not (movie?)))
                  (logior! (-> *target* mask) (process-mask sleep))
-                 (set! *twitch-frozen* (process->handle *target*))
-                 (set! *twitch-freeze-until* (+ (current-time) (seconds 5)))))
+                 (set! (-> *twitch-procs* frozen) (process->handle *target*))
+                 (set! (-> *twitch-procs* freeze-until) (+ (current-time) (seconds 5)))))
               (("say")
                ;; play a spooled voice line by name. The cue comes from the
                ;; command file rather than being baked in, so which line !despair
