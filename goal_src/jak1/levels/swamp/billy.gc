@@ -549,6 +549,7 @@
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
       (case message
         (('billy-rat-die)
+         (minigame-rat-killed! (-> self current-wave))
          (+! (-> self num-rats) -1)
          (let* ((f0-2 (rand-float-gen))
                 (f0-3 (* 3.0 f0-2)))
@@ -607,6 +608,7 @@
                      (set! (-> gp-0 destination x) (+ 6799.36 (-> gp-0 destination x)))))))))))))
   :enter
     (behavior ()
+      (minigame-start! 'rats)
       (add-setting! 'music 'danger 0.0 0)
       (ja-channel-set! 0)
       (clear-collide-with-as (-> self root))
@@ -650,6 +652,7 @@
           (set! a1-8 (car gp-2)))))
   :exit
     (behavior ()
+      (minigame-stop!)
       (restore-collide-with-as (-> self root))
       (restore-load-state-and-cleanup *load-state*)
       (set! (-> *ACTOR-bank* birth-max) 1000)

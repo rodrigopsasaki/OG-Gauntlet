@@ -1198,6 +1198,7 @@
          (set! (-> self missed) (the-as int v0-2))
          v0-2)
         (('fisher-fish-caught)
+         (minigame-fish-caught! (-> self block) (the-as int (-> block param 0)))
          (send-event *target* 'bounce)
          (set! v0-2 (+ (-> self caught) (-> block param 0)))
          (set! (-> self caught) (the-as int v0-2))
@@ -1206,6 +1207,7 @@
         (('bad) (set! v0-2 (seekl (-> self caught) 0 10)) (set! (-> self caught) (the-as int v0-2)) v0-2)))
   :enter
     (behavior ()
+      (minigame-start! 'fish)
       (set-setting! 'ambient-volume 'rel 50.0 0)
       (send-event *target* 'reset-pickup 'eco)
       (ja-channel-set! 0)
@@ -1223,6 +1225,7 @@
       (init! (-> self query) (the-as string #f) 40 150 25 #t (lookup-text! *common-text* (text-id quit) #f)))
   :exit
     (behavior ()
+      (minigame-stop!)
       (remove-setting! 'ambient-volume)
       (let* ((v1-2 *camera-other-matrix*)
              (a3-0 (-> *camera-combiner* inv-camera-rot))

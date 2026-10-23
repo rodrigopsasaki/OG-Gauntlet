@@ -173,6 +173,73 @@
     'lost-precursor-city 'boggy-swamp 'mountain-pass 'volcanic-crater
     'spider-cave 'snowy-mountain 'lava-tube 'gol-and-maias-citadel))
 
+;; --------------------------------------------------------- minigame tally --
+
+;; The fishing game and Boggy Billy's rats, counted per phase for the stage.
+;; The games themselves keep one running number (the fisher's pounds, billy's
+;; rats alive), which cannot say which phase a catch came from or whether a +5
+;; was one big fish, so their event handlers report every catch and kill here
+;; as it happens. Index 0 of each array is phase 1.
+(defconstant MINIGAME_MAX_PHASES 16)
+
+(deftype minigame-tally (structure)
+  ((game    symbol)
+   (playing symbol)
+   (round   int32)
+   (phase   int32)
+   (fish1   int32 16)
+   (fish5   int32 16)
+   (rats    int32 16)))
+(define *minigame-tally* (new 'global 'minigame-tally))
+(set! (-> *minigame-tally* game) 'none)
+(set! (-> *minigame-tally* playing) #f)
+
+(defun minigame-start! ((game symbol))
+  "A game began. The round number moves on so the overlay can tell a retry
+   apart from more of the same game, even when both start at zero."
+  (let ((tally *minigame-tally*))
+    (set! (-> tally game) game)
+    (set! (-> tally playing) #t)
+    (+! (-> tally round) 1)
+    (set! (-> tally phase) 1)
+    (dotimes (i MINIGAME_MAX_PHASES)
+      (set! (-> tally fish1 i) 0)
+      (set! (-> tally fish5 i) 0)
+      (set! (-> tally rats i) 0)))
+  (none))
+
+(defun minigame-stop! ()
+  "Won, lost or quit. The counts stay, so the result can still be read."
+  (set! (-> *minigame-tally* playing) #f)
+  (none))
+
+(defun minigame-enter-phase! ((phase int))
+  "Make phase current and return its slot. Phases only ever move forward, and
+   a game longer than the arrays keeps counting into the last slot."
+  (set! (-> *minigame-tally* phase) (max phase (-> *minigame-tally* phase)))
+  (min (+ phase -1) (+ MINIGAME_MAX_PHASES -1)))
+
+(defun minigame-fish-caught! ((block int) (pounds int))
+  "Every *fisher-params* table (levels/jungle/fisher.gc) is a 2 second rest
+   before each burst of fish, and the first burst is a warm-up that drops a
+   single fish. A fish lands a second or two after it drops, about a rest's
+   length, so a catch during a rest belongs to the burst before it, and the
+   warm-up's fish to the first real burst: blocks 3 and 4 are phase 1, 5 and
+   6 are phase 2."
+  (let ((slot (minigame-enter-phase! (max 1 (/ (+ block -1) 2)))))
+    (if (= pounds 5)
+      (+! (-> *minigame-tally* fish5 slot) 1)
+      (+! (-> *minigame-tally* fish1 slot) 1)))
+  (none))
+
+(defun minigame-rat-killed! ((wave int))
+  "Billy's current-wave runs 0 to 5: even waves spawn rats, odd ones wait for
+   the last of them to die (billy-game-update, levels/swamp/billy.gc). A kill
+   while waiting belongs to the wave that spawned the rat, so there are three
+   phases."
+  (+! (-> *minigame-tally* rats (minigame-enter-phase! (+ (/ wave 2) 1))) 1)
+  (none))
+
 ;; -------------------------------------------------------------- the write --
 
 (defun run-state-write! ()
@@ -264,6 +331,14 @@
               (if (task-closed? (game-task village3-button) (task-status need-hint)) 1 0)
               (if (task-closed? (game-task village4-button) (task-status need-hint)) 1 0))
       (format file ",\"gondola\":~D" (if (run-gondola-open?) 1 0))
+      (let ((tally *minigame-tally*))
+        (format file ",\"minigame\":{\"game\":\"~A\",\"playing\":~D,\"round\":~D,\"phases\":["
+                (-> tally game) (if (-> tally playing) 1 0) (-> tally round))
+        (dotimes (i (min (-> tally phase) MINIGAME_MAX_PHASES))
+          (format file "~S{\"fish1\":~D,\"fish5\":~D,\"rats\":~D}"
+                  (if (zero? i) "" ",")
+                  (-> tally fish1 i) (-> tally fish5 i) (-> tally rats i)))
+        (format file "]}"))
       (format file ",\"levels\":[")
       (dotimes (i 16)
         ;; no seed, so done/total are always the game's own cell count, same
