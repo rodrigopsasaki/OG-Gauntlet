@@ -525,6 +525,7 @@
   (none))
 
 (defbehavior billy-game-update billy ()
+  (minigame-billy-clock! (-> self current-wave) (the-as int (get-reminder (-> self tasks) 0)) (the-as int (- (current-time) (-> self wave-start-time))))
   (let ((v1-0 (-> self current-wave)))
     (cond
       ((or (zero? v1-0) (= v1-0 2) (= v1-0 4)) (billy-game-update-wave))

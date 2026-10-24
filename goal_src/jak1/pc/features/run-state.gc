@@ -189,6 +189,9 @@
    (phase   int32)
    (missed  int32)
    (outcome symbol)
+   (wave    int32)
+   (spawn-left int32)
+   (spawn-len  int32)
    (fish1   int32 16)
    (fish5   int32 16)
    (rats    int32 16)))
@@ -207,6 +210,9 @@
     (set! (-> tally phase) 1)
     (set! (-> tally missed) 0)
     (set! (-> tally outcome) 'none)
+    (set! (-> tally wave) 0)
+    (set! (-> tally spawn-left) 0)
+    (set! (-> tally spawn-len) 0)
     (dotimes (i MINIGAME_MAX_PHASES)
       (set! (-> tally fish1 i) 0)
       (set! (-> tally fish5 i) 0)
@@ -253,6 +259,24 @@
     (set! (-> *minigame-tally* outcome) outcome))
   (none))
 
+(defun minigame-billy-clock! ((wave int) (failures int) (elapsed int))
+  "Billy's wave and how long it keeps sending rats, in ms, called every frame
+   with his current-wave, the task's failure reminder and the frames since
+   the wave began. Even waves spawn for a fixed time, odd ones wait for the
+   last rat to die. The lengths mirror billy-game-update-wave (billy.gc),
+   which shortens the later waves a step for every five failures, up to
+   three steps."
+  (let* ((step (min 3 (/ (+ failures 1) 5)))
+         (len (case wave
+                ((0) 15000)
+                ((2) (if (< step 2) 20000 18000))
+                ((4) (case step ((0) 25000) ((1) 22000) (else 20000)))
+                (else 0))))
+    (set! (-> *minigame-tally* wave) wave)
+    (set! (-> *minigame-tally* spawn-len) len)
+    (set! (-> *minigame-tally* spawn-left) (max 0 (- len (/ (* elapsed 10) 3)))))
+  (none))
+
 (defun minigame-rat-killed! ((wave int))
   "Billy's current-wave runs 0 to 5: even waves spawn rats, odd ones wait for
    the last of them to die (billy-game-update, levels/swamp/billy.gc). A kill
@@ -266,8 +290,10 @@
    because two writers publish the state file (this one, and ap-write-state! in
    the archipelago build), and the stage must read the same shape from both."
   (let ((tally *minigame-tally*))
-    (format file ",\"minigame\":{\"game\":\"~A\",\"playing\":~D,\"round\":~D,\"missed\":~D,\"outcome\":\"~A\",\"phases\":["
+    (format file ",\"minigame\":{\"game\":\"~A\",\"playing\":~D,\"round\":~D,\"missed\":~D,\"outcome\":\"~A\","
             (-> tally game) (if (-> tally playing) 1 0) (-> tally round) (-> tally missed) (-> tally outcome))
+    (format file "\"wave\":~D,\"spawnLeft\":~D,\"spawnLen\":~D,\"phases\":["
+            (-> tally wave) (-> tally spawn-left) (-> tally spawn-len))
     (dotimes (i (min (-> tally phase) MINIGAME_MAX_PHASES))
       (format file "~S{\"fish1\":~D,\"fish5\":~D,\"rats\":~D}"
               (if (zero? i) "" ",")
