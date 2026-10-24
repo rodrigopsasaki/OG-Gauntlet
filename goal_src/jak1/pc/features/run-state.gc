@@ -187,12 +187,15 @@
    (playing symbol)
    (round   int32)
    (phase   int32)
+   (missed  int32)
+   (outcome symbol)
    (fish1   int32 16)
    (fish5   int32 16)
    (rats    int32 16)))
 (define *minigame-tally* (new 'global 'minigame-tally))
 (set! (-> *minigame-tally* game) 'none)
 (set! (-> *minigame-tally* playing) #f)
+(set! (-> *minigame-tally* outcome) 'none)
 
 (defun minigame-start! ((game symbol))
   "A game began. The round number moves on so the overlay can tell a retry
@@ -202,6 +205,8 @@
     (set! (-> tally playing) #t)
     (+! (-> tally round) 1)
     (set! (-> tally phase) 1)
+    (set! (-> tally missed) 0)
+    (set! (-> tally outcome) 'none)
     (dotimes (i MINIGAME_MAX_PHASES)
       (set! (-> tally fish1 i) 0)
       (set! (-> tally fish5 i) 0)
@@ -232,6 +237,22 @@
       (+! (-> *minigame-tally* fish1 slot) 1)))
   (none))
 
+(defun minigame-fish-missed! ((pounds int))
+  "Pounds that got past the net. The fisherman calls the game off at
+   *FISHER-bank* max-missed of them, so the stage counts toward that too."
+  (+! (-> *minigame-tally* missed) pounds)
+  (none))
+
+(defun minigame-over! ((outcome symbol))
+  "How the game ended, for the stage to say so: won, eel (the poisonous
+   fish was caught, which ends fishing on the spot), missed (too many got
+   away) or snack (a rat reached Farthy's snacks). The first reason given
+   stands: an eel ends the game before its done state looks at the counts,
+   and 'none from there leaves a quit as just stopped."
+  (if (= (-> *minigame-tally* outcome) 'none)
+    (set! (-> *minigame-tally* outcome) outcome))
+  (none))
+
 (defun minigame-rat-killed! ((wave int))
   "Billy's current-wave runs 0 to 5: even waves spawn rats, odd ones wait for
    the last of them to die (billy-game-update, levels/swamp/billy.gc). A kill
@@ -245,8 +266,8 @@
    because two writers publish the state file (this one, and ap-write-state! in
    the archipelago build), and the stage must read the same shape from both."
   (let ((tally *minigame-tally*))
-    (format file ",\"minigame\":{\"game\":\"~A\",\"playing\":~D,\"round\":~D,\"phases\":["
-            (-> tally game) (if (-> tally playing) 1 0) (-> tally round))
+    (format file ",\"minigame\":{\"game\":\"~A\",\"playing\":~D,\"round\":~D,\"missed\":~D,\"outcome\":\"~A\",\"phases\":["
+            (-> tally game) (if (-> tally playing) 1 0) (-> tally round) (-> tally missed) (-> tally outcome))
     (dotimes (i (min (-> tally phase) MINIGAME_MAX_PHASES))
       (format file "~S{\"fish1\":~D,\"fish5\":~D,\"rats\":~D}"
               (if (zero? i) "" ",")

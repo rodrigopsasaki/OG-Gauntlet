@@ -379,6 +379,7 @@
       (ja-channel-set! 1)
       (ja :group! (get-art-elem self))
       (send-event *target* 'end-mode)
+      (minigame-over! (if (> (-> self num-snacks) 0) 'won 'snack))
       (when (and (handle->process (-> self offending-rat)) (zero? (-> self num-snacks)))
         (send-event *camera* 'change-target (handle->process (-> self offending-rat)))
         (send-event *camera* 'change-state cam-standoff 0)
