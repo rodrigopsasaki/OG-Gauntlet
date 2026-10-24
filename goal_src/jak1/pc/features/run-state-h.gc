@@ -11,3 +11,6 @@
 ;; this to #f once at load after merging shared-features; every other build
 ;; keeps it #t and writes the game-owned fields itself.
 (define-extern *run-state-owner?* symbol)
+;; The fishing and rat tally as the state file's "minigame" member, shared by
+;; both writers so the stage reads one shape whichever build is running.
+(define-extern minigame-write-json (function file-stream none))

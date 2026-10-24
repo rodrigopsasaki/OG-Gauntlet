@@ -240,6 +240,20 @@
   (+! (-> *minigame-tally* rats (minigame-enter-phase! (+ (/ wave 2) 1))) 1)
   (none))
 
+(defun minigame-write-json ((file file-stream))
+  "The tally as the \"minigame\" member of the state object. Its own function
+   because two writers publish the state file (this one, and ap-write-state! in
+   the archipelago build), and the stage must read the same shape from both."
+  (let ((tally *minigame-tally*))
+    (format file ",\"minigame\":{\"game\":\"~A\",\"playing\":~D,\"round\":~D,\"phases\":["
+            (-> tally game) (if (-> tally playing) 1 0) (-> tally round))
+    (dotimes (i (min (-> tally phase) MINIGAME_MAX_PHASES))
+      (format file "~S{\"fish1\":~D,\"fish5\":~D,\"rats\":~D}"
+              (if (zero? i) "" ",")
+              (-> tally fish1 i) (-> tally fish5 i) (-> tally rats i)))
+    (format file "]}"))
+  (none))
+
 ;; -------------------------------------------------------------- the write --
 
 (defun run-state-write! ()
@@ -331,14 +345,7 @@
               (if (task-closed? (game-task village3-button) (task-status need-hint)) 1 0)
               (if (task-closed? (game-task village4-button) (task-status need-hint)) 1 0))
       (format file ",\"gondola\":~D" (if (run-gondola-open?) 1 0))
-      (let ((tally *minigame-tally*))
-        (format file ",\"minigame\":{\"game\":\"~A\",\"playing\":~D,\"round\":~D,\"phases\":["
-                (-> tally game) (if (-> tally playing) 1 0) (-> tally round))
-        (dotimes (i (min (-> tally phase) MINIGAME_MAX_PHASES))
-          (format file "~S{\"fish1\":~D,\"fish5\":~D,\"rats\":~D}"
-                  (if (zero? i) "" ",")
-                  (-> tally fish1 i) (-> tally fish5 i) (-> tally rats i)))
-        (format file "]}"))
+      (minigame-write-json file)
       (format file ",\"levels\":[")
       (dotimes (i 16)
         ;; no seed, so done/total are always the game's own cell count, same
