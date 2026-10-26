@@ -500,13 +500,16 @@
 ;; Common art registers in the default level, so he must look there (texture-level 2), not in the
 ;; level of the dummy's entity, or initialize-skeleton fails to find his art group.
 ;; Sort 1 is the pris (character) draw group, as for Jak, the sidekick and the other common characters.
+;; No :shadow. His shadow mesh is the heaviest in the game (335 double edges, the next is 225). The EE writes the
+;; silhouette edge list for the shadow VU1 with an 8-bit VIF NUM field (shadow-add-double-edges), which wraps once
+;; 252 entries are listed; gk's ShadowRenderer then asserts offset + 16 == next.size_bytes. In his bind pose he
+;; already lists 166 to 215 entries whichever way the light points, so a posed body leaves little room.
 (defskelgroup *gauntlet-yellowsage-sg*
   yellowsage
   yellowsage-lod0-jg
   yellowsage-yellowsage-idle-ja
   ((yellowsage-lod0-mg (meters 20)) (yellowsage-lod1-mg (meters 999999)))
   :bounds (static-spherem 0 0 0 3)
-  :shadow yellowsage-shadow-mg
   :texture-level 2
   :sort 1)
 
