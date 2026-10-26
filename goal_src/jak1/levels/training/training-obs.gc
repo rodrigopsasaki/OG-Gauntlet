@@ -7,6 +7,7 @@
 (require "engine/game/effect-control.gc")
 (require "engine/anim/joint-exploder.gc")
 (require "engine/camera/pov-camera-h.gc")
+(require "engine/game/projectiles.gc")
 
 ;; DECOMP BEGINS
 
@@ -439,7 +440,8 @@
 (deftype scarecrow-a (process-drawable)
   ((root                collide-shape :override)
    (incomming-attack-id uint64)
-   (intersection        vector :inline))
+   (intersection        vector :inline)
+   (last-shot-time      time-frame))
   (:state-methods
    idle
    (hit float vector symbol)))
@@ -448,11 +450,61 @@
 (deftype scarecrow-b (process-drawable)
   ((root                collide-shape :override)
    (incomming-attack-id uint64)
-   (intersection        vector :inline))
+   (intersection        vector :inline)
+   (last-shot-time      time-frame))
   (:state-methods
    idle
    (hit float vector symbol)))
 
+
+;; gauntlet: the training dummies turn on Jak. These are the knobs for how hard they shoot.
+(defconstant GAUNTLET_DUMMY_SHOT_INTERVAL (seconds 0.3)) ;; time between shots, per dummy
+(defconstant GAUNTLET_DUMMY_RANGE (meters 20)) ;; a dummy only fires while Jak is this close
+(defconstant GAUNTLET_DUMMY_SHOT_SPEED (meters 40)) ;; Jak's own shot is 60; slower here so a sidestep beats it
+
+;; gauntlet: Jak's yellow eco shot, turned around. It flies straight at where Jak was when it
+;; fired and hits Jak (plus walls). Jak's own projectile-yellow is untouched.
+(deftype gauntlet-shot (projectile-yellow)
+  ())
+
+
+(defmethod projectile-method-26 ((this gauntlet-shot))
+  "Collide with Jak and walls only. Leaving enemy out is what stops the shot from ever hitting the dummy that fired it."
+  ((method-of-type projectile-yellow projectile-method-26) this)
+  (set! (-> this root root-prim collide-with) (collide-kind background target))
+  (backup-collide-with-as (-> this root))
+  (none))
+
+(defmethod projectile-method-27 ((this gauntlet-shot))
+  "The launch flash points where the root faces, and a dummy does not face Jak, so face along the flight."
+  (quaternion-vector-angle! (-> this root quat) (new 'static 'vector :y 1.0 :w 1.0) (vector-y-angle (-> this root transv)))
+  ((method-of-type projectile-yellow projectile-method-27) this)
+  (none))
+
+(defmethod projectile-method-28 ((this gauntlet-shot))
+  "Jak's shot searches for the nearest enemy to home on. This one keeps the point fixed at launch, so it flies straight."
+  (set! (-> this target quad) (-> this target-base quad))
+  (none))
+
+(defun gauntlet-dummy-shoot-jak ((body collide-shape))
+  "Fire one gauntlet-shot from the training dummy that owns body, at Jak. Returns the shot, or #f when Jak is out of range or not shootable."
+  (when (and *target*
+             (not (logtest? (-> *target* state-flags)
+                            (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
+             (>= GAUNTLET_DUMMY_RANGE (vector-vector-distance (-> body trans) (-> *target* control trans))))
+    (let ((muzzle (new 'stack-no-clear 'vector))
+          (heading (new 'stack-no-clear 'vector))
+          (velocity (new 'stack-no-clear 'vector)))
+      ;; leave from the middle of the dummy's body, aim at Jak's chest as he is right now
+      (set! (-> muzzle quad) (-> body trans quad))
+      (+! (-> muzzle y) (-> body root-prim local-sphere y))
+      (set! (-> heading quad) (-> (target-pos 0) quad))
+      (+! (-> heading y) 4915.2)
+      (vector-! heading heading muzzle)
+      (vector-normalize! heading 1.0)
+      (vector-float*! velocity heading GAUNTLET_DUMMY_SHOT_SPEED)
+      (vector+float*! muzzle muzzle heading 6144.0)
+      (process-spawn gauntlet-shot :init projectile-init-by-other (-> body process entity) muzzle velocity 0 #f :to (-> body process)))))
 
 (defskelgroup *scarecrow-a-sg*
   scarecrow-a
@@ -513,7 +565,9 @@
   :trans
     (behavior ()
       (if (and *target* (>= 40960.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-        (get-reminder (get-task-control (game-task training-gimmie)) 0)))
+        (get-reminder (get-task-control (game-task training-gimmie)) 0))
+      (when (time-elapsed? (-> self last-shot-time) GAUNTLET_DUMMY_SHOT_INTERVAL)
+        (if (gauntlet-dummy-shoot-jak (-> self root)) (set-time! (-> self last-shot-time)))))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.12))
@@ -639,6 +693,10 @@
   :event
     (-> (method-of-type scarecrow-a idle)
         event)
+  :trans
+    (behavior ()
+      (when (time-elapsed? (-> self last-shot-time) GAUNTLET_DUMMY_SHOT_INTERVAL)
+        (if (gauntlet-dummy-shoot-jak (-> self root)) (set-time! (-> self last-shot-time)))))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.12))
