@@ -350,4 +350,8 @@
   "ropebridge.o"
   "ticky.o"
   "hud-classes-pc.o" ;; added
+  ;; gauntlet: the yellow sage the training dummies turn into. His art group and its tpage ship in CIT.DGO only,
+  ;; so they live here, with his models in GAME.fr3 (common_art_groups in the decompiler config).
+  "yellowsage-ag.go"
+  "tpage-1417.go"
  ))
