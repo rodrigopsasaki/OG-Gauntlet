@@ -629,7 +629,40 @@
       (vector<-cspace! out (-> body node-list data (joint-node-index yellowsage-lod0-jg caneExhaust)))))
   out)
 
-(defun gauntlet-sage-log-body ((sage-pid int) (body manipy))
+(defun gauntlet-sage-feet ((body manipy) (out vector))
+  "Where his feet are in the world: the lowest of his two toe-ball joints in height, and halfway between them
+   on the ground plane. Falls back to the body's own root while the skeleton is not up."
+  (set! (-> out quad) (-> body root trans quad))
+  (let ((nodes (-> body node-list))
+        (left (new 'stack-no-clear 'vector))
+        (right (new 'stack-no-clear 'vector)))
+    (when (and (< (joint-node-index yellowsage-lod0-jg Lball) (-> nodes length))
+               (< (joint-node-index yellowsage-lod0-jg Rball) (-> nodes length)))
+      (vector<-cspace! left (-> nodes data (joint-node-index yellowsage-lod0-jg Lball)))
+      (vector<-cspace! right (-> nodes data (joint-node-index yellowsage-lod0-jg Rball)))
+      (set! (-> out x) (* 0.5 (+ (-> left x) (-> right x))))
+      (set! (-> out y) (fmin (-> left y) (-> right y)))
+      (set! (-> out z) (* 0.5 (+ (-> left z) (-> right z))))))
+  out)
+
+(defbehavior gauntlet-sage-plant gauntlet-sage ()
+  "Stand his body on the spot he appears at. His attack anims come from the Citadel scene and are authored around a
+   different origin (his main joint plays about 7 m below the body's root), so his feet are read off the skeleton and the
+   body's root is moved by however far they are from the ground. The skeleton he is read from was posed from the root
+   as set last frame, so the correction is exact and stays put once he is planted, for either of his anims."
+  (let ((body (gauntlet-sage-body (-> self body))))
+    ;; was-drawn is the sign that the body has been posed at least once, so the joints are real
+    (when (and body (nonzero? (-> body draw)) (logtest? (-> body draw status) (draw-status was-drawn)))
+      (let ((feet (new 'stack-no-clear 'vector))
+            (planted (new 'stack-no-clear 'vector)))
+        (gauntlet-sage-feet body feet)
+        (vector-! planted (-> self root trans) feet)
+        (vector+! planted planted (-> body root trans))
+        (set! (-> planted w) 1.0)
+        (send-event body 'trans planted))))
+  0)
+
+(defun gauntlet-sage-log-body ((sage-pid int) (body manipy) (ground-y float))
   "The GAUNTLET SAGE line for a body that is fully set up. Printed as one line in several format calls,
    because format takes at most six arguments each."
   (let* ((draw (-> body draw))
@@ -647,7 +680,9 @@
       (vector<-cspace! probe (-> nodes data GAUNTLET_SAGE_ORIGIN_JOINT))
       (format 0 " main ~M ~M ~M" (-> probe x) (-> probe y) (-> probe z))
       (vector<-cspace! probe (-> nodes data (joint-node-index yellowsage-lod0-jg caneExhaust)))
-      (format 0 " cane ~M ~M ~M" (-> probe x) (-> probe y) (-> probe z)))
+      (format 0 " cane ~M ~M ~M" (-> probe x) (-> probe y) (-> probe z))
+      (gauntlet-sage-feet body probe)
+      (format 0 " feet ~M ~M ~M ground ~M" (-> probe x) (-> probe y) (-> probe z) ground-y))
     ;; the world matrices the bone pass starts from; the translation row is where each bone sits, and the length of
     ;; the x axis is its scale (about 1.0 for a sane bone, 0 or huge for a broken one)
     (dotimes (i (min GAUNTLET_SAGE_LOG_JOINTS (-> nodes length)))
@@ -667,7 +702,7 @@
         ((not body) (format 0 "GAUNTLET SAGE: pid ~D no body~%" (-> self pid)))
         ((or (zero? (-> body draw)) (zero? (-> body skel)) (not (-> body node-list)) (zero? (-> body node-list)))
          (format 0 "GAUNTLET SAGE: pid ~D body ~D not set up~%" (-> self pid) (-> body pid)))
-        (else (gauntlet-sage-log-body (-> self pid) body)))))
+        (else (gauntlet-sage-log-body (-> self pid) body (-> self root trans y))))))
   0)
 
 (defstate gauntlet-sage-attack (gauntlet-sage)
@@ -679,6 +714,7 @@
           (go gauntlet-sage-vanish))
         (seek-to-point-toward-point! (-> self root) (target-pos 0) 524288.0 (seconds 0.1))
         (send-event body 'rot-quat (-> self root quat))
+        (gauntlet-sage-plant)
         (gauntlet-sage-log)))
   :code
     (behavior ()
