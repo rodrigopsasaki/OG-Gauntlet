@@ -14,3 +14,7 @@
 ;; The fishing and rat tally as the state file's "minigame" member, shared by
 ;; both writers so the stage reads one shape whichever build is running.
 (define-extern minigame-write-json (function file-stream none))
+;; "From here": answers a request for Jak's position and the loaded levels' actors
+;; (Mods/jak-snapshot-request.txt -> Mods/jak-snapshot.json). Polled every frame
+;; from twitch-poll!, a no-op except one exists-check per 30 frames.
+(define-extern snapshot-poll! (function none))

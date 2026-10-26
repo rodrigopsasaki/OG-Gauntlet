@@ -408,3 +408,190 @@
       (format file "]};~%")
       (file-stream-close file)))
   (none))
+
+;; ------------------------------------------------------------- the snapshot --
+
+;; "From here": on request, publish where Jak is and a map of every actor in the
+;; loaded levels to Mods/jak-snapshot.json, so an assistant can answer about the
+;; spot Rodrigo is standing in. Positions are meters, angles degrees.
+;;
+;; The asker bumps the counter in Mods/jak-snapshot-request.txt; the answer
+;; carries that counter back as "request" so a reader can tell the snapshot
+;; answers its request and not an older one. Nothing else is scheduled: with
+;; no request pending the cost is one exists-check every 30 frames.
+
+(defconstant SNAPSHOT_MAX_ACTORS 2048)
+(defconstant SNAPSHOT_MAX_SPAWNED 64)
+
+(define *snapshot-countdown* 0)
+(define *snapshot-seen* (new 'global 'string 64 ""))
+;; The request file outlives the game, so the first look of a fresh boot only
+;; records where its counter is, as the chat poll does. Unlike chat, a boot
+;; that finds no file also counts as the first look: the first request ever
+;; made creates the file, and treating that one as stale would swallow it.
+(define *snapshot-primed* #f)
+
+;; Nearest-first working sets. Parallel arrays rather than a struct per entry so
+;; one insert serves both the actors and the spawned processes.
+(define *snapshot-actors* (new 'global 'boxed-array entity-actor SNAPSHOT_MAX_ACTORS))
+(define *snapshot-actor-dists* (new 'global 'boxed-array float SNAPSHOT_MAX_ACTORS))
+(define *snapshot-actor-count* 0)
+(define *snapshot-actor-total* 0)
+(define *snapshot-procs* (new 'global 'boxed-array process-drawable SNAPSHOT_MAX_SPAWNED))
+(define *snapshot-proc-dists* (new 'global 'boxed-array float SNAPSHOT_MAX_SPAWNED))
+(define *snapshot-proc-count* 0)
+;; Jak's position for the distance sorts. The process-tree walk takes a lambda
+;; and a lambda captures nothing, so it reads this rather than a parameter.
+(define *snapshot-jak* (new 'global 'vector))
+
+(defmacro snapshot-keep! (objs dists count obj d)
+  "Insert obj at distance d into the nearest-first arrays objs/dists, which
+   hold count entries. When they are full the farthest entry falls off. Gives
+   the new count. A macro because the two sets hold different types and a
+   function would need a cast to serve both. Pass plain variables: the
+   arguments are evaluated more than once."
+  `(let* ((snap-cap (-> ,objs allocated-length))
+          (snap-full? (>= ,count snap-cap))
+          (snap-i (if snap-full? (+ snap-cap -1) ,count)))
+     (cond
+       ((and snap-full? (>= ,d (-> ,dists snap-i))) ,count)
+       (else
+        (while (and (> snap-i 0) (> (-> ,dists (+ snap-i -1)) ,d))
+          (set! (-> ,objs snap-i) (-> ,objs (+ snap-i -1)))
+          (set! (-> ,dists snap-i) (-> ,dists (+ snap-i -1)))
+          (+! snap-i -1))
+        (set! (-> ,objs snap-i) ,obj)
+        (set! (-> ,dists snap-i) ,d)
+        (if snap-full? ,count (+ ,count 1))))))
+
+(defun snapshot-collect-actors! ()
+  "Every entity-actor of every active level, nearest to Jak first. Walks the
+   bsp the way entity-by-name does; only active levels, whose actors are
+   logged in. *snapshot-actor-total* counts all of them, so a reader can tell
+   when the cap cut the far end off."
+  (set! *snapshot-actor-count* 0)
+  (set! *snapshot-actor-total* 0)
+  (dotimes (li (-> *level* length))
+    (let ((lvl (-> *level* level li)))
+      (when (= (-> lvl status) 'active)
+        (let ((actors (-> lvl bsp actors)))
+          (when (nonzero? actors)
+            (dotimes (ai (-> actors length))
+              (let* ((actor (-> actors data ai actor))
+                     (d (if *target* (vector-vector-distance (-> actor extra trans) *snapshot-jak*) 0.0)))
+                (+! *snapshot-actor-total* 1)
+                (set! *snapshot-actor-count*
+                      (snapshot-keep! *snapshot-actors* *snapshot-actor-dists* *snapshot-actor-count* actor d)))))))))
+  (none))
+
+(defun snapshot-collect-spawned! ()
+  "Live process-drawables that no entity made (projectiles and the like),
+   nearest to Jak first. Jak is left out: he has his own member."
+  (set! *snapshot-proc-count* 0)
+  (iterate-process-tree *active-pool*
+                        (lambda ((proc process-drawable))
+                          (when (and (type-type? (-> proc type) process-drawable)
+                                     (not (-> proc entity))
+                                     (not (eq? proc *target*))
+                                     (-> proc root)
+                                     (nonzero? (-> proc root)))
+                            (let ((d (if *target* (vector-vector-distance (-> proc root trans) *snapshot-jak*) 0.0)))
+                              (set! *snapshot-proc-count*
+                                    (snapshot-keep! *snapshot-procs* *snapshot-proc-dists* *snapshot-proc-count* proc d))))
+                          (none))
+                        *null-kernel-context*)
+  (none))
+
+(defun snapshot-write-actor! ((file file-stream) (actor entity-actor) (d float))
+  "One actor as a JSON object: what it is, where, and what its process is
+   doing if it has one. Names are plain identifiers, quoted rather than escaped."
+  (let ((etype (-> actor etype))
+        (proc (-> actor extra process)))
+    (format file "{\"name\":\"~S\",\"type\":\"~S\",\"x\":~m,\"y\":~m,\"z\":~m,\"level\":\"~S\""
+            (res-lump-struct actor 'name basic)
+            (if (and etype (valid? etype type #f #f 0)) etype 'unknown)
+            (-> actor extra trans x) (-> actor extra trans y) (-> actor extra trans z)
+            (-> actor extra level name))
+    (if *target*
+      (format file ",\"dist\":~m" d)
+      (format file ",\"dist\":null"))
+    (cond
+      ((and proc (nonzero? proc))
+       (format file ",\"process\":\"~S\"" (-> proc type))
+       (if (-> proc state)
+         (format file ",\"state\":\"~S\"}" (-> proc state name))
+         (format file ",\"state\":null}")))
+      (else (format file ",\"process\":null,\"state\":null}"))))
+  (none))
+
+(defun snapshot-write-spawned! ((file file-stream) (proc process-drawable) (d float))
+  "One spawned process as a JSON object."
+  (format file "{\"type\":\"~S\",\"x\":~m,\"y\":~m,\"z\":~m"
+          (-> proc type) (-> proc root trans x) (-> proc root trans y) (-> proc root trans z))
+  (if *target*
+    (format file ",\"dist\":~m" d)
+    (format file ",\"dist\":null"))
+  (if (-> proc state)
+    (format file ",\"state\":\"~S\"}" (-> proc state name))
+    (format file ",\"state\":null}"))
+  (none))
+
+(defun snapshot-write! ()
+  "Write Mods/jak-snapshot.json: Jak, then the actors, then the spawned
+   processes. The request counter comes first. The file is rewritten in place,
+   so a reader must see it parse as well as match, or it may catch a half."
+  (when *target*
+    (set! (-> *snapshot-jak* quad) (-> *target* control trans quad)))
+  (snapshot-collect-actors!)
+  (snapshot-collect-spawned!)
+  (format (clear *pc-temp-string-1*) "~S/Mods/jak-snapshot.json" *pc-settings-folder*)
+  (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'write)))
+    (when (file-stream-valid? file)
+      (format file "{\"request\":\"~S\",\"jak\":" *snapshot-seen*)
+      (cond
+        (*target*
+         ;; *target* is the guard for the level too: level-get-target-inside
+         ;; walks the level group and must not run before one exists
+         (format file "{\"level\":\"~S\",\"x\":~m,\"y\":~m,\"z\":~m,\"facing\":~r,\"onGround\":~S"
+                 (aif (level-get-target-inside *level*) (-> it name) 'none)
+                 (-> *snapshot-jak* x) (-> *snapshot-jak* y) (-> *snapshot-jak* z)
+                 (quaternion-y-angle (-> *target* control unknown-quaternion00))
+                 (if (logtest? (-> *target* control status) (cshape-moving-flags onground onsurf)) "true" "false"))
+         (format file ",\"checkpoint\":\"~S\"}"
+                 (let ((cp (-> *game-info* current-continue))) (if cp (-> cp name) ""))))
+        (else (format file "null")))
+      (format file ",\"actorTotal\":~D,\"actors\":[" *snapshot-actor-total*)
+      (dotimes (i *snapshot-actor-count*)
+        (if (nonzero? i) (format file ","))
+        (snapshot-write-actor! file (-> *snapshot-actors* i) (-> *snapshot-actor-dists* i)))
+      (format file "],\"spawned\":[")
+      (dotimes (i *snapshot-proc-count*)
+        (if (nonzero? i) (format file ","))
+        (snapshot-write-spawned! file (-> *snapshot-procs* i) (-> *snapshot-proc-dists* i)))
+      (format file "]}~%")
+      (file-stream-close file)))
+  (none))
+
+(defun snapshot-poll! ()
+  "Per-frame hook: every 30 frames look at the request counter, and answer once
+   when it has changed since the last look."
+  (+! *snapshot-countdown* -1)
+  (when (>= 0 *snapshot-countdown*)
+    (set! *snapshot-countdown* 30)
+    (let ((asked? #f))
+      (format (clear *pc-temp-string-1*) "~S/Mods/jak-snapshot-request.txt" *pc-settings-folder*)
+      (when (pc-filepath-exists? *pc-temp-string-1*)
+        (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'read)))
+          (when (file-stream-valid? file)
+            (file-stream-seek-past-whitespace file)
+            (file-stream-read-word file)
+            ;; the first word is the counter, as in the chat file: an unchanged
+            ;; one means nothing new, with no text to compare
+            (when (not (string= *pc-temp-string* *snapshot-seen*))
+              (format (clear *snapshot-seen*) "~S" *pc-temp-string*)
+              (set! asked? *snapshot-primed*))
+            (file-stream-close file))))
+      (set! *snapshot-primed* #t)
+      ;; the request file is closed before the answer opens its own stream
+      (if asked? (snapshot-write!))))
+  (none))
