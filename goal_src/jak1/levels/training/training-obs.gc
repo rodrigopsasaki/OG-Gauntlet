@@ -458,8 +458,8 @@
 
 
 ;; gauntlet: the training dummies turn on Jak. These are the knobs for how hard they shoot.
-(defconstant GAUNTLET_DUMMY_VOLLEY_INTERVAL (seconds 1.5)) ;; time between volley starts, per dummy
-(defconstant GAUNTLET_DUMMY_VOLLEY_GAP (seconds 0.12)) ;; time between shots within a volley
+(defconstant GAUNTLET_DUMMY_VOLLEY_INTERVAL (seconds 3.0)) ;; time between volley starts, per dummy
+(defconstant GAUNTLET_DUMMY_VOLLEY_GAP (seconds 0.4)) ;; time between shots within a volley
 (defconstant GAUNTLET_DUMMY_VOLLEY_SIZE 5) ;; shots per volley, swept across a fan centred on the aim at Jak
 (defconstant GAUNTLET_DUMMY_VOLLEY_SPREAD (degrees 15)) ;; angle between neighbouring shots in the fan
 (defconstant GAUNTLET_DUMMY_RANGE (meters 20)) ;; a dummy turns into a sage and fires once Jak is this close
