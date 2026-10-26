@@ -437,11 +437,20 @@
   :bounds (static-bspherem 0 0 0 1)
   :parts ((sp-item 2913)))
 
+(deftype gauntlet-volley (structure)
+  ((start-time     time-frame)
+   (next-shot-time time-frame)
+   (shots-left     int32)
+   (sweep          float)
+   (heading        vector :inline)
+   (muzzle         vector :inline)))
+
+
 (deftype scarecrow-a (process-drawable)
   ((root                collide-shape :override)
    (incomming-attack-id uint64)
    (intersection        vector :inline)
-   (last-shot-time      time-frame))
+   (volley              gauntlet-volley :inline))
   (:state-methods
    idle
    (hit float vector symbol)))
@@ -451,16 +460,17 @@
   ((root                collide-shape :override)
    (incomming-attack-id uint64)
    (intersection        vector :inline)
-   (last-shot-time      time-frame))
+   (volley              gauntlet-volley :inline))
   (:state-methods
    idle
    (hit float vector symbol)))
 
 
 ;; gauntlet: the training dummies turn on Jak. These are the knobs for how hard they shoot.
-(defconstant GAUNTLET_DUMMY_VOLLEY_INTERVAL (seconds 1.5)) ;; time between volleys, per dummy
-(defconstant GAUNTLET_DUMMY_VOLLEY_SIZE 5) ;; shots per volley, fanned out around the aim at Jak
-(defconstant GAUNTLET_DUMMY_VOLLEY_SPREAD (degrees 15)) ;; angle between neighbouring shots in a volley
+(defconstant GAUNTLET_DUMMY_VOLLEY_INTERVAL (seconds 1.5)) ;; time between volley starts, per dummy
+(defconstant GAUNTLET_DUMMY_VOLLEY_GAP (seconds 0.12)) ;; time between shots within a volley
+(defconstant GAUNTLET_DUMMY_VOLLEY_SIZE 5) ;; shots per volley, swept across a fan centred on the aim at Jak
+(defconstant GAUNTLET_DUMMY_VOLLEY_SPREAD (degrees 15)) ;; angle between neighbouring shots in the fan
 (defconstant GAUNTLET_DUMMY_RANGE (meters 20)) ;; a dummy only fires while Jak is this close
 (defconstant GAUNTLET_DUMMY_SHOT_SPEED (meters 40)) ;; Jak's own shot is 60; slower here so a sidestep beats it
 
@@ -488,32 +498,57 @@
   (set! (-> this target quad) (-> this target-base quad))
   (none))
 
-(defun gauntlet-dummy-shoot-jak ((body collide-shape))
-  "Fire one volley from the training dummy that owns body, at Jak. Returns #t when a volley left, #f when Jak is out of range or not shootable."
-  (when (and *target*
-             (not (logtest? (-> *target* state-flags)
-                            (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
-             (>= GAUNTLET_DUMMY_RANGE (vector-vector-distance (-> body trans) (-> *target* control trans))))
-    (let ((muzzle (new 'stack-no-clear 'vector))
-          (heading (new 'stack-no-clear 'vector))
-          (shot-heading (new 'stack-no-clear 'vector))
-          (velocity (new 'stack-no-clear 'vector)))
-      ;; the volley is a flat fan at Jak's chest height as he is right now: the centre heading
-      ;; ignores his pitch, so every shot stays level and a jump clears the whole fan
-      (set! (-> heading quad) (-> (target-pos 0) quad))
-      (vector-! heading heading (-> body trans))
-      (set! (-> heading y) 0.0)
-      (vector-normalize! heading 1.0)
-      (set! (-> muzzle quad) (-> body trans quad))
-      (set! (-> muzzle y) (+ 4915.2 (-> (target-pos 0) y)))
-      (vector+float*! muzzle muzzle heading 6144.0)
-      (dotimes (i GAUNTLET_DUMMY_VOLLEY_SIZE)
-        (vector-rotate-y! shot-heading
-                          heading
-                          (* GAUNTLET_DUMMY_VOLLEY_SPREAD (- (the float i) (* 0.5 (the float (+ GAUNTLET_DUMMY_VOLLEY_SIZE -1))))))
-        (vector-float*! velocity shot-heading GAUNTLET_DUMMY_SHOT_SPEED)
-        (process-spawn gauntlet-shot :init projectile-init-by-other (-> body process entity) muzzle velocity 0 #f :to (-> body process)))
-      #t)))
+(defun gauntlet-jak-shootable? ((source process-drawable))
+  "True while Jak is close enough to a dummy and in a state worth shooting at."
+  (and *target*
+       (not (logtest? (-> *target* state-flags)
+                      (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
+       (>= GAUNTLET_DUMMY_RANGE (vector-vector-distance (-> source root trans) (-> *target* control trans)))))
+
+(defun gauntlet-dummy-start-volley ((source process-drawable) (volley gauntlet-volley))
+  "Capture the aim at Jak once. The whole volley sweeps around this heading, it is not re-aimed per shot."
+  (let ((heading (-> volley heading)))
+    (set! (-> heading quad) (-> (target-pos 0) quad))
+    (vector-! heading heading (-> source root trans))
+    ;; the fan is flat at Jak's chest height: the heading ignores his pitch, so every shot stays level
+    (set! (-> heading y) 0.0)
+    (vector-normalize! heading 1.0))
+  (set! (-> volley muzzle quad) (-> source root trans quad))
+  (set! (-> volley muzzle y) (+ 4915.2 (-> (target-pos 0) y)))
+  (vector+float*! (-> volley muzzle) (-> volley muzzle) (-> volley heading) 6144.0)
+  ;; alternate left-to-right and right-to-left, like a sprinkler
+  (set! (-> volley sweep) (if (> (-> volley sweep) 0.0) -1.0 1.0))
+  (set! (-> volley shots-left) GAUNTLET_DUMMY_VOLLEY_SIZE)
+  (set-time! (-> volley start-time))
+  0)
+
+(defun gauntlet-dummy-fire-next-shot ((source process-drawable) (volley gauntlet-volley))
+  "Fire the next shot of the volley on the captured heading."
+  (let ((shot-heading (new 'stack-no-clear 'vector))
+        (velocity (new 'stack-no-clear 'vector))
+        (index (- GAUNTLET_DUMMY_VOLLEY_SIZE (-> volley shots-left))))
+    (vector-rotate-y! shot-heading
+                      (-> volley heading)
+                      (* (-> volley sweep)
+                         GAUNTLET_DUMMY_VOLLEY_SPREAD
+                         (- (the float index) (* 0.5 (the float (+ GAUNTLET_DUMMY_VOLLEY_SIZE -1))))))
+    (vector-float*! velocity shot-heading GAUNTLET_DUMMY_SHOT_SPEED)
+    (process-spawn gauntlet-shot :init projectile-init-by-other (-> source entity) (-> volley muzzle) velocity 0 #f :to source))
+  (+! (-> volley shots-left) -1)
+  (set-time! (-> volley next-shot-time))
+  0)
+
+(defun gauntlet-dummy-update-volley ((source process-drawable) (volley gauntlet-volley))
+  "One frame of a dummy's volley: start one every interval, then fire its shots one gap apart.
+   If Jak leaves range or stops being shootable, the rest of the volley is dropped."
+  (cond
+    ((not (gauntlet-jak-shootable? source)) (set! (-> volley shots-left) 0))
+    ((> (-> volley shots-left) 0)
+     (if (time-elapsed? (-> volley next-shot-time) GAUNTLET_DUMMY_VOLLEY_GAP) (gauntlet-dummy-fire-next-shot source volley)))
+    ((time-elapsed? (-> volley start-time) GAUNTLET_DUMMY_VOLLEY_INTERVAL)
+     (gauntlet-dummy-start-volley source volley)
+     (gauntlet-dummy-fire-next-shot source volley)))
+  0)
 
 (defskelgroup *scarecrow-a-sg*
   scarecrow-a
@@ -575,8 +610,7 @@
     (behavior ()
       (if (and *target* (>= 40960.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
         (get-reminder (get-task-control (game-task training-gimmie)) 0))
-      (when (time-elapsed? (-> self last-shot-time) GAUNTLET_DUMMY_VOLLEY_INTERVAL)
-        (if (gauntlet-dummy-shoot-jak (-> self root)) (set-time! (-> self last-shot-time)))))
+      (gauntlet-dummy-update-volley self (-> self volley)))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.12))
@@ -704,8 +738,7 @@
         event)
   :trans
     (behavior ()
-      (when (time-elapsed? (-> self last-shot-time) GAUNTLET_DUMMY_VOLLEY_INTERVAL)
-        (if (gauntlet-dummy-shoot-jak (-> self root)) (set-time! (-> self last-shot-time)))))
+      (gauntlet-dummy-update-volley self (-> self volley)))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.12))
