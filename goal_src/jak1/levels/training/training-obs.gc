@@ -522,13 +522,20 @@
    (muzzle         vector :inline)))
 
 
+;; The sage is the brain: range, puff, volleys, leaving. His body is a manipy (see gauntlet-sage-init-by-other),
+;; the game's own way to put a character from code on screen, so the sage has no skeleton or draw-control of his own.
 (deftype gauntlet-sage (process-drawable)
   ((volley       gauntlet-volley :inline)
    (appear-range float)
-   (leave-range  float))
+   (leave-range  float)
+   (body         handle)
+   (log-time     time-frame))
   (:states
    gauntlet-sage-attack
    gauntlet-sage-vanish))
+
+(defconstant GAUNTLET_SAGE_ORIGIN_JOINT 3) ;; every sage in the game is drawn and culled around his main joint (process-taskable-method-40)
+(defconstant GAUNTLET_SAGE_LOG_JOINTS 5) ;; how many skeleton bones the GAUNTLET SAGE log line reports
 
 
 (defun gauntlet-jak-in-range? ((source process-drawable) (range float))
@@ -593,30 +600,101 @@
      (gauntlet-volley-fire-next source volley)))
   0)
 
+;; His body. A manipy is how the game draws a character from code (finalboss spawns these very sages as manipys, with
+;; exactly these events); it carries the setup a hand-written process-drawable lacks: eye and blend-shape status, the
+;; origin joint, and a code loop that runs the joint math and animation channels.
+(defun gauntlet-sage-body ((body handle))
+  "The manipy that draws the sage, or #f once it is gone."
+  (let ((proc (handle->process body)))
+    (the-as manipy (if (and proc (type-type? (-> proc type) manipy)) proc))))
+
+(defbehavior gauntlet-sage-play gauntlet-sage ((anim string) (mode symbol) (blend time-frame))
+  "Have his body play anim through manipy's own events: mode 'play runs it once, 'loop runs it forever."
+  (let ((body (gauntlet-sage-body (-> self body))))
+    (when body
+      (send-event body 'anim-mode mode)
+      (send-event body 'art-joint-anim anim blend)))
+  0)
+
+(defbehavior gauntlet-sage-anim-done? gauntlet-sage ()
+  "True once the 'play anim has reached its end."
+  (let ((body (gauntlet-sage-body (-> self body))))
+    (and body (send-event body 'query 'done))))
+
+(defbehavior gauntlet-sage-cane gauntlet-sage ((out vector))
+  "Where the cane's exhaust is in the world, which is where the volleys leave. Falls back to where he stands."
+  (set! (-> out quad) (-> self root trans quad))
+  (let ((body (gauntlet-sage-body (-> self body))))
+    (when body
+      (vector<-cspace! out (-> body node-list data (joint-node-index yellowsage-lod0-jg caneExhaust)))))
+  out)
+
+(defun gauntlet-sage-log-body ((sage-pid int) (body manipy))
+  "The GAUNTLET SAGE line for a body that is fully set up. Printed as one line in several format calls,
+   because format takes at most six arguments each."
+  (let* ((draw (-> body draw))
+         (skeleton (-> draw skeleton))
+         (nodes (-> body node-list))
+         (probe (new 'stack-no-clear 'vector)))
+    ;; status bits: draw 1 needs-clip, 2 hidden, 4 no-anim, 8 was-drawn, 16 no-skeleton-update, 32 skip-bones, 128 has-joint-channels
+    ;; skel bits: 1 inited, 8 blerc, 64 blerc-done, 128 eye-done, 256 eye
+    (format 0 "GAUNTLET SAGE: pid ~D body ~D draw #x~X skel #x~X lod ~D chan ~D"
+            sage-pid (-> body pid) (the int (-> draw status)) (the int (-> body skel status)) (-> draw cur-lod) (-> body skel active-channels))
+    (format 0 " frame ~F mode ~A mtx ~D/~D" (-> body skel root-channel 0 frame-num) (-> body anim-mode) (-> *matrix-engine* length) MATRIX_ENGINE_AMOUNT)
+    (format 0 " trans ~M ~M ~M" (-> body root trans x) (-> body root trans y) (-> body root trans z))
+    (format 0 " origin ~M ~M ~M" (-> draw origin x) (-> draw origin y) (-> draw origin z))
+    (when (< (joint-node-index yellowsage-lod0-jg caneExhaust) (-> nodes length))
+      (vector<-cspace! probe (-> nodes data GAUNTLET_SAGE_ORIGIN_JOINT))
+      (format 0 " main ~M ~M ~M" (-> probe x) (-> probe y) (-> probe z))
+      (vector<-cspace! probe (-> nodes data (joint-node-index yellowsage-lod0-jg caneExhaust)))
+      (format 0 " cane ~M ~M ~M" (-> probe x) (-> probe y) (-> probe z)))
+    ;; the world matrices the bone pass starts from; the translation row is where each bone sits, and the length of
+    ;; the x axis is its scale (about 1.0 for a sane bone, 0 or huge for a broken one)
+    (dotimes (i (min GAUNTLET_SAGE_LOG_JOINTS (-> nodes length)))
+      (format 0 " b~D ~M ~M ~M |x| ~F"
+              i (-> skeleton bones i position x) (-> skeleton bones i position y) (-> skeleton bones i position z)
+              (vector-length (-> skeleton bones i transform vector 0))))
+    (format 0 "~%"))
+  0)
+
+(defbehavior gauntlet-sage-log gauntlet-sage ()
+  "Once a second while he is out: one greppable GAUNTLET SAGE line about his body and what the renderer is fed.
+   Every read is guarded, because a null read takes the whole game down."
+  (when (time-elapsed? (-> self log-time) (seconds 1.0))
+    (set-time! (-> self log-time))
+    (let ((body (gauntlet-sage-body (-> self body))))
+      (cond
+        ((not body) (format 0 "GAUNTLET SAGE: pid ~D no body~%" (-> self pid)))
+        ((or (zero? (-> body draw)) (zero? (-> body skel)) (not (-> body node-list)) (zero? (-> body node-list)))
+         (format 0 "GAUNTLET SAGE: pid ~D body ~D not set up~%" (-> self pid) (-> body pid)))
+        (else (gauntlet-sage-log-body (-> self pid) body)))))
+  0)
+
 (defstate gauntlet-sage-attack (gauntlet-sage)
   :trans
     (behavior ()
-      (if (not (gauntlet-jak-in-range? self (-> self leave-range)))
-        (go gauntlet-sage-vanish)
-        (seek-to-point-toward-point! (-> self root) (target-pos 0) 524288.0 (seconds 0.1))))
+      (let ((body (gauntlet-sage-body (-> self body))))
+        ;; no body, no sage
+        (if (or (not body) (not (gauntlet-jak-in-range? self (-> self leave-range))))
+          (go gauntlet-sage-vanish))
+        (seek-to-point-toward-point! (-> self root) (target-pos 0) 524288.0 (seconds 0.1))
+        (send-event body 'rot-quat (-> self root quat))
+        (gauntlet-sage-log)))
   :code
     (behavior ()
-      (ja-channel-push! 1 (seconds 0.1))
-      (ja-no-eval :group! yellowsage-yellowsage-attack-start-ja :num! (seek!) :frame-num 0.0)
-      (until (ja-done? 0)
-        (suspend)
-        (ja :num! (seek!)))
+      (gauntlet-sage-play "yellowsage-yellowsage-attack-start" 'play (seconds 0.1))
+      ;; one frame for the body to take the new anim up, so 'done is asked of the right one
+      (suspend)
+      (until (gauntlet-sage-anim-done?)
+        (suspend))
+      (gauntlet-sage-play "yellowsage-yellowsage-attack-loop" 'loop 0)
       ;; volleys only fly while the attack pose is held, and leave from his cane, where the Citadel beam starts
       (loop
-        (ja-no-eval :group! yellowsage-yellowsage-attack-loop-ja :num! (seek!) :frame-num 0.0)
-        (until (ja-done? 0)
-          (gauntlet-volley-update self
-                                  (-> self volley)
-                                  (vector<-cspace! (new 'stack-no-clear 'vector) (joint-node yellowsage-lod0-jg caneExhaust))
-                                  (-> self appear-range))
-          (suspend)
-          (ja :num! (seek!)))))
-  :post ja-post)
+        (gauntlet-volley-update self
+                                (-> self volley)
+                                (gauntlet-sage-cane (new 'stack-no-clear 'vector))
+                                (-> self appear-range))
+        (suspend))))
 
 (defstate gauntlet-sage-vanish (gauntlet-sage)
   :code
@@ -628,22 +706,27 @@
   "Appear where the dummy stands, facing Jak. He fires while Jak is within appear-range and leaves beyond leave-range."
   (set! (-> self appear-range) appear-range)
   (set! (-> self leave-range) leave-range)
+  (set! (-> self body) (the-as handle #f))
   (set! (-> self root) (new 'process 'trsqv))
   (set! (-> self root trans quad) (-> dummy root trans quad))
   (quaternion-copy! (-> self root quat) (-> dummy root quat))
   (vector-identity! (-> self root scale))
   (point-toward-point! (-> self root) (target-pos 0))
-  ;; He is not a placed actor. Inheriting the dummy's entity would file his draw under Geyser Rock's level
-  ;; (engine, light and shadow settings), where common art like Jak's does not live.
+  ;; He is not a placed actor, and his body is not either: no entity, so his draw is filed under the default level
+  ;; (engine, light and shadow settings), where common art like Jak's lives.
   (set! (-> self entity) #f)
-  (initialize-skeleton self *gauntlet-yellowsage-sg* '())
-  ;; every sage in the game is drawn and culled around his main joint (see process-taskable-method-40)
-  (set! (-> self draw origin-joint-index) (the-as uint 3))
+  (let ((body (manipy-spawn (-> self root trans) #f *gauntlet-yellowsage-sg* #f :to self)))
+    (when body
+      (set! (-> self body) (ppointer->handle body))
+      (send-event (ppointer->process body) 'rot-quat (-> self root quat))
+      ;; the same events finalboss sends its yellow sage: eye and blend-shape status, and the origin joint
+      (send-event (ppointer->process body) 'blend-shape #t)
+      (send-event (ppointer->process body) 'origin-joint-index GAUNTLET_SAGE_ORIGIN_JOINT)))
   (gauntlet-puff (-> self root trans))
   (go gauntlet-sage-attack)
   (none))
 
-;; The sage has no entity, so if initialize-skeleton ever failed for him, process-drawable-art-error would
+;; His body has no entity, so if initialize-skeleton ever failed for it, process-drawable-art-error would
 ;; dereference (-> self entity extra perm) and fault the game. These two ask the questions initialize-skeleton asks,
 ;; of the same art, so the dummy only spawns him when his init cannot take that path. Art groups from GAME.CGO are
 ;; registered in level-default when they link (relocate in joint.gc runs with loading-level = level-default), under
