@@ -492,13 +492,16 @@
 
 ;; The sage's art group is made common (GAME.CGO, see common_art_groups in the decompiler config), so he is
 ;; available on Geyser Rock even though yellowsage-ag.go originally ships in CIT.DGO only.
+;; Common art registers in the default level, so he must look there (texture-level 2), not in the
+;; level of the dummy's entity, or initialize-skeleton fails to find his art group.
 (defskelgroup *gauntlet-yellowsage-sg*
   yellowsage
   yellowsage-lod0-jg
   yellowsage-yellowsage-idle-ja
   ((yellowsage-lod0-mg (meters 20)) (yellowsage-lod1-mg (meters 999999)))
   :bounds (static-spherem 0 0 0 3)
-  :shadow yellowsage-shadow-mg)
+  :shadow yellowsage-shadow-mg
+  :texture-level 2)
 
 (deftype gauntlet-volley (structure)
   ((start-time     time-frame)
@@ -620,14 +623,17 @@
 
 (defun gauntlet-dummy-tick ((dummy process-drawable) (sage handle))
   "Once per frame while a dummy idles. When Jak comes into range the dummy gives way to a sage, who
-   stays until Jak leaves; the dummy is hidden for exactly as long as its sage is out. Returns the sage."
+   stays until Jak leaves; the dummy is hidden for exactly as long as its sage is attacking. Returns the sage."
   (let ((current-sage sage))
     (when (and (not (handle->process sage)) (gauntlet-jak-in-range? dummy GAUNTLET_DUMMY_RANGE))
       (let ((spawned (process-spawn gauntlet-sage :init gauntlet-sage-init-by-other dummy :to dummy)))
         (if spawned (set! current-sage (ppointer->handle spawned)))))
-    (if (handle->process current-sage)
-      (logior! (-> dummy draw status) (draw-status hidden))
-      (logclear! (-> dummy draw status) (draw-status hidden)))
+    ;; hide the dummy only while its sage is really attacking: a sage stuck in an error state
+    ;; (art group not found, say) leaves the dummy standing instead of vanishing silently
+    (let ((sage-process (handle->process current-sage)))
+      (if (and sage-process (= (-> sage-process next-state name) 'gauntlet-sage-attack))
+        (logior! (-> dummy draw status) (draw-status hidden))
+        (logclear! (-> dummy draw status) (draw-status hidden))))
     current-sage))
 
 (defun gauntlet-dummy-dismiss-sage ((dummy process-drawable) (sage handle))
