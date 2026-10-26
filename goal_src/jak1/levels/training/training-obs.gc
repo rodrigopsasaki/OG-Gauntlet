@@ -464,6 +464,11 @@
 (defconstant GAUNTLET_DUMMY_VOLLEY_SPREAD (degrees 15)) ;; angle between neighbouring shots in the fan
 (defconstant GAUNTLET_DUMMY_RANGE (meters 20)) ;; a dummy turns into a sage and fires once Jak is this close
 (defconstant GAUNTLET_SAGE_LEAVE_RANGE (meters 24)) ;; the sage leaves only beyond this, so Jak on the edge of range does not flicker him in and out
+;; The first dummy heralds the rest from the top of the stairs (28 m from it), so the player learns early
+;; that the dummies shoot. It wakes from further away, and every shot rule is otherwise the same.
+(defconstant GAUNTLET_HERALD_DUMMY "scarecrow-a-1") ;; entity name of that dummy
+(defconstant GAUNTLET_HERALD_RANGE (meters 30)) ;; its appear and firing range
+(defconstant GAUNTLET_HERALD_LEAVE_RANGE (meters 34)) ;; its sage leaves beyond this
 (defconstant GAUNTLET_DUMMY_SHOT_SPEED (meters 40)) ;; Jak's own shot is 60; slower here so a sidestep beats it
 
 ;; gauntlet: Jak's yellow eco shot, turned around. It flies straight along the heading it was
@@ -515,7 +520,9 @@
 
 
 (deftype gauntlet-sage (process-drawable)
-  ((volley gauntlet-volley :inline))
+  ((volley       gauntlet-volley :inline)
+   (appear-range float)
+   (leave-range  float))
   (:states
    gauntlet-sage-attack
    gauntlet-sage-vanish))
@@ -571,11 +578,11 @@
   (set-time! (-> volley next-shot-time))
   0)
 
-(defun gauntlet-volley-update ((source process-drawable) (volley gauntlet-volley) (origin vector))
+(defun gauntlet-volley-update ((source process-drawable) (volley gauntlet-volley) (origin vector) (range float))
   "One frame of a volley leaving origin: start one every interval, then fire its shots one gap apart.
    If Jak leaves range or stops being shootable, the rest of the volley is dropped."
   (cond
-    ((not (and (gauntlet-jak-in-range? source GAUNTLET_DUMMY_RANGE) (gauntlet-jak-shootable?))) (set! (-> volley shots-left) 0))
+    ((not (and (gauntlet-jak-in-range? source range) (gauntlet-jak-shootable?))) (set! (-> volley shots-left) 0))
     ((> (-> volley shots-left) 0)
      (if (time-elapsed? (-> volley next-shot-time) GAUNTLET_DUMMY_VOLLEY_GAP) (gauntlet-volley-fire-next source volley)))
     ((time-elapsed? (-> volley start-time) GAUNTLET_DUMMY_VOLLEY_INTERVAL)
@@ -586,7 +593,7 @@
 (defstate gauntlet-sage-attack (gauntlet-sage)
   :trans
     (behavior ()
-      (if (not (gauntlet-jak-in-range? self GAUNTLET_SAGE_LEAVE_RANGE))
+      (if (not (gauntlet-jak-in-range? self (-> self leave-range)))
         (go gauntlet-sage-vanish)
         (seek-to-point-toward-point! (-> self root) (target-pos 0) 524288.0 (seconds 0.1))))
   :code
@@ -600,7 +607,10 @@
       (loop
         (ja-no-eval :group! yellowsage-yellowsage-attack-loop-ja :num! (seek!) :frame-num 0.0)
         (until (ja-done? 0)
-          (gauntlet-volley-update self (-> self volley) (vector<-cspace! (new 'stack-no-clear 'vector) (joint-node yellowsage-lod0-jg caneExhaust)))
+          (gauntlet-volley-update self
+                                  (-> self volley)
+                                  (vector<-cspace! (new 'stack-no-clear 'vector) (joint-node yellowsage-lod0-jg caneExhaust))
+                                  (-> self appear-range))
           (suspend)
           (ja :num! (seek!)))))
   :post ja-post)
@@ -611,8 +621,10 @@
       (gauntlet-puff (-> self root trans))
       (cleanup-for-death self)))
 
-(defbehavior gauntlet-sage-init-by-other gauntlet-sage ((dummy process-drawable))
-  "Appear where the dummy stands, facing Jak."
+(defbehavior gauntlet-sage-init-by-other gauntlet-sage ((dummy process-drawable) (appear-range float) (leave-range float))
+  "Appear where the dummy stands, facing Jak. He fires while Jak is within appear-range and leaves beyond leave-range."
+  (set! (-> self appear-range) appear-range)
+  (set! (-> self leave-range) leave-range)
   (set! (-> self root) (new 'process 'trsqv))
   (set! (-> self root trans quad) (-> dummy root trans quad))
   (quaternion-copy! (-> self root quat) (-> dummy root quat))
@@ -628,15 +640,21 @@
   (go gauntlet-sage-attack)
   (none))
 
+(defun gauntlet-dummy-herald? ((dummy process-drawable))
+  "True for the first dummy, the one that heralds the rest."
+  (name= (res-lump-struct (-> dummy entity) 'name basic) GAUNTLET_HERALD_DUMMY))
+
 (defun gauntlet-dummy-tick ((dummy process-drawable) (sage handle))
   "Once per frame while a dummy idles. When Jak comes into range the dummy gives way to a sage, who
    stays until Jak leaves; the dummy is hidden for exactly as long as its sage is attacking. Returns the sage."
-  (let ((current-sage sage))
+  (let ((current-sage sage)
+        (appear-range (if (gauntlet-dummy-herald? dummy) GAUNTLET_HERALD_RANGE GAUNTLET_DUMMY_RANGE))
+        (leave-range (if (gauntlet-dummy-herald? dummy) GAUNTLET_HERALD_LEAVE_RANGE GAUNTLET_SAGE_LEAVE_RANGE)))
     ;; no sage without his art group: his init would otherwise fault, and the dummy just stays a dummy
     (when (and (not (handle->process sage))
-               (gauntlet-jak-in-range? dummy GAUNTLET_DUMMY_RANGE)
+               (gauntlet-jak-in-range? dummy appear-range)
                (art-group-get-by-name (-> *level* level-default) "yellowsage-ag"))
-      (let ((spawned (process-spawn gauntlet-sage :init gauntlet-sage-init-by-other dummy :to dummy)))
+      (let ((spawned (process-spawn gauntlet-sage :init gauntlet-sage-init-by-other dummy appear-range leave-range :to dummy)))
         (if spawned (set! current-sage (ppointer->handle spawned)))))
     ;; hide the dummy only while its sage is really attacking: a sage stuck in an error state
     ;; (art group not found, say) leaves the dummy standing instead of vanishing silently
