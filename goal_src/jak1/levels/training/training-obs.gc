@@ -806,6 +806,7 @@
     (set! (-> this root) s4-0))
   (process-drawable-from-entity! this arg0)
   (initialize-skeleton this *scarecrow-a-sg* '())
+  (set! (-> this sage) (the-as handle #f))
   (go (method-of-object this idle))
   (none))
 
@@ -947,5 +948,6 @@
     (set! (-> this root) s4-0))
   (process-drawable-from-entity! this arg0)
   (initialize-skeleton this *scarecrow-b-sg* '())
+  (set! (-> this sage) (the-as handle #f))
   (go (method-of-object this idle))
   (none))
