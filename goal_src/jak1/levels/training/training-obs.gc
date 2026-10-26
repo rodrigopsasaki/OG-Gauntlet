@@ -494,6 +494,7 @@
 ;; available on Geyser Rock even though yellowsage-ag.go originally ships in CIT.DGO only.
 ;; Common art registers in the default level, so he must look there (texture-level 2), not in the
 ;; level of the dummy's entity, or initialize-skeleton fails to find his art group.
+;; Sort 1 is the pris (character) draw group, as for Jak, the sidekick and the other common characters.
 (defskelgroup *gauntlet-yellowsage-sg*
   yellowsage
   yellowsage-lod0-jg
@@ -501,7 +502,8 @@
   ((yellowsage-lod0-mg (meters 20)) (yellowsage-lod1-mg (meters 999999)))
   :bounds (static-spherem 0 0 0 3)
   :shadow yellowsage-shadow-mg
-  :texture-level 2)
+  :texture-level 2
+  :sort 1)
 
 (deftype gauntlet-volley (structure)
   ((start-time     time-frame)
@@ -594,11 +596,11 @@
       (until (ja-done? 0)
         (suspend)
         (ja :num! (seek!)))
-      ;; volleys only fly while the attack pose is held, and leave from the tip of his cane
+      ;; volleys only fly while the attack pose is held, and leave from his cane, where the Citadel beam starts
       (loop
         (ja-no-eval :group! yellowsage-yellowsage-attack-loop-ja :num! (seek!) :frame-num 0.0)
         (until (ja-done? 0)
-          (gauntlet-volley-update self (-> self volley) (vector<-cspace! (new 'stack-no-clear 'vector) (joint-node yellowsage-lod0-jg caneEND)))
+          (gauntlet-volley-update self (-> self volley) (vector<-cspace! (new 'stack-no-clear 'vector) (joint-node yellowsage-lod0-jg caneExhaust)))
           (suspend)
           (ja :num! (seek!)))))
   :post ja-post)
@@ -616,7 +618,12 @@
   (quaternion-copy! (-> self root quat) (-> dummy root quat))
   (vector-identity! (-> self root scale))
   (point-toward-point! (-> self root) (target-pos 0))
+  ;; He is not a placed actor. Inheriting the dummy's entity would file his draw under Geyser Rock's level
+  ;; (engine, light and shadow settings), where common art like Jak's does not live.
+  (set! (-> self entity) #f)
   (initialize-skeleton self *gauntlet-yellowsage-sg* '())
+  ;; every sage in the game is drawn and culled around his main joint (see process-taskable-method-40)
+  (set! (-> self draw origin-joint-index) (the-as uint 3))
   (gauntlet-puff (-> self root trans))
   (go gauntlet-sage-attack)
   (none))
@@ -625,7 +632,10 @@
   "Once per frame while a dummy idles. When Jak comes into range the dummy gives way to a sage, who
    stays until Jak leaves; the dummy is hidden for exactly as long as its sage is attacking. Returns the sage."
   (let ((current-sage sage))
-    (when (and (not (handle->process sage)) (gauntlet-jak-in-range? dummy GAUNTLET_DUMMY_RANGE))
+    ;; no sage without his art group: his init would otherwise fault, and the dummy just stays a dummy
+    (when (and (not (handle->process sage))
+               (gauntlet-jak-in-range? dummy GAUNTLET_DUMMY_RANGE)
+               (art-group-get-by-name (-> *level* level-default) "yellowsage-ag"))
       (let ((spawned (process-spawn gauntlet-sage :init gauntlet-sage-init-by-other dummy :to dummy)))
         (if spawned (set! current-sage (ppointer->handle spawned)))))
     ;; hide the dummy only while its sage is really attacking: a sage stuck in an error state
