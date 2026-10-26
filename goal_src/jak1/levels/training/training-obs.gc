@@ -640,6 +640,26 @@
   (go gauntlet-sage-attack)
   (none))
 
+;; The sage has no entity, so if initialize-skeleton ever failed for him, process-drawable-art-error would
+;; dereference (-> self entity extra perm) and fault the game. These two ask the questions initialize-skeleton asks,
+;; of the same art, so the dummy only spawns him when his init cannot take that path. Art groups from GAME.CGO are
+;; registered in level-default when they link (relocate in joint.gc runs with loading-level = level-default), under
+;; the name stored in the group itself ("yellowsage", which is the skelgroup's art-group-name, not "yellowsage-ag").
+(defun gauntlet-sage-art-complete? ((art art-group) (skel skeleton-group))
+  "True when the skelgroup's joint geometry and every lod mesh exist in the art group with the types the draw needs."
+  (when (or (>= (-> skel jgeo) (-> art length)) (!= (-> (-> art data (-> skel jgeo)) type) art-joint-geo))
+    (return #f))
+  (dotimes (lod (+ (-> skel max-lod) 1))
+    (when (or (>= (-> skel mgeo lod) (-> art length)) (!= (-> (-> art data (-> skel mgeo lod)) type) merc-ctrl))
+      (return #f)))
+  #t)
+
+(defun gauntlet-sage-art-ready? ()
+  "True when the sage's art group is already registered in level-default and complete, which is where
+   initialize-skeleton looks for a texture-level 2 skelgroup. Never loads anything."
+  (let ((art (art-group-get-by-name (-> *level* level-default) (-> *gauntlet-yellowsage-sg* art-group-name))))
+    (and art (gauntlet-sage-art-complete? art *gauntlet-yellowsage-sg*))))
+
 (defun gauntlet-dummy-herald? ((dummy process-drawable))
   "True for the first dummy, the one that heralds the rest."
   (name= (res-lump-struct (-> dummy entity) 'name basic) GAUNTLET_HERALD_DUMMY))
@@ -650,14 +670,14 @@
   (let ((current-sage sage)
         (appear-range (if (gauntlet-dummy-herald? dummy) GAUNTLET_HERALD_RANGE GAUNTLET_DUMMY_RANGE))
         (leave-range (if (gauntlet-dummy-herald? dummy) GAUNTLET_HERALD_LEAVE_RANGE GAUNTLET_SAGE_LEAVE_RANGE)))
-    ;; no sage without his art group: his init would otherwise fault, and the dummy just stays a dummy
+    ;; no sage without his art: his init would otherwise fault, and the dummy just stays a dummy
     (when (and (not (handle->process sage))
                (gauntlet-jak-in-range? dummy appear-range)
-               (art-group-get-by-name (-> *level* level-default) "yellowsage-ag"))
+               (gauntlet-sage-art-ready?))
       (let ((spawned (process-spawn gauntlet-sage :init gauntlet-sage-init-by-other dummy appear-range leave-range :to dummy)))
         (if spawned (set! current-sage (ppointer->handle spawned)))))
-    ;; hide the dummy only while its sage is really attacking: a sage stuck in an error state
-    ;; (art group not found, say) leaves the dummy standing instead of vanishing silently
+    ;; hide the dummy only while its sage is really attacking, so a sage that never reached
+    ;; his attack state leaves the dummy standing instead of vanishing silently
     (let ((sage-process (handle->process current-sage)))
       (if (and sage-process (= (-> sage-process next-state name) 'gauntlet-sage-attack))
         (logior! (-> dummy draw status) (draw-status hidden))
