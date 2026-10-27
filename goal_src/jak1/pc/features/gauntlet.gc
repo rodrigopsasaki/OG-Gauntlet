@@ -10,6 +10,10 @@
 ;; On Geyser Rock (level training) the bomb also drops by itself, on a fixed spot on the bridge, the first time Jak walks
 ;; within *gauntlet-bridge-trigger-radius* of it, and again only after he has been farther than *gauntlet-bridge-rearm-range* away.
 ;;
+;; The same request also sends a herd of yakows charging at Jak ("7 stampede"), and in Sandover (level village1) the herd
+;; charges by itself, from the Forbidden Jungle side, the first time Jak comes within *gauntlet-stampede-trigger-radius*
+;; of the spot beside the farmer where the player asked for it. See "the stampede" below.
+;;
 ;; The bomb is the big dark eco bomb Gol and Maia's robot drops in the final
 ;; boss (darkecobomb, levels/finalboss/robotboss-weapon.gc), made available
 ;; outside the Citadel:
@@ -618,10 +622,14 @@
 (define *gauntlet-bridge-spot* (new 'static 'vector :x (meters -1313.8) :y (meters 40.5) :z (meters 946.4) :w 1.0))
 (define *gauntlet-bridge-armed* #t) ;; false from the drop until Jak has been far from the bridge again
 
+(defun gauntlet-in-level? ((which symbol))
+  "True when Jak is inside the level called which."
+  (let ((lev (level-get-target-inside *level*)))
+    (and lev (= (-> lev name) which))))
+
 (defun gauntlet-in-training? ()
   "True when Jak is in Geyser Rock."
-  (let ((lev (level-get-target-inside *level*)))
-    (and lev (= (-> lev name) 'training))))
+  (gauntlet-in-level? 'training))
 
 (defun gauntlet-bridge-poll! ()
   "Per-frame: on Geyser Rock, drop one bomb on the bridge spot when Jak comes within *gauntlet-bridge-trigger-radius* of it
@@ -635,6 +643,304 @@
          (set! *gauntlet-bridge-armed* #f)
          (format 0 "GAUNTLET BRIDGE: Jak is ~M m from the bridge spot, dropping the bomb on it~%" distance)
          (gauntlet-bomb-drop! *gauntlet-bridge-spot*)))))
+  0)
+
+;; -------------------------------------------------------------- the stampede --
+
+;; A herd of yakows charges at Jak in a straight line and runs on through. Like the bomb it is available on every level:
+;; the yakow's art group is in GAME.CGO (common_art_groups, with Sandover's pris tpage 400, see game.gd), its skelgroup asks for
+;; texture level 2, and the yakows are a new entity-less process, not the village's yakow, whose code ships in VI1.DGO and
+;; wants a nav mesh. They are a pattern to learn, not a threat that adapts: one fixed formation, one fixed heading, no homing.
+;;
+;; The formation is three columns across a band, the center one on the line through the spot the herd is aimed at, and rows
+;; spaced along the heading, the side columns half a row behind, so a row is a staggered chevron with the center yakow
+;; first. Slot 0 is the center of the lead row and hits the spot dead on, so standing still is always wrong. Between columns
+;; there is a lane about 2 m clear (more than Jak is wide) to sidestep into, and the band is narrow enough to run out of.
+;; Slot i is row i / 3, column i mod 3, so a bigger herd only adds rows behind and the slots of a smaller one never move.
+
+(defconstant GAUNTLET_STAMPEDE_COLUMNS 3) ;; yakows to a row
+(defconstant GAUNTLET_STAMPEDE_COLUMN_SPACING (meters 6.5)) ;; between the columns' centers: the band is 13 m from center to center
+(defconstant GAUNTLET_STAMPEDE_ROW_SPACING (meters 9)) ;; between rows, so at 14 m/s a row arrives every 0.65 s
+(defconstant GAUNTLET_STAMPEDE_APPROACH (meters 50)) ;; the lead row starts this far upstream of the spot it is aimed at
+(defconstant GAUNTLET_STAMPEDE_EXIT (meters 30)) ;; and vanishes this far past it
+(defconstant GAUNTLET_STAMPEDE_PROBE_RAISE (meters 6)) ;; the ground under a yakow is searched for from this far above it, so a rise in the ground does not bury it
+(defconstant GAUNTLET_STAMPEDE_GROUND_SEEK (meters 20)) ;; and a yakow follows the ground up or down at most this fast
+(defconstant GAUNTLET_STAMPEDE_SHOVE_BACK (meters 3.5)) ;; how far a hit throws Jak, about; his own hit reaction runs about as far again as this (target-hit-move)
+(defconstant GAUNTLET_STAMPEDE_SHOVE_UP (meters 1.5)) ;; and how high
+(defconstant GAUNTLET_YAKOW_RADIUS (meters 1.4)) ;; the touch sphere, snug to the body so the lanes are as wide as they look
+(defconstant GAUNTLET_YAKOW_CENTER (meters 1.3)) ;; and how high above its feet it sits
+(defconstant GAUNTLET_YAKOW_RUN_PACE 1.5) ;; the village yakow's run animation speed (yakow-bank run-anim-speed, capped) at its run speed...
+(defconstant GAUNTLET_YAKOW_RUN_PACE_SPEED (meters 6)) ;; ...which is this; faster legs scale with the speed so the stride keeps up
+
+;; No :shadow. Its shadow mesh has not been measured, and the sage's was the heaviest in the game, wrapping the shadow VU1's
+;; 8-bit edge count (see *gauntlet-yellowsage-sg*); a herd of 30 would put 30 shadows on screen at once. Sort 1 is the pris
+;; (character) draw group, and texture level 2 finds the art in level-default, where common art registers. The bounds and
+;; lods are the village yakow's.
+(defskelgroup *gauntlet-yakow-sg*
+  yakow
+  yakow-lod0-jg
+  yakow-run-ja
+  ((yakow-lod0-mg (meters 20)) (yakow-lod1-mg (meters 999999)))
+  :bounds (static-spherem 0 2.5 0 4.4)
+  :longest-edge (meters 1.3)
+  :texture-level 2
+  :sort 1)
+
+(deftype gauntlet-yakow (process-drawable)
+  ((root      collide-shape :override)
+   (heading   vector :inline)
+   (speed     float)
+   (remaining float)
+   (timeout   int)
+   (index     int)
+   (pace      float)
+   (phase     float))
+  (:states
+   gauntlet-yakow-run
+   gauntlet-yakow-gone))
+
+(define *gauntlet-stampede-alive* 0) ;; yakows in the world, so the herd as a whole can be told finished
+(define *gauntlet-stampede-last-hit* (- 0 (seconds 3600))) ;; when a yakow last hurt Jak, long ago until one does
+(define *gauntlet-stampede-armed* #t) ;; false from Sandover's charge until Jak has been far from its spot again
+
+;; Where the Sandover herd comes from, and how that was worked out. The spot is where the player stood, 11 m from farmer-3 and
+;; 19 m from yakow-8 (village1-actors.json). The Forbidden Jungle is not in village1, so there are two readings of which
+;; way it lies from the spot, and they agree: (1) the load boundary that makes the jungle display while Jak is in Sandover
+;; (load-boundary-data.gc, ":fwd (display jungle display-no-wait)") is a small triangle on the way out to it, 98 m, -149 m
+;; / 85 m, -120 m / 115 m, -112 m, whose center is the point below, 126 m to the east and a little north of the spot (north
+;; being -z); (2) the jungle's own first continue point, "jungle-start" (level-info.gc), is at 258 m, -158 m, on the same side
+;; of the spot, 13 degrees off the first reading. The first is used: it is the route Jak actually takes out of Sandover.
+;; The herd starts GAUNTLET_STAMPEDE_APPROACH along the line from the spot toward that point and runs back through the spot.
+(define *gauntlet-stampede-spot* (new 'static 'vector :x (meters -4.059) :y (meters 2.299) :z (meters -55.185) :w 1.0))
+(define *gauntlet-stampede-jungle* (new 'static 'vector :x (meters 99.5) :y (meters 0) :z (meters -127.1) :w 1.0))
+
+(defun gauntlet-stampede-alive? ()
+  "True while any yakow of a herd is still in the world."
+  (> *gauntlet-stampede-alive* 0))
+
+(defun gauntlet-stampede-recent-hit? ()
+  "True from the moment a yakow hurts Jak until the invulnerability that hit gives him has run out. The herd leaves him
+   alone for that long: no yakow hits him again (the target would refuse, and a second hit in the frames before his hit
+   reaction starts would not be refused), and none is solid to him, so he is not held inside a yakow that runs through
+   him while he cannot be hurt."
+  (not (time-elapsed? *gauntlet-stampede-last-hit* (-> *TARGET-bank* hit-invulnerable-timeout))))
+
+(defbehavior gauntlet-yakow-trample gauntlet-yakow ((jak process) (touching touching-shapes-entry))
+  "Jak touched this yakow: one plain 'attack, which his own invulnerability can refuse, never a kill. He is thrown away from
+   the yakow, which with the herd coming at him is mostly along its heading, out of the lane he was standing in."
+  (when (not (gauntlet-stampede-recent-hit?))
+    (let ((knock (vector-! (new 'stack-no-clear 'vector) (target-pos 0) (-> self root trans))))
+      (set! (-> knock y) 0.0)
+      ;; standing exactly on the yakow's center has no direction away from it, so use the way it runs
+      (if (< (vector-xz-length knock) 40.96)
+        (set! (-> knock quad) (-> self heading quad)))
+      (vector-xz-normalize! knock GAUNTLET_STAMPEDE_SHOVE_BACK)
+      (set! (-> knock y) GAUNTLET_STAMPEDE_SHOVE_UP)
+      (when (send-event jak
+                        'attack
+                        touching
+                        (static-attack-info ((mode 'generic)
+                                             (shove-back GAUNTLET_STAMPEDE_SHOVE_BACK)
+                                             (shove-up GAUNTLET_STAMPEDE_SHOVE_UP)
+                                             (vector knock))))
+        (set! *gauntlet-stampede-last-hit* (current-time))
+        (format 0 "GAUNTLET STAMPEDE: yakow ~D trampled Jak~%" (-> self index)))))
+  0)
+
+(defbehavior gauntlet-yakow-event gauntlet-yakow ((proc process) (argc int) (message symbol) (block event-message-block))
+  "The only thing a yakow listens to is Jak touching it: his shape sends 'touched, and he answers every one with 'touch."
+  (case message
+    (('touch) (gauntlet-yakow-trample proc (the-as touching-shapes-entry (-> block param 0)))))
+  #f)
+
+(defbehavior gauntlet-yakow-follow-ground gauntlet-yakow ((most float))
+  "Move the yakow's height toward the ground under it, by at most most. The ground comes back as the probe's own height when
+   there was none to find (see gauntlet-ground-below), and then the yakow keeps the height it has."
+  (let ((probe (new 'stack-no-clear 'vector))
+        (ground (new 'stack-no-clear 'vector)))
+    (set! (-> probe quad) (-> self root trans quad))
+    (+! (-> probe y) GAUNTLET_STAMPEDE_PROBE_RAISE)
+    (gauntlet-ground-below probe ground)
+    (if (< (-> ground y) (-> probe y))
+      (seek! (-> self root trans y) (-> ground y) most)))
+  0)
+
+(defbehavior gauntlet-yakow-step gauntlet-yakow ()
+  "One frame of the charge: a step along the heading at the stampede speed, the height of the ground under it, and whether
+   it is time to go. It gives out when it has run its distance, or when its timeout has passed as a backstop, in case a
+   yakow ever stops getting there."
+  (let ((step (* (-> self speed) (seconds-per-frame))))
+    (+! (-> self root trans x) (* (-> self heading x) step))
+    (+! (-> self root trans z) (* (-> self heading z) step))
+    (+! (-> self remaining) (- step))
+    (gauntlet-yakow-follow-ground (* GAUNTLET_STAMPEDE_GROUND_SEEK (seconds-per-frame)))
+    (set! (-> self root transv x) (* (-> self heading x) (-> self speed)))
+    (set! (-> self root transv z) (* (-> self heading z) (-> self speed)))
+    (set! (-> self root root-prim prim-core offense)
+          (if (gauntlet-stampede-recent-hit?) (collide-offense no-offense) (collide-offense indestructible)))
+    (when (or (<= (-> self remaining) 0.0) (time-elapsed? (-> self state-time) (-> self timeout)))
+      (go gauntlet-yakow-gone)))
+  0)
+
+(defstate gauntlet-yakow-run (gauntlet-yakow)
+  :event gauntlet-yakow-event
+  :enter
+    (behavior ()
+      (set-time! (-> self state-time)))
+  :trans
+    (behavior ()
+      (gauntlet-yakow-step))
+  :code
+    (behavior ()
+      (ja-channel-push! 1 0)
+      (ja :group! yakow-run-ja :num! min)
+      ;; each yakow starts its stride at its own point in the cycle, so a row does not gallop in lockstep
+      (ja :num-func num-func-identity :frame-num (-> self phase))
+      (loop
+        (suspend)
+        (ja :num! (loop! (-> self pace)))))
+  :post transform-post)
+
+(defstate gauntlet-yakow-gone (gauntlet-yakow)
+  :code
+    (behavior ()
+      (deactivate self)))
+
+(defmethod deactivate ((this gauntlet-yakow))
+  "However a yakow goes, running its distance, timing out or the level being torn down under it, it stops counting, and the
+   last to go tells the log the herd is over."
+  (+! *gauntlet-stampede-alive* -1)
+  (if (zero? *gauntlet-stampede-alive*)
+    (format 0 "GAUNTLET STAMPEDE: the herd is gone~%"))
+  ((method-of-type process-drawable deactivate) this)
+  (none))
+
+(defbehavior gauntlet-yakow-init-by-other gauntlet-yakow ((start vector) (heading vector) (run-length float) (index int) (speed float))
+  "Appear at start, which is where this slot of the herd begins, facing along heading (a unit vector on the ground plane)
+   and run-length meters of ground to cover, in game units, at speed."
+  (stack-size-set! (-> self main-thread) 512)
+  ;; counted from the start, so the count and deactivate's uncounting agree whatever happens next
+  (+! *gauntlet-stampede-alive* 1)
+  ;; keep running whatever the actors around do, as the bomb does
+  (logclear! (-> self mask) (process-mask actor-pause))
+  (set! (-> self entity) #f)
+  (set! (-> self index) index)
+  (set! (-> self speed) speed)
+  (set! (-> self remaining) run-length)
+  ;; twice the time the distance takes, and five seconds more
+  (set! (-> self timeout) (+ (the int (* 2.0 (/ run-length speed) (the float (seconds 1)))) (seconds 5)))
+  (set! (-> self heading quad) (-> heading quad))
+  (set! (-> self pace) (fmax 1.0 (* GAUNTLET_YAKOW_RUN_PACE (/ speed GAUNTLET_YAKOW_RUN_PACE_SPEED))))
+  (set! (-> self phase) (the float (mod (* index 5) 16)))
+  ;; a touch sphere that only Jak's own collision looks for: solid, so his move finds it and sends 'touch, and indestructible,
+  ;; which is what makes the move report the touch at all (see the collide-offense comment in collide-shape-h.gc)
+  (let ((shape (new 'process 'collide-shape self (collide-list-enum hit-by-player))))
+    (let ((prim (new 'process 'collide-shape-prim-sphere shape (the uint 0))))
+      (set! (-> prim prim-core collide-as) (collide-kind wall-object))
+      (set! (-> prim collide-with) (collide-kind target))
+      (set! (-> prim prim-core action) (collide-action solid))
+      (set! (-> prim prim-core offense) (collide-offense indestructible))
+      (set-vector! (-> prim local-sphere) 0.0 GAUNTLET_YAKOW_CENTER 0.0 GAUNTLET_YAKOW_RADIUS)
+      (set-root-prim! shape prim))
+    (backup-collide-with-as shape)
+    (set! (-> self root) shape))
+  (set! (-> self root trans quad) (-> start quad))
+  ;; it appears on the ground wherever that is, rather than climbing to it
+  (gauntlet-yakow-follow-ground (meters 1000))
+  (quaternion-vector-angle! (-> self root quat) (new 'static 'vector :y 1.0 :w 1.0) (vector-y-angle heading))
+  (vector-identity! (-> self root scale))
+  (initialize-skeleton self *gauntlet-yakow-sg* '())
+  (update-transforms! (-> self root))
+  (format 0 "GAUNTLET STAMPEDE yakow ~D start ~M ~M ~M~%" index (-> start x) (-> start y) (-> start z))
+  (go gauntlet-yakow-run)
+  (none))
+
+(defun gauntlet-stampede-slot ((index int) (out vector))
+  "Where slot index of the herd stands, written to out: x is how far to the herd's right of its line (the line through the
+   spot it is aimed at), z how far behind the lead row. Column 0 is the center and leads its row, 1 and 2 are the left and
+   right half a row behind."
+  (let* ((row (/ index GAUNTLET_STAMPEDE_COLUMNS))
+         (column (- index (* row GAUNTLET_STAMPEDE_COLUMNS))))
+    (set! (-> out x)
+          (cond
+            ((= column 0) 0.0)
+            ((= column 1) (- GAUNTLET_STAMPEDE_COLUMN_SPACING))
+            (else GAUNTLET_STAMPEDE_COLUMN_SPACING)))
+    (set! (-> out z) (+ (* (the float row) GAUNTLET_STAMPEDE_ROW_SPACING) (if (= column 0) 0.0 (* 0.5 GAUNTLET_STAMPEDE_ROW_SPACING)))))
+  out)
+
+(defun gauntlet-stampede! ((spot vector) (heading vector) (why string))
+  "Send the herd at spot: the lead row starts GAUNTLET_STAMPEDE_APPROACH upstream of it along heading (a unit vector on the
+   ground plane, the way the herd runs), the rest in the formation behind it, and every yakow runs on through to
+   GAUNTLET_STAMPEDE_EXIT past the spot. why says what asked, for the log. Nothing is sent when the yakow's art is not there to draw."
+  (cond
+    ((not (gauntlet-art-ready? *gauntlet-yakow-sg*))
+     (format 0 "GAUNTLET STAMPEDE: the yakow's art group is not loaded, nothing sent~%"))
+    (else
+     (let ((size *gauntlet-stampede-herd-size*)
+           (speed *gauntlet-stampede-speed*)
+           (slot (new 'stack-no-clear 'vector))
+           (start (new 'stack-no-clear 'vector)))
+       (format 0 "GAUNTLET STAMPEDE triggered by ~S: aimed at ~M ~M ~M~%" why (-> spot x) (-> spot y) (-> spot z))
+       (format 0 "GAUNTLET STAMPEDE heading ~D degrees, lead row starts ~M ~M ~M, herd of ~D at ~M m/s~%"
+               (the int (* (vector-y-angle heading) (/ 360.0 DEGREES_PER_ROT)))
+               (- (-> spot x) (* (-> heading x) GAUNTLET_STAMPEDE_APPROACH))
+               (-> spot y)
+               (- (-> spot z) (* (-> heading z) GAUNTLET_STAMPEDE_APPROACH))
+               size
+               speed)
+       (dotimes (i size)
+         (gauntlet-stampede-slot i slot)
+         ;; upstream is behind the heading, and the herd's right is the heading turned a quarter, (z, -x)
+         (let ((upstream (+ GAUNTLET_STAMPEDE_APPROACH (-> slot z))))
+           (set! (-> start x) (+ (- (-> spot x) (* (-> heading x) upstream)) (* (-> heading z) (-> slot x))))
+           (set! (-> start y) (-> spot y))
+           (set! (-> start z) (- (- (-> spot z) (* (-> heading z) upstream)) (* (-> heading x) (-> slot x))))
+           (process-spawn gauntlet-yakow
+                          :init gauntlet-yakow-init-by-other
+                          start
+                          heading
+                          (+ upstream GAUNTLET_STAMPEDE_EXIT)
+                          i
+                          speed
+                          :to *entity-pool*))))))
+  0)
+
+(defun gauntlet-stampede-ahead! ()
+  "The console's stampede: the herd charges at Jak's spot from GAUNTLET_STAMPEDE_APPROACH ahead of where he faces, so
+   he sees it coming, on any level."
+  (let ((heading (vector-z-quaternion! (new 'stack-no-clear 'vector) (-> *target* control quat-for-control))))
+    (set! (-> heading y) 0.0)
+    ;; the herd runs against his facing, toward him
+    (vector-xz-normalize! heading -1.0)
+    (gauntlet-stampede! (target-pos 0) heading "request"))
+  0)
+
+(defun gauntlet-stampede-from-jungle! ()
+  "Sandover's herd: aimed at the spot beside the farmer, upstream toward the Forbidden Jungle, so it charges back out of it."
+  (let ((heading (vector-! (new 'stack-no-clear 'vector) *gauntlet-stampede-spot* *gauntlet-stampede-jungle*)))
+    (set! (-> heading y) 0.0)
+    (vector-xz-normalize! heading 1.0)
+    (gauntlet-stampede! *gauntlet-stampede-spot* heading "Sandover"))
+  0)
+
+(defun gauntlet-stampede-poll! ()
+  "Per-frame: in Sandover, send the herd when Jak comes within *gauntlet-stampede-trigger-radius* of the spot and no herd is
+   running; not again until he has been farther than *gauntlet-stampede-rearm-range* from it, or has left the level. With
+   *gauntlet-stampede-enabled* off it never charges, though it keeps track of Jak coming and going."
+  (cond
+    ((and *target* (gauntlet-in-level? 'village1))
+     (let ((distance (vector-vector-xz-distance (target-pos 0) *gauntlet-stampede-spot*)))
+       (cond
+         ((> distance *gauntlet-stampede-rearm-range*) (set! *gauntlet-stampede-armed* #t))
+         ((and *gauntlet-stampede-enabled*
+               *gauntlet-stampede-armed*
+               (< distance *gauntlet-stampede-trigger-radius*)
+               (not (gauntlet-stampede-alive?)))
+          (set! *gauntlet-stampede-armed* #f)
+          (format 0 "GAUNTLET STAMPEDE: Jak is ~M m from the Sandover spot~%" distance)
+          (gauntlet-stampede-from-jungle!)))))
+    (else (set! *gauntlet-stampede-armed* #t)))
   0)
 
 ;; --------------------------------------------------------------- the console --
@@ -679,7 +985,12 @@
      (,row "dummy-leave-range" meters *gauntlet-dummy-leave-range* GAUNTLET_SAGE_LEAVE_RANGE_DEFAULT 0.0 500.0)
      (,row "herald-range" meters *gauntlet-herald-range* GAUNTLET_HERALD_RANGE_DEFAULT 0.0 500.0)
      (,row "herald-leave-range" meters *gauntlet-herald-leave-range* GAUNTLET_HERALD_LEAVE_RANGE_DEFAULT 0.0 500.0)
-     (,row "dummy-shot-speed" meters *gauntlet-dummy-shot-speed* GAUNTLET_DUMMY_SHOT_SPEED_DEFAULT 0.0 500.0)))
+     (,row "dummy-shot-speed" meters *gauntlet-dummy-shot-speed* GAUNTLET_DUMMY_SHOT_SPEED_DEFAULT 0.0 500.0)
+     (,row "stampede-enabled" flag *gauntlet-stampede-enabled* GAUNTLET_STAMPEDE_ENABLED_DEFAULT 0 0)
+     (,row "stampede-herd-size" count *gauntlet-stampede-herd-size* GAUNTLET_STAMPEDE_HERD_SIZE_DEFAULT 1.0 30.0)
+     (,row "stampede-speed" meters *gauntlet-stampede-speed* GAUNTLET_STAMPEDE_SPEED_DEFAULT 4.0 30.0)
+     (,row "stampede-trigger-radius" meters *gauntlet-stampede-trigger-radius* GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT 0.0 200.0)
+     (,row "stampede-rearm-range" meters *gauntlet-stampede-rearm-range* GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT 0.0 1000.0)))
 
 ;; ---- the settings file
 
@@ -1036,16 +1347,19 @@
      (if (gauntlet-in-training?)
        (gauntlet-bomb-drop! *gauntlet-bridge-spot*)
        (format 0 "GAUNTLET DROP: bomb-bridge asked for off Geyser Rock, ignored~%")))
+    ;; the herd, aimed at Jak's spot from where he faces
+    ((string= kind "stampede") (gauntlet-stampede-ahead!))
     (else (format 0 "GAUNTLET DROP: do not know how to drop ~S~%" kind)))
   0)
 
 (defun gauntlet-drop-poll! ()
-  "Per-frame hook: the console's settings are looked at first, so what they say holds for this frame; the bridge is watched
-   every frame; every GAUNTLET_DROP_POLL_FRAMES frames look at the request counter, and drop once when it has changed since
+  "Per-frame hook: the console's settings are looked at first, so what they say holds for this frame; the bridge and the
+   Sandover spot are watched every frame; every GAUNTLET_DROP_POLL_FRAMES frames look at the request counter, and drop once when it has changed since
    the last look; last, the state file, which then describes this frame."
   (+! *gauntlet-frame* 1)
   (gauntlet-settings-poll!)
   (gauntlet-bridge-poll!)
+  (gauntlet-stampede-poll!)
   (+! *gauntlet-drop-countdown* -1)
   (when (>= 0 *gauntlet-drop-countdown*)
     (set! *gauntlet-drop-countdown* GAUNTLET_DROP_POLL_FRAMES)

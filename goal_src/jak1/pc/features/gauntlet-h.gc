@@ -40,6 +40,11 @@
 (defconstant GAUNTLET_HERALD_RANGE_DEFAULT (meters 30)) ;; its appear and firing range
 (defconstant GAUNTLET_HERALD_LEAVE_RANGE_DEFAULT (meters 34)) ;; its sage leaves beyond this
 (defconstant GAUNTLET_DUMMY_SHOT_SPEED_DEFAULT (meters 40)) ;; Jak's own shot is 60; slower here so a sidestep beats it
+(defconstant GAUNTLET_STAMPEDE_ENABLED_DEFAULT #t) ;; the herd charges by itself at the spot beside the farmer in Sandover
+(defconstant GAUNTLET_STAMPEDE_HERD_SIZE_DEFAULT 8) ;; yakows in a herd, filled three to a row
+(defconstant GAUNTLET_STAMPEDE_SPEED_DEFAULT (meters 14)) ;; Jak runs at 10 m/s, so he cannot outrun them and has to sidestep
+(defconstant GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to the Sandover spot, sideways, sets the herd off
+(defconstant GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT (meters 60)) ;; and it will not charge again until he has been farther than this from it
 
 ;; Times are in ticks (300 a second), lengths and speeds in game units, the spread in rotation units.
 ;; Which of them apply to something already in the world is the console contract's business: a bomb in the air keeps
@@ -64,3 +69,8 @@
 (define *gauntlet-herald-range* GAUNTLET_HERALD_RANGE_DEFAULT)
 (define *gauntlet-herald-leave-range* GAUNTLET_HERALD_LEAVE_RANGE_DEFAULT)
 (define *gauntlet-dummy-shot-speed* GAUNTLET_DUMMY_SHOT_SPEED_DEFAULT) ;; per second
+(define *gauntlet-stampede-enabled* GAUNTLET_STAMPEDE_ENABLED_DEFAULT) ;; off: the herd never charges by itself in Sandover (the console's request still works)
+(define *gauntlet-stampede-herd-size* GAUNTLET_STAMPEDE_HERD_SIZE_DEFAULT)
+(define *gauntlet-stampede-speed* GAUNTLET_STAMPEDE_SPEED_DEFAULT) ;; per second
+(define *gauntlet-stampede-trigger-radius* GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT)
+(define *gauntlet-stampede-rearm-range* GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT)
