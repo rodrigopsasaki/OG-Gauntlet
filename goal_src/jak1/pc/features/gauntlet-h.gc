@@ -45,6 +45,7 @@
 (defconstant GAUNTLET_STAMPEDE_SPEED_DEFAULT (meters 14)) ;; Jak runs at 10 m/s, so he cannot outrun them and has to sidestep
 (defconstant GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to the Sandover spot, sideways, sets the herd off
 (defconstant GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT (meters 60)) ;; and it will not charge again until he has been farther than this from it
+(defconstant GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT 3) ;; yakows charged with red eco, the first slots of the herd: the lead row. Red hits for two and throws far
 
 ;; Times are in ticks (300 a second), lengths and speeds in game units, the spread in rotation units.
 ;; Which of them apply to something already in the world is the console contract's business: a bomb in the air keeps
@@ -74,3 +75,4 @@
 (define *gauntlet-stampede-speed* GAUNTLET_STAMPEDE_SPEED_DEFAULT) ;; per second
 (define *gauntlet-stampede-trigger-radius* GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT)
 (define *gauntlet-stampede-rearm-range* GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT)
+(define *gauntlet-stampede-red-count* GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT) ;; the herd's first this-many slots are red, however big the herd

@@ -298,6 +298,16 @@ const SETTINGS: readonly SettingSpec[] = [
     "live",
     "How far Jak has to walk away from the Sandover spot before the herd can charge again.",
   ),
+  num(
+    "stampede-red-count",
+    "Stampede",
+    "Red yakows",
+    "",
+    [0, 30, 1],
+    "next herd",
+    "How many yakows are charged with red eco, counted from the lead row. A red yakow costs two hits and throws Jak far.",
+    true,
+  ),
 ];
 
 const SPEC_BY_KEY = new Map(SETTINGS.map((spec) => [spec.key, spec]));

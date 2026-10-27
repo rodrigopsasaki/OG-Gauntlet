@@ -657,6 +657,12 @@
 ;; first. Slot 0 is the center of the lead row and hits the spot dead on, so standing still is always wrong. Between columns
 ;; there is a lane about 2 m clear (more than Jak is wide) to sidestep into, and the band is narrow enough to run out of.
 ;; Slot i is row i / 3, column i mod 3, so a bigger herd only adds rows behind and the slots of a smaller one never move.
+;;
+;; Some yakows are charged with red eco, which in the player's language is strength: a red yakow is the same yakow, in the
+;; same slot, with a heavier hit. The first *gauntlet-stampede-red-count* slots are red, so the lead row is red first and the
+;; danger sits where the player learns to look. A red yakow glows red and trails red eco sparks, which are Jak's own red eco
+;; aura (target-powerup-process in powerups.gc: particles 273, 274 and 275, launched at his joints) launched at the yakow's,
+;; and its touch costs two hits instead of one and throws Jak far.
 
 (defconstant GAUNTLET_STAMPEDE_COLUMNS 3) ;; yakows to a row
 (defconstant GAUNTLET_STAMPEDE_COLUMN_SPACING (meters 6.5)) ;; between the columns' centers: the band is 13 m from center to center
@@ -667,6 +673,8 @@
 (defconstant GAUNTLET_STAMPEDE_GROUND_SEEK (meters 20)) ;; and a yakow follows the ground up or down at most this fast
 (defconstant GAUNTLET_STAMPEDE_SHOVE_BACK (meters 3.5)) ;; how far a hit throws Jak, about; his own hit reaction runs about as far again as this (target-hit-move)
 (defconstant GAUNTLET_STAMPEDE_SHOVE_UP (meters 1.5)) ;; and how high
+(defconstant GAUNTLET_STAMPEDE_RED_SHOVE_BACK (meters 9)) ;; a red yakow throws him this far, two and a half times as far
+(defconstant GAUNTLET_STAMPEDE_RED_SHOVE_UP (meters 3)) ;; and twice as high
 (defconstant GAUNTLET_YAKOW_RADIUS (meters 1.4)) ;; the touch sphere, snug to the body so the lanes are as wide as they look
 (defconstant GAUNTLET_YAKOW_CENTER (meters 1.3)) ;; and how high above its feet it sits
 (defconstant GAUNTLET_YAKOW_RUN_PACE 1.5) ;; the village yakow's run animation speed (yakow-bank run-anim-speed, capped) at its run speed...
@@ -694,7 +702,8 @@
    (timeout   int)
    (index     int)
    (pace      float)
-   (phase     float))
+   (phase     float)
+   (red       symbol))
   (:states
    gauntlet-yakow-run
    gauntlet-yakow-gone))
@@ -727,24 +736,25 @@
 
 (defbehavior gauntlet-yakow-trample gauntlet-yakow ((jak process) (touching touching-shapes-entry))
   "Jak touched this yakow: one plain 'attack, which his own invulnerability can refuse, never a kill. He is thrown away from
-   the yakow, which with the herd coming at him is mostly along its heading, out of the lane he was standing in."
+   the yakow, which with the herd coming at him is mostly along its heading, out of the lane he was standing in. A red yakow
+   throws him much farther, and costs him a second hit: an attack has no damage field (a plain one takes one hit, and the
+   one that would take his last kills him), so once it has landed on a Jak with more than one hit left, the second is taken
+   the way any pickup takes health, a negative green eco. It can never be the one that kills him, only the first can."
   (when (not (gauntlet-stampede-recent-hit?))
-    (let ((knock (vector-! (new 'stack-no-clear 'vector) (target-pos 0) (-> self root trans))))
+    (let ((knock (vector-! (new 'stack-no-clear 'vector) (target-pos 0) (-> self root trans)))
+          (back (if (-> self red) GAUNTLET_STAMPEDE_RED_SHOVE_BACK GAUNTLET_STAMPEDE_SHOVE_BACK))
+          (up (if (-> self red) GAUNTLET_STAMPEDE_RED_SHOVE_UP GAUNTLET_STAMPEDE_SHOVE_UP)))
       (set! (-> knock y) 0.0)
       ;; standing exactly on the yakow's center has no direction away from it, so use the way it runs
       (if (< (vector-xz-length knock) 40.96)
         (set! (-> knock quad) (-> self heading quad)))
-      (vector-xz-normalize! knock GAUNTLET_STAMPEDE_SHOVE_BACK)
-      (set! (-> knock y) GAUNTLET_STAMPEDE_SHOVE_UP)
-      (when (send-event jak
-                        'attack
-                        touching
-                        (static-attack-info ((mode 'generic)
-                                             (shove-back GAUNTLET_STAMPEDE_SHOVE_BACK)
-                                             (shove-up GAUNTLET_STAMPEDE_SHOVE_UP)
-                                             (vector knock))))
+      (vector-xz-normalize! knock back)
+      (set! (-> knock y) up)
+      (when (send-event jak 'attack touching (static-attack-info ((mode 'generic) (shove-back back) (shove-up up) (vector knock))))
         (set! *gauntlet-stampede-last-hit* (current-time))
-        (format 0 "GAUNTLET STAMPEDE: yakow ~D trampled Jak~%" (-> self index)))))
+        (when (and (-> self red) *target* (< 1.0 (-> *target* fact health)))
+          (send-event jak 'get-pickup (pickup-type eco-green) (- (-> *FACT-bank* health-single-inc))))
+        (format 0 "GAUNTLET STAMPEDE: ~S yakow ~D trampled Jak~%" (if (-> self red) "red" "plain") (-> self index)))))
   0)
 
 (defbehavior gauntlet-yakow-event gauntlet-yakow ((proc process) (argc int) (message symbol) (block event-message-block))
@@ -782,6 +792,18 @@
       (go gauntlet-yakow-gone)))
   0)
 
+(defbehavior gauntlet-yakow-post gauntlet-yakow ()
+  "The usual post, and for a red yakow Jak's own red eco aura: each frame a flash at one of its joints and a spark at
+   another, which at the yakow's speed stream out behind it as a trail. Not while it is off screen."
+  (transform-post)
+  (when (and (-> self red) (not (logtest? (-> self draw status) (draw-status hidden no-anim))))
+    (let ((flash (rand-vu-int-range 3 (+ (-> self node-list length) -1)))
+          (spark (rand-vu-int-range 3 (+ (-> self node-list length) -1))))
+      (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 273 274))
+                        (vector<-cspace! (new 'stack-no-clear 'vector) (-> self node-list data flash)))
+      (launch-particles (-> *part-id-table* 275) (vector<-cspace! (new 'stack-no-clear 'vector) (-> self node-list data spark)))))
+  0)
+
 (defstate gauntlet-yakow-run (gauntlet-yakow)
   :event gauntlet-yakow-event
   :enter
@@ -799,7 +821,7 @@
       (loop
         (suspend)
         (ja :num! (loop! (-> self pace)))))
-  :post transform-post)
+  :post gauntlet-yakow-post)
 
 (defstate gauntlet-yakow-gone (gauntlet-yakow)
   :code
@@ -815,9 +837,9 @@
   ((method-of-type process-drawable deactivate) this)
   (none))
 
-(defbehavior gauntlet-yakow-init-by-other gauntlet-yakow ((start vector) (heading vector) (run-length float) (index int) (speed float))
+(defbehavior gauntlet-yakow-init-by-other gauntlet-yakow ((start vector) (heading vector) (run-length float) (index int) (speed float) (red symbol))
   "Appear at start, which is where this slot of the herd begins, facing along heading (a unit vector on the ground plane)
-   and run-length meters of ground to cover, in game units, at speed."
+   and run-length meters of ground to cover, in game units, at speed. red says whether it is charged with red eco."
   (stack-size-set! (-> self main-thread) 512)
   ;; counted from the start, so the count and deactivate's uncounting agree whatever happens next
   (+! *gauntlet-stampede-alive* 1)
@@ -826,6 +848,7 @@
   (set! (-> self entity) #f)
   (set! (-> self index) index)
   (set! (-> self speed) speed)
+  (set! (-> self red) red)
   (set! (-> self remaining) run-length)
   ;; twice the time the distance takes, and five seconds more
   (set! (-> self timeout) (+ (the int (* 2.0 (/ run-length speed) (the float (seconds 1)))) (seconds 5)))
@@ -850,8 +873,12 @@
   (quaternion-vector-angle! (-> self root quat) (new 'static 'vector :y 1.0 :w 1.0) (vector-y-angle heading))
   (vector-identity! (-> self root scale))
   (initialize-skeleton self *gauntlet-yakow-sg* '())
+  ;; the red glow: its colors pushed toward red, and a red light of its own on top (the ogre boss's draw glows the same way)
+  (when red
+    (set-vector! (-> self draw color-mult) 1.0 0.55 0.55 1.0)
+    (set-vector! (-> self draw color-emissive) 0.4 0.02 0.0 0.0))
   (update-transforms! (-> self root))
-  (format 0 "GAUNTLET STAMPEDE yakow ~D start ~M ~M ~M~%" index (-> start x) (-> start y) (-> start z))
+  (format 0 "GAUNTLET STAMPEDE yakow ~D start ~M ~M ~M ~S~%" index (-> start x) (-> start y) (-> start z) (if red "red" "plain"))
   (go gauntlet-yakow-run)
   (none))
 
@@ -879,6 +906,7 @@
     (else
      (let ((size *gauntlet-stampede-herd-size*)
            (speed *gauntlet-stampede-speed*)
+           (red-count (min *gauntlet-stampede-red-count* *gauntlet-stampede-herd-size*))
            (slot (new 'stack-no-clear 'vector))
            (start (new 'stack-no-clear 'vector)))
        (format 0 "GAUNTLET STAMPEDE triggered by ~S: aimed at ~M ~M ~M~%" why (-> spot x) (-> spot y) (-> spot z))
@@ -889,6 +917,7 @@
                (- (-> spot z) (* (-> heading z) GAUNTLET_STAMPEDE_APPROACH))
                size
                speed)
+       (format 0 "GAUNTLET STAMPEDE red yakows: ~D of ~D~A~%" red-count size (if (> red-count 0) ", the first slots, the lead row first" ""))
        (dotimes (i size)
          (gauntlet-stampede-slot i slot)
          ;; upstream is behind the heading, and the herd's right is the heading turned a quarter, (z, -x)
@@ -903,6 +932,7 @@
                           (+ upstream GAUNTLET_STAMPEDE_EXIT)
                           i
                           speed
+                          (< i red-count)
                           :to *entity-pool*))))))
   0)
 
@@ -990,7 +1020,8 @@
      (,row "stampede-herd-size" count *gauntlet-stampede-herd-size* GAUNTLET_STAMPEDE_HERD_SIZE_DEFAULT 1.0 30.0)
      (,row "stampede-speed" meters *gauntlet-stampede-speed* GAUNTLET_STAMPEDE_SPEED_DEFAULT 4.0 30.0)
      (,row "stampede-trigger-radius" meters *gauntlet-stampede-trigger-radius* GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT 0.0 200.0)
-     (,row "stampede-rearm-range" meters *gauntlet-stampede-rearm-range* GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT 0.0 1000.0)))
+     (,row "stampede-rearm-range" meters *gauntlet-stampede-rearm-range* GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT 0.0 1000.0)
+     (,row "stampede-red-count" count *gauntlet-stampede-red-count* GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT 0.0 30.0)))
 
 ;; ---- the settings file
 
