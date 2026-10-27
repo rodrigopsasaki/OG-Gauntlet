@@ -26,13 +26,13 @@
 ;; a character on screen from code (the Yellow Sage does the same in
 ;; levels/training/training-obs.gc). The body has no collision of its own, so
 ;; there is nothing to stand on, push against or get stuck in; the only thing it
-;; ever does to Jak is one hit when it explodes.
+;; ever does to Jak is kill him outright when it explodes, as the finale's does.
 
 (defconstant GAUNTLET_DROP_POLL_FRAMES 30) ;; how often the request file is looked at, about twice a second
 (defconstant GAUNTLET_BOMB_DROP_HEIGHT (meters 25)) ;; how high above Jak the bomb appears
 (defconstant GAUNTLET_BOMB_GRAVITY (meters 30)) ;; its fall, in meters per second per second (about 1.3 s from 25 m)
 (defconstant GAUNTLET_BOMB_COUNTDOWN (seconds 4)) ;; from landing to blast, with the warning beeps speeding up
-(defconstant GAUNTLET_BOMB_BLAST_RADIUS (meters 8)) ;; Jak inside this when it goes off takes one hit
+(defconstant GAUNTLET_BOMB_BLAST_RADIUS (meters 8)) ;; Jak inside this when it goes off is killed
 (defconstant GAUNTLET_BOMB_FIRST_TICK 0.9) ;; the finale's warning curve: the first beep when the clock reaches this cosine
 (defconstant GAUNTLET_BOMB_TICK_STEP 0.06) ;; and each beep lowers the bar by this much, so they come faster and faster
 (defconstant GAUNTLET_GROUND_PROBE_UP (meters 2)) ;; the ground under Jak is searched for from this far above his feet
@@ -512,9 +512,9 @@
       (process-spawn part-tracker :init part-tracker-init (get-part-group GAUNTLET_PART_GROUP_BLAST) 900 #f #f #f (-> self root trans) :to *entity-pool*)
       (let ((body (gauntlet-bomb-body (-> self body))))
         (if body (send-event body 'draw #f)))
-      ;; one ordinary hit, once, for Jak inside the blast
+      ;; the finale's own bomb, copied exactly: instant death, through invulnerability frames, for Jak inside the blast
       (when (and *target* (< (vector-vector-distance (-> self root trans) (target-pos 0)) GAUNTLET_BOMB_BLAST_RADIUS))
-        (send-event *target* 'attack #f (static-attack-info ((mode 'explode)))))
+        (send-event *target* 'attack-invinc #f (static-attack-info ((mode 'instant-death)))))
       ;; Jak's hit reads the bomb for where it came from when he next runs, so it stays until he has
       (suspend-for (seconds 1))
       (deactivate self)))
