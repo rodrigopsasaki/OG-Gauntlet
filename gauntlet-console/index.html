@@ -123,6 +123,7 @@
   <span class="stat">Level <b id="level">-</b></span>
   <span class="stat">Jak <b id="jak">-</b></span>
   <span class="stat" id="bridge-stat" hidden>Bridge <b id="bridge">-</b></span>
+  <span class="stat" id="klaww-stat" hidden>Klaww <b id="klaww">-</b></span>
   <span class="stat">Settings <b id="revision">-</b></span>
 </header>
 <main>
@@ -370,6 +371,13 @@ function renderHeader(payload) {
   const bridge = state && state.bridge;
   $("bridge-stat").hidden = !bridge;
   if (bridge) $("bridge").textContent = `${bridge.armed ? "armed" : "not armed"}, ${fmt(bridge.distance)} m`;
+
+  const klaww = state && state.klaww;
+  $("klaww-stat").hidden = !klaww;
+  if (klaww) {
+    const down = klaww.alive ? "" : ", defeated";
+    $("klaww").textContent = `${klaww.hits} of ${klaww.max} hits, ${klaww.buttonsPressed} of ${klaww.buttons} buttons${down}`;
+  }
 
   const writtenRev = payload.written ? payload.written.revision : null;
   const gameRev = state ? state.revision : null;

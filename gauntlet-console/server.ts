@@ -29,7 +29,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 // Presentation: one entry per setting, keyed by the game's setting name.
 // ---------------------------------------------------------------------------
 
-type SettingGroup = "Bomb" | "Geyser bridge" | "Dummies" | "Stampede";
+type SettingGroup = "Bomb" | "Geyser bridge" | "Dummies" | "Stampede" | "Klaww";
 type SettingValue = number | boolean;
 type SettingMap = Record<string, SettingValue>;
 
@@ -308,6 +308,40 @@ const SETTINGS: readonly SettingSpec[] = [
     "How many yakows are charged with red eco, counted from the lead row. A red yakow costs two hits and throws Jak far.",
     true,
   ),
+  flag(
+    "klaww-enabled",
+    "Klaww",
+    "Klaww on the beach",
+    "live",
+    "Klaww stands in the pelican's nest at Sentinel Beach and throws boulders at Jak, and the buttons beside the green eco cloggers shoot back. Off takes him and the buttons away and forgets the fight.",
+  ),
+  num(
+    "klaww-throw-interval",
+    "Klaww",
+    "Throw interval",
+    "s",
+    [1, 20, 0.5],
+    "live",
+    "Time from one boulder leaving his hand to the next, wind-up included. A throw takes as long as its animation, so very low values change little.",
+  ),
+  num(
+    "klaww-range",
+    "Klaww",
+    "Throwing range",
+    "m",
+    [20, 300, 5],
+    "live",
+    "He throws while Jak is this close to the nest. The first button is about 100 m from it, so the default keeps Jak a target while he presses it.",
+  ),
+  num(
+    "klaww-boulder-radius",
+    "Klaww",
+    "Boulder hit radius",
+    "m",
+    [1, 15, 0.5],
+    "next boulder",
+    "Jak is hit if he is this close to where a boulder lands. The orange ring on the ground is this wide.",
+  ),
 ];
 
 const SPEC_BY_KEY = new Map(SETTINGS.map((spec) => [spec.key, spec]));
@@ -376,6 +410,16 @@ interface BridgeState {
   armed: boolean;
   distance: number;
 }
+interface KlawwState {
+  /** Blasts that have reached him since Jak came to the beach. */
+  hits: number;
+  /** Hits it takes to bring him down. */
+  max: number;
+  /** In the world and not yet beaten. */
+  alive: boolean;
+  buttonsPressed: number;
+  buttons: number;
+}
 interface GauntletState {
   frame: number;
   revision: number;
@@ -385,6 +429,8 @@ interface GauntletState {
   jak: JakState | null;
   bomb: BombState | null;
   bridge: BridgeState | null;
+  /** null off the beach, and for a game build that does not publish him. */
+  klaww: KlawwState | null;
   effects: { enabled: boolean };
 }
 
@@ -470,6 +516,19 @@ function parseGauntletState(raw: unknown): GauntletState {
         distance: needNumber(bridge, "distance", "state.bridge"),
       };
     }),
+    klaww:
+      root.klaww === undefined
+        ? null
+        : orNull(root.klaww, (value) => {
+            const klaww = needRecord(value, "state.klaww");
+            return {
+              hits: needNumber(klaww, "hits", "state.klaww"),
+              max: needNumber(klaww, "max", "state.klaww"),
+              alive: needBoolean(klaww, "alive", "state.klaww"),
+              buttonsPressed: needNumber(klaww, "buttonsPressed", "state.klaww"),
+              buttons: needNumber(klaww, "buttons", "state.klaww"),
+            };
+          }),
     effects: {
       enabled: needBoolean(needRecord(root.effects, "state.effects"), "enabled", "state.effects"),
     },
