@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gauntlet console</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1c232d;
+    --line: #2a3340;
+    --text: #e6edf3;
+    --muted: #8b98a8;
+    --eco: #f5c542;
+    --ok: #3fb97a;
+    --bad: #f0524f;
+    --blue: #4aa3ff;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  button, select, input { font: inherit; color: inherit; }
+  header {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center;
+    padding: 10px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 15px; margin: 0; letter-spacing: .04em; color: var(--eco); text-transform: uppercase; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+  .live .dot { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .stat { color: var(--muted); }
+  .stat b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .rev-applied { color: var(--ok); }
+  .rev-waiting { color: var(--eco); }
+  main {
+    display: grid; gap: 16px; padding: 16px;
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+    align-items: start;
+    max-width: 1200px; margin: 0 auto;
+  }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px;
+  }
+  section + section { margin-top: 16px; }
+  h2 {
+    margin: 0 0 10px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .triggers { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .triggers .wide { grid-column: 1 / -1; }
+  button {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+    padding: 12px 10px; font-weight: 600; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--eco); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.danger { background: #3a1b1d; border-color: #6b2a2d; }
+  button.small { padding: 4px 8px; font-size: 12px; font-weight: 500; color: var(--muted); }
+  .warp-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  select {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px; min-width: 0;
+  }
+  .note { color: var(--eco); font-size: 12.5px; margin: 10px 0 0; }
+  .status { color: var(--muted); font-size: 12.5px; margin: 10px 0 0; min-height: 1.4em; }
+  .status.error { color: var(--bad); }
+  .bomb-title { font-weight: 700; font-size: 16px; display: flex; justify-content: space-between; }
+  .bomb-time { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--eco); }
+  .meter { position: relative; height: 10px; background: var(--panel-2); border-radius: 5px; margin: 10px 0 6px; }
+  .meter .fill { position: absolute; inset: 0 auto 0 0; background: var(--ok); border-radius: 5px; }
+  .meter.inside .fill { background: var(--bad); }
+  .meter .mark { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 2px; background: var(--text); }
+  .inside-text { color: var(--bad); font-weight: 700; }
+  .group { margin-bottom: 18px; }
+  .group h3 {
+    margin: 0 0 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 6px; border-bottom: 1px solid var(--line);
+  }
+  .row {
+    display: grid; grid-template-columns: minmax(150px, 1fr) minmax(160px, 1.4fr) 110px; gap: 6px 14px;
+    align-items: center; padding: 8px 0; border-bottom: 1px solid #1d2531;
+  }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+  .row .name { font-weight: 600; }
+  .row .applies {
+    margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--blue);
+    border: 1px solid #25405c; border-radius: 10px; padding: 0 6px; white-space: nowrap;
+  }
+  .row .hint { color: var(--muted); font-size: 12px; }
+  .slider { position: relative; padding: 4px 0; }
+  .slider input[type=range] { width: 100%; margin: 0; accent-color: var(--eco); }
+  .slider .tick {
+    position: absolute; top: 0; width: 2px; height: 6px; background: var(--muted); pointer-events: none;
+  }
+  .valuebox { display: flex; align-items: center; gap: 4px; }
+  .valuebox input[type=number] {
+    width: 68px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .valuebox .unit { color: var(--muted); font-size: 12px; }
+  .default { grid-column: 2 / 4; color: var(--muted); font-size: 11.5px; }
+  .default.changed { color: var(--eco); }
+  @media (max-width: 640px) { .default { grid-column: 1; } }
+  .toggle { display: flex; align-items: center; gap: 8px; }
+  .toggle input { width: 18px; height: 18px; accent-color: var(--eco); }
+  .footer-note { color: var(--muted); font-size: 12px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Gauntlet console</h1>
+  <span id="live" class="pill"><span class="dot"></span><span id="live-text">connecting</span></span>
+  <span class="stat">Level <b id="level">-</b></span>
+  <span class="stat">Jak <b id="jak">-</b></span>
+  <span class="stat">Settings <b id="revision">-</b></span>
+</header>
+<main>
+  <div>
+    <section>
+      <h2>Triggers</h2>
+      <div class="triggers">
+        <button id="t-bomb" class="danger">Bomb on Jak</button>
+        <button id="t-bomb-bridge" class="danger">Bomb on the bridge</button>
+        <button id="t-trip">Trip</button>
+        <button id="t-freeze">Freeze</button>
+        <button id="t-save-spot">Save spot</button>
+        <button id="t-load-spot">Load spot</button>
+        <div class="warp-row wide">
+          <select id="warp-select" aria-label="Warp destination"></select>
+          <button id="t-warp">Warp</button>
+        </div>
+      </div>
+      <p id="effects-note" class="note" hidden>
+        Trip, freeze, warp, save spot and load spot will not run until "twitch effects" is turned on in the game's settings.
+      </p>
+      <p id="bridge-note" class="status" hidden>The bridge bomb only works on Geyser Rock.</p>
+      <p id="trigger-status" class="status"></p>
+    </section>
+    <section id="bomb-card" hidden>
+      <h2>Live bomb</h2>
+      <div class="bomb-title"><span id="bomb-state"></span><span id="bomb-time" class="bomb-time"></span></div>
+      <div id="bomb-meter" class="meter"><div class="fill" id="bomb-fill"></div><div class="mark"></div></div>
+      <div id="bomb-distance"></div>
+    </section>
+  </div>
+  <section>
+    <h2>
+      <span>Settings</span>
+      <span><span id="save-status" class="stat"></span> <button id="reset-all" class="small">Reset all to defaults</button></span>
+    </h2>
+    <div id="settings"></div>
+    <p class="footer-note">Changes are sent a moment after you stop moving a control. The game checks for them about twice a second. The tag on each row says when a change takes effect.</p>
+  </section>
+</main>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (key === "class") node.className = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value);
+  }
+  node.append(...children);
+  return node;
+}
+
+async function api(path, body) {
+  const response = await fetch(path, body === undefined ? {} : {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await response.json();
+  if (!response.ok) throw new Error(json.error ?? `request failed (${response.status})`);
+  return json;
+}
+
+const fmt = (n, digits = 1) => Number(n).toFixed(digits);
+function fmtValue(spec, value) {
+  if (spec.integer) return String(Math.round(value));
+  const decimals = spec.step < 0.1 ? 2 : 1;
+  return fmt(value, decimals);
+}
+
+// ---------------------------------------------------------------- settings UI
+
+const controls = new Map(); // key -> { spec, setValue(v), setDefault(v), range?, box }
+const pending = {}; // key -> value typed or dragged but not yet sent
+let flushTimer = null;
+let latest = null; // last /api/state payload
+
+function scheduleSend(key, value) {
+  pending[key] = value;
+  $("save-status").textContent = "editing";
+  clearTimeout(flushTimer);
+  flushTimer = setTimeout(flush, 300);
+}
+
+async function flush() {
+  const patch = { ...pending };
+  if (Object.keys(patch).length === 0) return;
+  try {
+    const saved = await api("/api/settings", patch);
+    $("save-status").textContent = `written ${saved.revision}`;
+  } catch (error) {
+    $("save-status").textContent = `not saved: ${error.message}`;
+  } finally {
+    // keep showing what the player set until the file holds it; drop only what was sent
+    for (const [key, value] of Object.entries(patch)) {
+      if (pending[key] === value) delete pending[key];
+    }
+  }
+}
+
+function buildRow(spec) {
+  const name = el("div", {}, el("span", { class: "name" }, spec.label), el("span", { class: "applies" }, spec.applies));
+  name.append(el("div", { class: "hint" }, spec.hint));
+  const defaultLine = el("div", { class: "default" });
+  const row = el("div", { class: "row" });
+
+  if (spec.kind === "boolean") {
+    const input = el("input", { type: "checkbox" });
+    input.addEventListener("change", () => scheduleSend(spec.key, input.checked));
+    row.append(name, el("label", { class: "toggle" }, input, el("span", {}, "On")), el("div"), defaultLine);
+    controls.set(spec.key, {
+      spec,
+      isEditing: () => document.activeElement === input,
+      setValue(value) { input.checked = value; },
+      setDefault(def, value) {
+        defaultLine.textContent = `default ${def ? "on" : "off"}`;
+        defaultLine.classList.toggle("changed", def !== value);
+      },
+    });
+    return row;
+  }
+
+  const range = el("input", { type: "range", min: spec.min, max: spec.max, step: spec.step });
+  const tick = el("div", { class: "tick" });
+  const box = el("input", { type: "number", min: spec.min, max: spec.max, step: spec.step });
+  const commit = (value) => {
+    if (!Number.isFinite(value)) return;
+    const clamped = Math.min(spec.max, Math.max(spec.min, value));
+    range.value = clamped;
+    box.value = fmtValue(spec, clamped);
+    scheduleSend(spec.key, Number(fmtValue(spec, clamped)));
+  };
+  range.addEventListener("input", () => commit(Number(range.value)));
+  box.addEventListener("change", () => commit(Number(box.value)));
+  row.append(
+    name,
+    el("div", { class: "slider" }, range, tick),
+    el("div", { class: "valuebox" }, box, el("span", { class: "unit" }, spec.unit)),
+    defaultLine,
+  );
+  controls.set(spec.key, {
+    spec,
+    isEditing: () => document.activeElement === box || document.activeElement === range,
+    setValue(value) {
+      range.value = value;
+      box.value = fmtValue(spec, value);
+    },
+    setDefault(def, value) {
+      tick.style.left = `${((def - spec.min) / (spec.max - spec.min)) * 100}%`;
+      tick.hidden = false;
+      defaultLine.textContent = `default ${fmtValue(spec, def)} ${spec.unit}`.trim();
+      defaultLine.classList.toggle("changed", Math.abs(def - value) > 1e-9);
+    },
+  });
+  return row;
+}
+
+function resetKeys(keys) {
+  if (!latest || !latest.state) return;
+  const patch = {};
+  for (const key of keys) {
+    if (key in latest.state.defaults) patch[key] = latest.state.defaults[key];
+  }
+  for (const key of keys) delete pending[key];
+  api("/api/settings", patch)
+    .then((saved) => { $("save-status").textContent = `written ${saved.revision}`; })
+    .catch((error) => { $("save-status").textContent = `not saved: ${error.message}`; });
+}
+
+function buildSettings(schema) {
+  const host = $("settings");
+  const groups = [...new Set(schema.map((spec) => spec.group))];
+  for (const group of groups) {
+    const specs = schema.filter((spec) => spec.group === group);
+    const header = el("h3", {}, el("span", {}, group),
+      el("button", { class: "small", onclick: () => resetKeys(specs.map((spec) => spec.key)) }, "Reset group"));
+    host.append(el("div", { class: "group" }, header, ...specs.map(buildRow)));
+  }
+}
+
+function renderSettings(payload) {
+  const state = payload.state;
+  const inEffect = state ? state.settings : {};
+  const written = payload.written ? payload.written.settings : {};
+  const defaults = state ? state.defaults : {};
+  for (const [key, control] of controls) {
+    const value = key in pending ? pending[key] : (key in written ? written[key] : inEffect[key]);
+    if (value === undefined || control.isEditing() || key in pending) continue;
+    control.setValue(value);
+    if (key in defaults) control.setDefault(defaults[key], value);
+  }
+}
+
+// ------------------------------------------------------------------- triggers
+
+let triggerBusy = false;
+function showStatus(text, isError = false) {
+  const node = $("trigger-status");
+  node.textContent = text;
+  node.classList.toggle("error", isError);
+}
+
+async function trigger(action, arg) {
+  if (triggerBusy) return;
+  triggerBusy = true;
+  try {
+    const result = await api("/api/trigger", arg === undefined ? { action } : { action, arg });
+    showStatus(result.queued ? `${action}: queued, the game is still reading the last command` : `${action}: sent`);
+  } catch (error) {
+    showStatus(`${action}: ${error.message}`, true);
+  } finally {
+    triggerBusy = false;
+  }
+}
+
+for (const action of ["bomb", "bomb-bridge", "trip", "freeze", "save-spot", "load-spot"]) {
+  $(`t-${action}`).addEventListener("click", () => trigger(action));
+}
+$("t-warp").addEventListener("click", () => trigger("warp", $("warp-select").value));
+$("reset-all").addEventListener("click", () => resetKeys([...controls.keys()]));
+
+// ---------------------------------------------------------------- state render
+
+function renderHeader(payload) {
+  const state = payload.state;
+  const live = payload.live;
+  $("live").classList.toggle("live", live);
+  if (live) $("live-text").textContent = "game live";
+  else if (payload.ageMs === null) $("live-text").textContent = "game not running, never seen";
+  else $("live-text").textContent = `game not running, last seen ${Math.round(payload.ageMs / 1000)}s ago`;
+
+  $("level").textContent = state ? state.level : "-";
+  const jak = state && state.jak;
+  $("jak").textContent = jak ? `${Math.round(jak.x)}, ${Math.round(jak.y)}, ${Math.round(jak.z)}${jak.onGround ? "" : " (air)"}` : "-";
+
+  const writtenRev = payload.written ? payload.written.revision : null;
+  const gameRev = state ? state.revision : null;
+  const revision = $("revision");
+  revision.className = "";
+  if (writtenRev === null) {
+    revision.textContent = gameRev === null ? "none yet" : `game at ${gameRev}, nothing written`;
+  } else if (gameRev === writtenRev) {
+    revision.textContent = `applied (revision ${writtenRev})`;
+    revision.className = "rev-applied";
+  } else {
+    revision.textContent = `waiting for game (written ${writtenRev}, game at ${gameRev ?? "?"})`;
+    revision.className = "rev-waiting";
+  }
+}
+
+function renderTriggers(payload) {
+  const state = payload.state;
+  const effectsOn = state ? state.effects.enabled : false;
+  const effectButtons = ["trip", "freeze", "save-spot", "load-spot"].map((a) => $(`t-${a}`)).concat($("t-warp"), $("warp-select"));
+  for (const button of effectButtons) button.disabled = !effectsOn;
+  $("effects-note").hidden = effectsOn || !state;
+  const onGeyser = state ? state.level === "training" : false;
+  $("t-bomb-bridge").disabled = !onGeyser;
+  $("bridge-note").hidden = onGeyser || !state;
+}
+
+function renderBomb(payload) {
+  const state = payload.state;
+  const bomb = state && state.bomb;
+  $("bomb-card").hidden = !bomb;
+  if (!bomb) return;
+  const radius = state.settings["bomb-blast-radius"];
+  $("bomb-state").textContent = `Bomb ${bomb.state}`;
+  $("bomb-time").textContent = bomb.state === "countdown" ? `${fmt(Math.max(0, bomb.remaining))} s` : "";
+  const inside = radius !== undefined && bomb.jakDistance <= radius;
+  $("bomb-meter").classList.toggle("inside", inside);
+  const scale = radius === undefined ? 100 : radius * 2;
+  $("bomb-fill").style.width = `${Math.min(100, (bomb.jakDistance / scale) * 100)}%`;
+  const text = $("bomb-distance");
+  text.textContent = "";
+  text.append(`Jak is ${fmt(bomb.jakDistance)} m away`);
+  if (radius !== undefined) {
+    text.append(`, blast radius ${fmt(radius, 0)} m. `);
+    text.append(inside ? el("span", { class: "inside-text" }, "Inside the blast.") : "Outside the blast.");
+  }
+}
+
+async function poll() {
+  try {
+    latest = await api("/api/state");
+    renderHeader(latest);
+    renderTriggers(latest);
+    renderBomb(latest);
+    renderSettings(latest);
+  } catch {
+    $("live").classList.remove("live");
+    $("live-text").textContent = "console server not reachable";
+  }
+}
+
+async function start() {
+  const [schema, warps] = await Promise.all([api("/api/schema"), api("/api/warps")]);
+  buildSettings(schema);
+  for (const warp of warps) $("warp-select").append(el("option", { value: warp.id }, warp.label));
+  await poll();
+  setInterval(poll, 500);
+}
+start();
+</script>
+</body>
+</html>

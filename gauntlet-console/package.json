@@ -1,0 +1,11 @@
+{
+  "name": "gauntlet-console",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
