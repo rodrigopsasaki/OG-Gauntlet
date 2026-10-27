@@ -29,7 +29,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 // Presentation: one entry per setting, keyed by the game's setting name.
 // ---------------------------------------------------------------------------
 
-type SettingGroup = "Bomb" | "Geyser bridge" | "Dummies";
+type SettingGroup = "Bomb" | "Geyser bridge" | "Dummies" | "Stampede";
 type SettingValue = number | boolean;
 type SettingMap = Record<string, SettingValue>;
 
@@ -253,6 +253,50 @@ const SETTINGS: readonly SettingSpec[] = [
     [5, 100, 1],
     "next shot",
     "How fast the yellow eco shots fly.",
+  ),
+  flag(
+    "stampede-enabled",
+    "Stampede",
+    "Sandover stampede",
+    "live",
+    "Coming near the spot beside the farmer in Sandover sends a herd charging from the Forbidden Jungle. The Stampede button still works when this is off.",
+  ),
+  num(
+    "stampede-herd-size",
+    "Stampede",
+    "Herd size",
+    "",
+    [1, 30, 1],
+    "next herd",
+    "Yakows in the herd, three to a row. A bigger herd only adds rows behind; the first slots never move.",
+    true,
+  ),
+  num(
+    "stampede-speed",
+    "Stampede",
+    "Speed",
+    "m/s",
+    [4, 30, 1],
+    "next herd",
+    "How fast the yakows run. Jak runs at 10 m/s, so above that he has to sidestep rather than outrun them.",
+  ),
+  num(
+    "stampede-trigger-radius",
+    "Stampede",
+    "Trigger radius",
+    "m",
+    [1, 20, 0.5],
+    "live",
+    "How close Jak has to get to the Sandover spot to set the herd off.",
+  ),
+  num(
+    "stampede-rearm-range",
+    "Stampede",
+    "Rearm range",
+    "m",
+    [10, 200, 5],
+    "live",
+    "How far Jak has to walk away from the Sandover spot before the herd can charge again.",
   ),
 ];
 
@@ -527,7 +571,7 @@ function makeSerial() {
   };
 }
 const serializeSettings = makeSerial();
-const serializeBombs = makeSerial();
+const serializeDrops = makeSerial();
 
 class HttpError extends Error {
   status: number;
@@ -601,24 +645,23 @@ async function resetSettings(): Promise<{ revision: number; settings: SettingMap
 // Triggers.
 // ---------------------------------------------------------------------------
 
-const ACTIONS = [
-  "bomb",
-  "bomb-bridge",
-  "trip",
-  "freeze",
-  "warp",
-  "say",
-  "save-spot",
-  "load-spot",
-] as const;
+/** What the game's drop request channel (`gauntlet-drop-request.txt`) understands. */
+const DROP_WORDS = ["bomb", "bomb-bridge", "stampede"] as const;
+type DropWord = (typeof DROP_WORDS)[number];
+
+function isDropWord(value: unknown): value is DropWord {
+  return DROP_WORDS.some((word) => word === value);
+}
+
+const ACTIONS = [...DROP_WORDS, "trip", "freeze", "warp", "say", "save-spot", "load-spot"] as const;
 type Action = (typeof ACTIONS)[number];
 
 function isAction(value: unknown): value is Action {
   return ACTIONS.some((action) => action === value);
 }
 
-async function dropBomb(word: "bomb" | "bomb-bridge"): Promise<number> {
-  return serializeBombs(async () => {
+async function writeDropRequest(word: DropWord): Promise<number> {
+  return serializeDrops(async () => {
     let previous = 0;
     try {
       const match = /^\s*(\d+)/.exec(await readFile(DROP_FILE, "utf8"));
@@ -695,7 +738,8 @@ function commandLine(action: Action, arg: unknown): string {
     }
     case "bomb":
     case "bomb-bridge":
-      throw new HttpError(500, "bombs do not use the command file");
+    case "stampede":
+      throw new HttpError(500, "drops do not use the command file");
   }
 }
 
@@ -704,8 +748,8 @@ async function runTrigger(body: unknown): Promise<Record<string, unknown>> {
     throw new HttpError(400, `action must be one of: ${ACTIONS.join(", ")}`);
   }
   const action = body.action;
-  if (action === "bomb" || action === "bomb-bridge") {
-    return { written: true, counter: await dropBomb(action) };
+  if (isDropWord(action)) {
+    return { written: true, counter: await writeDropRequest(action) };
   }
   return sendCommand(commandLine(action, body.arg));
 }

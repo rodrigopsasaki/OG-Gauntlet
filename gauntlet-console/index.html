@@ -132,6 +132,7 @@
       <div class="triggers">
         <button id="t-bomb" class="danger">Bomb on Jak</button>
         <button id="t-bomb-bridge" class="danger">Bomb on the bridge</button>
+        <button id="t-stampede" class="danger">Stampede</button>
         <button id="t-trip">Trip</button>
         <button id="t-freeze">Freeze</button>
         <button id="t-save-spot">Save spot</button>
@@ -346,7 +347,7 @@ async function trigger(action, arg) {
   }
 }
 
-for (const action of ["bomb", "bomb-bridge", "trip", "freeze", "save-spot", "load-spot"]) {
+for (const action of ["bomb", "bomb-bridge", "stampede", "trip", "freeze", "save-spot", "load-spot"]) {
   $(`t-${action}`).addEventListener("click", () => trigger(action));
 }
 $("t-warp").addEventListener("click", () => trigger("warp", $("warp-select").value));
@@ -394,6 +395,8 @@ function renderTriggers(payload) {
   const onGeyser = state ? state.level === "training" : false;
   $("t-bomb-bridge").disabled = !onGeyser;
   $("bridge-note").hidden = onGeyser || !state;
+  // the herd charges at Jak from ahead of where he faces, on any level, so it only needs a running game
+  $("t-stampede").disabled = !payload.live;
 }
 
 function renderBomb(payload) {
