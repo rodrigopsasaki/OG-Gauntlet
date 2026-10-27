@@ -548,15 +548,16 @@
   0)
 
 (defun gauntlet-volley-start ((volley gauntlet-volley) (origin vector))
-  "Capture the aim at Jak once. The whole volley sweeps around this heading, it is not re-aimed per shot."
+  "Capture the aim at Jak once. The whole volley sweeps around this heading, it is not re-aimed per shot.
+   Shots leave from origin (the cane) and aim at Jak's chest, so on higher or lower ground the fan tilts toward him."
   (let ((heading (-> volley heading)))
     (set! (-> heading quad) (-> (target-pos 0) quad))
+    ;; aim at his chest, not his feet; the pitch stays in the heading, and the sweep (a rotation about world y) keeps it
+    (+! (-> heading y) 4915.2)
     (vector-! heading heading origin)
-    ;; the fan is flat at Jak's chest height: the heading ignores his pitch, so every shot stays level
-    (set! (-> heading y) 0.0)
     (vector-normalize! heading 1.0))
+  ;; the shots always leave from the cane, wherever Jak stands
   (set! (-> volley muzzle quad) (-> origin quad))
-  (set! (-> volley muzzle y) (+ 4915.2 (-> (target-pos 0) y)))
   ;; alternate left-to-right and right-to-left, like a sprinkler
   (set! (-> volley sweep) (if (> (-> volley sweep) 0.0) -1.0 1.0))
   (set! (-> volley size) *gauntlet-dummy-volley-size*)
