@@ -11,6 +11,10 @@
 ;; no-op except one exists-check per 30 frames.
 (define-extern gauntlet-drop-poll! (function none))
 
+;; The pelican at Sentinel Beach (levels/beach/pelican.gc) calls this when it is at its nest with the stolen power cell:
+;; Klaww falls onto it from there. It is compiled in the beach's DGO, after this file, so the call needs declaring here too.
+(define-extern gauntlet-klaww-pelican-at-nest! (function process none))
+
 ;; ------------------------------------------------------------ the tunables --
 
 ;; Everything the gauntlet console can steer. The defaults are written once, as constants in game units (meters are

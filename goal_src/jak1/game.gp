@@ -521,7 +521,7 @@
 
 (goal-src-sequence
   "levels/beach/"
-  :deps ("$OUT/obj/ticky.o")
+  :deps ("$OUT/obj/ticky.o" "$OUT/obj/gauntlet-h.o") ;; the first makes us depend on the whole engine, the second declares what pelican.gc tells Klaww
   "air-h.gc"
   "air.gc"
   "wobbler.gc"
