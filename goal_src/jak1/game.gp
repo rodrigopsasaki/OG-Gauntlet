@@ -2117,7 +2117,7 @@
 (goal-src "pc/pckernel.gc" "pckernel-common")
 (goal-src "pc/features/twitch.gc" "twitch-h" "pckernel" "target-h" "run-state-h" "gauntlet-h")
 (goal-src "pc/features/run-state.gc" "run-state-h" "game-info" "level" "task-control" "twitch-h")
-(goal-src "pc/features/gauntlet.gc" "gauntlet-h" "run-state" "generic-obs" "process-drawable" "shadow" "sparticle-launcher" "gsound" "target-util" "pckernel")
+(goal-src "pc/features/gauntlet.gc" "gauntlet-h" "run-state" "generic-obs" "process-drawable" "shadow" "sparticle-launcher" "gsound" "target-util" "pckernel" "basebutton" "trajectory")
 (goal-src "pc/subtitle.gc" "text" "pckernel" "hint-control" "loader-h" "gsound" "ambient")
 (goal-src "pc/progress-pc.gc" "progress" "pckernel")
 (goal-src "pc/hud-classes-pc.gc" "pckernel" "hud" "battlecontroller" "generic-obs")

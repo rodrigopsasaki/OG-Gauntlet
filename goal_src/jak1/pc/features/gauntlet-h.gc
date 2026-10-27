@@ -46,6 +46,11 @@
 (defconstant GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to the Sandover spot, sideways, sets the herd off
 (defconstant GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT (meters 60)) ;; and it will not charge again until he has been farther than this from it
 (defconstant GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT 3) ;; yakows charged with red eco, the first slots of the herd: the lead row. Red hits for two and throws far
+;; Klaww stands in the pelican's nest at Sentinel Beach and lobs boulders at Jak. Three buttons on the beach shoot him; each hit is one of three.
+(defconstant GAUNTLET_KLAWW_ENABLED_DEFAULT #t) ;; Klaww and his buttons appear on the beach
+(defconstant GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT (seconds 3.0)) ;; from one boulder leaving his hand to the next, wind-up included (a throw takes as long as its animation, which is the floor)
+(defconstant GAUNTLET_KLAWW_RANGE_DEFAULT (meters 140)) ;; he throws while Jak is this close, sideways: the first button is 100 m from the nest, so Jak is still a target while he presses it
+(defconstant GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to where a boulder lands is hit; the landing marker draws this circle
 
 ;; Times are in ticks (300 a second), lengths and speeds in game units, the spread in rotation units.
 ;; Which of them apply to something already in the world is the console contract's business: a bomb in the air keeps
@@ -76,3 +81,7 @@
 (define *gauntlet-stampede-trigger-radius* GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT)
 (define *gauntlet-stampede-rearm-range* GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT)
 (define *gauntlet-stampede-red-count* GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT) ;; the herd's first this-many slots are red, however big the herd
+(define *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT) ;; off: no Klaww, no buttons, and whatever stands is taken away
+(define *gauntlet-klaww-throw-interval* (the int GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT))
+(define *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT)
+(define *gauntlet-klaww-boulder-radius* GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT) ;; a boulder in the air keeps the radius it was thrown with
