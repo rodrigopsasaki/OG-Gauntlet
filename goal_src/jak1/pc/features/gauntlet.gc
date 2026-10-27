@@ -14,8 +14,9 @@
 ;; charges by itself, from the Forbidden Jungle side, the first time Jak comes within *gauntlet-stampede-trigger-radius*
 ;; of the spot beside the farmer where the player asked for it. See "the stampede" below.
 ;;
-;; At Sentinel Beach (level beach) Klaww, the ogre boss of Mountain Pass, stands in the pelican's nest and throws boulders at
-;; Jak, and a button beside the green eco cloggers shoots back. See "Klaww" below.
+;; At Sentinel Beach (level beach) Klaww, the ogre boss of Mountain Pass, falls out of the sky onto the pelican as it lands at
+;; its nest with the stolen power cell, and throws boulders at Jak; three buttons around the beach throw boulders back, and
+;; the cell is his to give up when he falls. "klaww" in the request file drops him anywhere. See "Klaww" below.
 ;;
 ;; The bomb is the big dark eco bomb Gol and Maia's robot drops in the final
 ;; boss (darkecobomb, levels/finalboss/robotboss-weapon.gc), made available
@@ -978,9 +979,21 @@
 
 ;; ------------------------------------------------------------------- Klaww --
 
-;; The ogre boss of Mountain Pass stands in the pelican's nest at Sentinel Beach and lobs boulders at Jak, and the player can
-;; shoot back: buttons dotted around the beach each fire one yellow eco blast at his chest, and three blasts bring him down.
-;; "The world turns against Jak", with an answer.
+;; The ogre boss of Mountain Pass arrives with the pelican at Sentinel Beach. When the pelican lands at its nest with the
+;; stolen power cell (pelican-wait-at-nest, reached on landing, pelican.gc), Klaww falls out of the sky onto it and blows it up
+;; the way the cannon does, except that the cell is not born: he holds it. He then lobs boulders at Jak, and the player can
+;; shoot back: three buttons dotted around the beach each throw one of his own boulders back at his chest, and three hits
+;; bring him down, at which point the cell falls out of him at the nest. "The world turns against Jak", with an answer.
+;;
+;; The pelican is the one who knows when to start: it only announces (gauntlet-klaww-pelican-at-nest!) and the per-frame poll
+;; acts on it, so the same story plays when the level loads with the pelican already at its nest, and does not when Jak is
+;; not on the beach or the art is not there yet. Klaww's fall is a plain drop under gravity from GAUNTLET_KLAWW_FALL_HEIGHT,
+;; with the landing ringed on the ground the way a boulder's is, so the player can see it coming and step off.
+;;
+;; The request file can drop him anywhere ("klaww"). On the beach that is the same fall onto the nest, crushing the pelican
+;; if it is at its nest and otherwise just landing. On any other level he falls about GAUNTLET_KLAWW_AHEAD in front of Jak and
+;; fights there: the buttons exist only on the beach, so off it he simply throws until Jak leaves the level or the console
+;; turns him off. The level he arrived in is his home, and leaving it is what takes him away.
 ;;
 ;; Like the bomb and the herd he is entity-less and his art is common (ogreboss-ag.go and the tpage its textures live in, in
 ;; GAME.CGO; generic-button-ag.go for the buttons; common_art_groups in the decompiler config), so none of this depends on
@@ -1013,6 +1026,11 @@
 
 (defconstant GAUNTLET_KLAWW_MAX_HITS 3) ;; blasts it takes to bring him down
 (defconstant GAUNTLET_KLAWW_BUTTONS 3) ;; rows gauntlet-klaww-button-table can hold: one per hit
+(defconstant GAUNTLET_KLAWW_FALL_HEIGHT (meters 60)) ;; he starts this far above the ground he will land on: high enough to be seen coming
+(defconstant GAUNTLET_KLAWW_FALL_GRAVITY (meters 40)) ;; per second per second, so the drop takes 1.7 s: a plunge, not a float
+(defconstant GAUNTLET_KLAWW_LAND_RADIUS (meters 9)) ;; the ring drawn on the ground where he will land, wide enough for his feet and the shock
+(defconstant GAUNTLET_KLAWW_AHEAD (meters 25)) ;; the console's Klaww off the beach falls this far in front of Jak
+(defconstant GAUNTLET_KLAWW_QUAKE_RANGE (meters 150)) ;; Jak this close to a landing feels the camera shake
 (defconstant GAUNTLET_KLAWW_SCALE 0.7) ;; his size against the model: 10 m tall instead of 14, so he fits the nest rock
 (defconstant GAUNTLET_KLAWW_BOULDER_SPEED (meters 30)) ;; sideways, so a boulder to Jak 100 m away is 3.3 s in the air
 (defconstant GAUNTLET_KLAWW_BOULDER_MIN_FLIGHT 1.5) ;; seconds, so a throw at Jak close by is not a blink
@@ -1323,6 +1341,7 @@
 
 (deftype gauntlet-klaww-world (structure)
   ((klaww   handle)
+   (pelican handle) ;; the pelican that said it is at its nest with the cell, until Klaww has been sent for
    (buttons handle 3)))
 
 (define *gauntlet-klaww-world* (new 'global 'gauntlet-klaww-world))
@@ -1331,6 +1350,7 @@
   "Every handle in the world points at no process. A null handle is one whose process is #f, not zero: handle->process asks
    `(if (-> handle process) ...)` and zero is true in GOAL, so a zeroed handle is read through address 0."
   (set! (-> *gauntlet-klaww-world* klaww) (the-as handle #f))
+  (set! (-> *gauntlet-klaww-world* pelican) (the-as handle #f))
   (dotimes (i GAUNTLET_KLAWW_BUTTONS)
     (set! (-> *gauntlet-klaww-world* buttons i) (the-as handle #f)))
   0)
@@ -1341,6 +1361,7 @@
 (define *gauntlet-klaww-throws* 0) ;; boulders thrown since then, which also numbers them in the log
 (define *gauntlet-klaww-defeated* #f) ;; true from the third hit until Jak leaves the beach
 (define *gauntlet-klaww-art-told* #f) ;; a missing art group is told about once, not every frame
+(define *gauntlet-klaww-home* #f) ;; the level the fight is in (a symbol), or #f before Klaww has been dropped: leaving it ends the fight
 ;; the pelican's nest (see above): the pelican's own entity, in meters
 (define *gauntlet-klaww-nest* (new 'static 'vector :x (meters -162.25) :y (meters 11.65) :z (meters -423.03) :w 1.0))
 
@@ -1355,8 +1376,12 @@
 
 (deftype gauntlet-klaww (process-drawable)
   ((windup     time-frame)
-   (last-throw time-frame))
+   (last-throw time-frame)
+   (landing    vector :inline) ;; the ground he falls to, where his feet will be
+   (pelican    handle)) ;; the pelican he crushed, and so the holder of its cell: no process when he crushed none
   (:states
+   gauntlet-klaww-fall
+   gauntlet-klaww-land
    gauntlet-klaww-idle
    gauntlet-klaww-throw
    gauntlet-klaww-hit
@@ -1397,6 +1422,18 @@
 (defun gauntlet-klaww-alive? ()
   "True while he is in the world and not yet beaten."
   (and (gauntlet-klaww-process) (not *gauntlet-klaww-defeated*)))
+
+(defun gauntlet-pelican-at-nest? ((pelican process))
+  "True while the pelican sits in the nest in pelican-wait-at-nest, the one state the cannon's explosion, and so Klaww's
+   crush, finds it in."
+  (let ((state (-> pelican next-state)))
+    (and state (= (-> state name) 'pelican-wait-at-nest))))
+
+(defun gauntlet-klaww-pelican-handle ((pelican process))
+  "The handle of pelican if it is waiting at its nest, otherwise no process."
+  (if (and pelican (gauntlet-pelican-at-nest? pelican))
+    (process->handle pelican)
+    (the-as handle #f)))
 
 (defun gauntlet-klaww-chest ((klaww gauntlet-klaww) (out vector))
   "Where his chest is in the world, written to out. His skeleton's chest joint once it has been drawn at least once; his
@@ -1634,6 +1671,71 @@
     (('hit) (gauntlet-klaww-take-hit) #t)
     (else #f)))
 
+(defstate gauntlet-klaww-fall (gauntlet-klaww)
+  :enter
+    (behavior ()
+      (set-time! (-> self state-time))
+      (format 0 "GAUNTLET KLAWW fall starts, ~M m above ~M ~M ~M~%"
+              GAUNTLET_KLAWW_FALL_HEIGHT (-> self landing x) (-> self landing y) (-> self landing z)))
+  :trans
+    (behavior ()
+      (gauntlet-klaww-face-jak)
+      ;; the whole drop is a function of the time since it began: plain gravity from rest, no steering
+      (let* ((fallen (gauntlet-seconds-since (-> self state-time)))
+             (above (- GAUNTLET_KLAWW_FALL_HEIGHT (* 0.5 GAUNTLET_KLAWW_FALL_GRAVITY fallen fallen))))
+        (set! (-> self root trans y) (+ (-> self landing y) (fmax 0.0 above)))
+        ;; where he will land, drawn the way a boulder's landing is: a steady ring and one that closes in as he nears the ground
+        (gauntlet-ring (-> self landing) GAUNTLET_KLAWW_LAND_RADIUS 16 (* 40.0 fallen))
+        (gauntlet-ring (-> self landing) (* GAUNTLET_KLAWW_LAND_RADIUS (/ (fmax 0.0 above) GAUNTLET_KLAWW_FALL_HEIGHT)) 8 (* -80.0 fallen))
+        (launch-particles (-> *part-id-table* GAUNTLET_PART_KLAWW_CENTER) (-> self landing))
+        (if (>= 0.0 above) (go gauntlet-klaww-land))))
+  :code
+    (behavior ()
+      (ja-channel-push! 1 (seconds 0.2))
+      (loop
+        (ja-no-eval :group! ogreboss-idle-ja :num! (seek!) :frame-num 0.0)
+        (until (ja-done? 0)
+          (suspend)
+          (ja :num! (seek!)))))
+  :post ja-post)
+
+(defbehavior gauntlet-klaww-crush-pelican gauntlet-klaww ()
+  "He has landed: if the pelican is still in the nest under him, it is blown up, with the cannon's explosion but without the
+   cell, which he now holds. If it is not there (it was spit at, the console dropped him with it away, he landed off the
+   beach) he keeps no pelican and so has no cell to give up."
+  (let ((pelican (handle->process (-> self pelican))))
+    (cond
+      ((and pelican (gauntlet-pelican-at-nest? pelican))
+       (format 0 "GAUNTLET KLAWW pelican crushed~%")
+       (send-event pelican 'gauntlet-crush))
+      (else
+       (set! (-> self pelican) (the-as handle #f))
+       (format 0 "GAUNTLET KLAWW lands with no pelican to crush~%"))))
+  0)
+
+(defstate gauntlet-klaww-land (gauntlet-klaww)
+  :event gauntlet-klaww-event
+  :code
+    (behavior ()
+      (set! (-> self root trans quad) (-> self landing quad))
+      (format 0 "GAUNTLET KLAWW landed at ~M ~M ~M~%" (-> self landing x) (-> self landing y) (-> self landing z))
+      (sound-play "explosion" :position #f)
+      (process-spawn part-tracker :init part-tracker-init (get-part-group GAUNTLET_PART_GROUP_KLAWW_IMPACT) 300 #f #f #f (-> self landing) :to *entity-pool*)
+      (when (and *target* (< (vector-vector-distance (-> self landing) (target-pos 0)) GAUNTLET_KLAWW_QUAKE_RANGE))
+        (activate! *camera-smush-control* 819.2 37 600 1.0 0.995))
+      (gauntlet-klaww-crush-pelican)
+      ;; the ogre's own roar, which it opens its fight with
+      (ja-channel-push! 1 (seconds 0.1))
+      (ja-no-eval :group! ogreboss-roar-ja :num! (seek!) :frame-num 0.0)
+      (until (ja-done? 0)
+        (gauntlet-klaww-face-jak)
+        (suspend)
+        (ja :num! (seek!)))
+      ;; the first throw waits one interval from the end of the roar
+      (set-time! (-> self last-throw))
+      (go gauntlet-klaww-idle))
+  :post ja-post)
+
 (defstate gauntlet-klaww-idle (gauntlet-klaww)
   :event gauntlet-klaww-event
   :trans
@@ -1712,22 +1814,35 @@
       (go gauntlet-klaww-gone))
   :post ja-post)
 
+(defbehavior gauntlet-klaww-give-up-cell gauntlet-klaww ()
+  "He has fallen: the cell he took from the pelican falls out of him at the nest. The pelican, blown up and waiting in the
+   nest, births it the way its explosion does (pelican-release-cell), including the check that Jak has not got it already."
+  (let ((pelican (handle->process (-> self pelican))))
+    (cond
+      (pelican (send-event pelican 'gauntlet-release))
+      (else (format 0 "GAUNTLET KLAWW had no cell to give up~%"))))
+  0)
+
 (defstate gauntlet-klaww-gone (gauntlet-klaww)
   :code
     (behavior ()
       (let ((chest (gauntlet-klaww-chest self (new 'stack-no-clear 'vector))))
         (process-spawn part-tracker :init part-tracker-init (get-part-group GAUNTLET_PART_GROUP_KLAWW_IMPACT) 300 #f #f #f chest :to *entity-pool*))
       (sound-play "explosion" :position #f)
+      (gauntlet-klaww-give-up-cell)
       (deactivate self)))
 
-(defbehavior gauntlet-klaww-init-by-other gauntlet-klaww ((feet vector))
-  "Appear with his feet at feet, facing Jak. Scaled down to GAUNTLET_KLAWW_SCALE, culled and lit around his chest as the
-   ogre is."
+(defbehavior gauntlet-klaww-init-by-other gauntlet-klaww ((feet vector) (pelican handle))
+  "Appear GAUNTLET_KLAWW_FALL_HEIGHT above feet, where his feet will land, facing Jak, and fall. pelican is the one he is to
+   crush on landing, or no process. Scaled down to GAUNTLET_KLAWW_SCALE, culled and lit around his chest as the ogre is."
   (stack-size-set! (-> self main-thread) 512)
   (logclear! (-> self mask) (process-mask actor-pause))
   (set! (-> self entity) #f)
+  (set! (-> self pelican) pelican)
+  (set! (-> self landing quad) (-> feet quad))
   (set! (-> self root) (new 'process 'trsqv))
   (set! (-> self root trans quad) (-> feet quad))
+  (+! (-> self root trans y) GAUNTLET_KLAWW_FALL_HEIGHT)
   (quaternion-identity! (-> self root quat))
   (set-vector! (-> self root scale) GAUNTLET_KLAWW_SCALE GAUNTLET_KLAWW_SCALE GAUNTLET_KLAWW_SCALE 1.0)
   (if *target*
@@ -1737,8 +1852,8 @@
   ;; the first throw waits one interval, so Jak arriving on the beach is not met with a boulder
   (set! (-> self windup) (seconds 1))
   (set-time! (-> self last-throw))
-  (format 0 "GAUNTLET KLAWW spawned with his feet at ~M ~M ~M, scale ~F~%" (-> feet x) (-> feet y) (-> feet z) GAUNTLET_KLAWW_SCALE)
-  (go gauntlet-klaww-idle)
+  (format 0 "GAUNTLET KLAWW spawned to land at ~M ~M ~M, scale ~F~%" (-> feet x) (-> feet y) (-> feet z) GAUNTLET_KLAWW_SCALE)
+  (go gauntlet-klaww-fall)
   (none))
 
 ;; ----------------------------------------------------------------- a button --
@@ -1805,14 +1920,26 @@
       (set! (-> out y) (-> spot y))))
   out)
 
-(defun gauntlet-klaww-spawn! ()
-  "Stand Klaww in the nest, his feet on the ground the nest has under it."
-  (let ((feet (new 'stack-no-clear 'vector)))
-    (gauntlet-klaww-ground *gauntlet-klaww-nest* feet)
-    (let ((klaww (process-spawn gauntlet-klaww :init gauntlet-klaww-init-by-other feet :to *entity-pool*)))
-      (when klaww
-        (set! (-> *gauntlet-klaww-world* klaww) (ppointer->handle klaww)))))
+(defun gauntlet-klaww-arrive! ((feet vector) (home symbol) (pelican handle))
+  "Drop Klaww onto feet, in the level called home, to crush pelican (or no process) as he lands. The pelican that announced
+   itself is spoken for from here."
+  (set! *gauntlet-klaww-home* home)
+  (set! (-> *gauntlet-klaww-world* pelican) (the-as handle #f))
+  (let ((klaww (process-spawn gauntlet-klaww :init gauntlet-klaww-init-by-other feet pelican :to *entity-pool*)))
+    (when klaww
+      (set! (-> *gauntlet-klaww-world* klaww) (ppointer->handle klaww))))
   0)
+
+(defun gauntlet-klaww-landed? ()
+  "True once he has landed: any state of his but the fall."
+  (let* ((klaww (gauntlet-klaww-process))
+         (state (if klaww (-> klaww next-state))))
+    (and state (!= (-> state name) 'gauntlet-klaww-fall))))
+
+(defun gauntlet-level-name ()
+  "The name of the level Jak is inside, or none between levels."
+  (let ((lev (level-get-target-inside *level*)))
+    (if lev (-> lev name) 'none)))
 
 (defun gauntlet-klaww-keep-button! ((index int) (x float) (y float) (z float))
   "Make sure button index is standing at its row of the table, in meters x y z (as game units here), on whatever ground is
@@ -1839,18 +1966,35 @@
        (gauntlet-art-ready? *gauntlet-button-sg*)))
 
 (defun gauntlet-klaww-keep! ()
-  "Jak is on the beach: Klaww stands in the nest and the buttons on their spots, until he is beaten. A beaten Klaww is not
-   stood up again, and the buttons that are down stay down, until Jak leaves."
+  "Jak is on the beach. Klaww falls when the pelican has said it is at its nest with the cell and he has not been dropped
+   yet; once he has landed the buttons stand on their spots, until he is beaten. A beaten Klaww is not dropped again, and the
+   buttons that are down stay down, until Jak leaves. The buttons wait for the landing so that no press is spent on a Klaww
+   who is not there to be hit."
   (when (not *gauntlet-klaww-defeated*)
     (cond
       ((not (gauntlet-klaww-art-ready?))
        (when (not *gauntlet-klaww-art-told*)
          (set! *gauntlet-klaww-art-told* #t)
          (format 0 "GAUNTLET KLAWW: the art for him or the button is not loaded, nothing spawned~%")))
-      (else
-       (if (not (gauntlet-klaww-process)) (gauntlet-klaww-spawn!))
-       (gauntlet-klaww-button-table gauntlet-row-button-keep))))
+      ((gauntlet-klaww-process)
+       (if (gauntlet-klaww-landed?) (gauntlet-klaww-button-table gauntlet-row-button-keep)))
+      ((handle->process (-> *gauntlet-klaww-world* pelican))
+       (let ((pelican (gauntlet-klaww-pelican-handle (handle->process (-> *gauntlet-klaww-world* pelican))))
+             (feet (new 'stack-no-clear 'vector)))
+         ;; the pelican may have left the nest again since it announced itself (it was spit at): then there is nothing to fall on
+         (cond
+           ((handle->process pelican)
+            (gauntlet-klaww-ground *gauntlet-klaww-nest* feet)
+            (gauntlet-klaww-arrive! feet 'beach pelican))
+           (else (set! (-> *gauntlet-klaww-world* pelican) (the-as handle #f))))))))
   0)
+
+(defun gauntlet-klaww-pelican-at-nest! ((pelican process))
+  "The pelican has landed at its nest with the stolen cell (or the level has loaded with it there). Only a note is made
+   here: the poll sends Klaww when Jak is on the beach and everything he draws is loaded."
+  (format 0 "GAUNTLET KLAWW pelican at its nest with the cell~%")
+  (set! (-> *gauntlet-klaww-world* pelican) (process->handle pelican))
+  (none))
 
 (defun gauntlet-klaww-any-button? ()
   "True while any button is in the world."
@@ -1868,7 +2012,7 @@
   "Back to before Jak came: Klaww, the buttons, the count of hits and the beaten flag all gone. Boulders in the air are his
    children, so they go with him; blasts in the air fizzle the next frame, with nothing to reach. Says so only when there was
    something to reset."
-  (when (or (gauntlet-klaww-process) (gauntlet-klaww-any-button?) (> *gauntlet-klaww-hits* 0) (> *gauntlet-klaww-presses* 0) *gauntlet-klaww-defeated*)
+  (when (or (gauntlet-klaww-process) (gauntlet-klaww-any-button?) (> *gauntlet-klaww-hits* 0) (> *gauntlet-klaww-presses* 0) *gauntlet-klaww-defeated* *gauntlet-klaww-home*)
     (gauntlet-klaww-remove (-> *gauntlet-klaww-world* klaww))
     (dotimes (i GAUNTLET_KLAWW_BUTTONS)
       (gauntlet-klaww-remove (-> *gauntlet-klaww-world* buttons i)))
@@ -1877,23 +2021,52 @@
     (set! *gauntlet-klaww-presses* 0)
     (set! *gauntlet-klaww-throws* 0)
     (set! *gauntlet-klaww-defeated* #f)
+    (set! *gauntlet-klaww-home* #f)
     (format 0 "GAUNTLET KLAWW reset: ~S~%" why))
   (set! *gauntlet-klaww-art-told* #f)
   0)
 
-(defun gauntlet-klaww-left-beach? ()
-  "True when Jak is inside a level and it is not the beach. Between levels he is inside none, which is not leaving."
+(defun gauntlet-klaww-left-home? ()
+  "True when there is a fight and Jak is inside a level that is not its home. Between levels he is inside none, which is
+   not leaving."
   (let ((lev (level-get-target-inside *level*)))
-    (and lev (!= (-> lev name) 'beach))))
+    (and *gauntlet-klaww-home* lev (!= (-> lev name) *gauntlet-klaww-home*))))
+
+(defun gauntlet-klaww-drop! ()
+  "The console's Klaww, on any level: he falls and fights. On the beach it is the pelican's story, onto the nest, crushing
+   the pelican if it is at its nest and otherwise just landing. Anywhere else he falls GAUNTLET_KLAWW_AHEAD in front of where
+   Jak faces, and there is no pelican and no cell. Buttons only exist at the beach, so off it he throws until Jak leaves the
+   level or the console turns him off. A Klaww already there, or beaten, is taken away first: asking again is a fresh fight."
+  (cond
+    ((not *target*) (format 0 "GAUNTLET DROP: Klaww asked for with no Jak in the world~%"))
+    ((not *gauntlet-klaww-enabled*) (format 0 "GAUNTLET DROP: Klaww asked for while he is turned off, ignored~%"))
+    ((not (gauntlet-klaww-art-ready?)) (format 0 "GAUNTLET DROP: Klaww's art or the button is not loaded, nothing dropped~%"))
+    (else
+     (gauntlet-klaww-reset! "asked for again")
+     (let ((feet (new 'stack-no-clear 'vector)))
+       (cond
+         ((gauntlet-in-level? 'beach)
+          (gauntlet-klaww-ground *gauntlet-klaww-nest* feet)
+          (gauntlet-klaww-arrive! feet 'beach (gauntlet-klaww-pelican-handle (process-by-ename "pelican-1"))))
+         (else
+          (let ((heading (vector-z-quaternion! (new 'stack-no-clear 'vector) (-> *target* control quat-for-control)))
+                (spot (new 'stack-no-clear 'vector)))
+            (set! (-> heading y) 0.0)
+            (vector-xz-normalize! heading GAUNTLET_KLAWW_AHEAD)
+            (vector+! spot (target-pos 0) heading)
+            (gauntlet-klaww-ground spot feet)
+            (gauntlet-klaww-arrive! feet (gauntlet-level-name) (the-as handle #f))))))))
+  0)
 
 (defun gauntlet-klaww-poll! ()
-  "Per-frame: on the beach, Klaww and his buttons are there; off it, or with the setting off, they are not and the fight is
-   forgotten. With no Jak (dying, loading) nothing changes, so a death on the beach does not reset the fight."
+  "Per-frame: a fight ends when Jak leaves the level it is in (or the setting goes off), and is forgotten; on the beach the
+   pelican's arrival sends Klaww and, once he has landed, the buttons. With no Jak (dying, loading) nothing changes, so a
+   death on the beach does not reset the fight."
   (cond
     ((not *target*))
     ((not *gauntlet-klaww-enabled*) (gauntlet-klaww-reset! "turned off"))
-    ((gauntlet-in-level? 'beach) (gauntlet-klaww-keep!))
-    ((gauntlet-klaww-left-beach?) (gauntlet-klaww-reset! "Jak left the beach")))
+    ((gauntlet-klaww-left-home?) (gauntlet-klaww-reset! "Jak left the level"))
+    ((gauntlet-in-level? 'beach) (gauntlet-klaww-keep!)))
   0)
 
 ;; --------------------------------------------------------------- the console --
@@ -2190,6 +2363,19 @@
         (else #f))
       #f)))
 
+(defun gauntlet-klaww-state-name ()
+  "What the state file calls the fight: waiting for the pelican, falling, landing, fighting, or over."
+  (let* ((klaww (gauntlet-klaww-process))
+         (state (if klaww (-> klaww next-state))))
+    (cond
+      (*gauntlet-klaww-defeated* "defeated")
+      ((not state) "waiting")
+      (else
+       (case (-> state name)
+         (('gauntlet-klaww-fall) "falling")
+         (('gauntlet-klaww-land) "landing")
+         (else "fighting"))))))
+
 (defun gauntlet-bomb-remaining ((bomb gauntlet-bomb) (state-name symbol))
   "Seconds the bomb has left on its clock: all of it while it falls, none once it has gone off."
   (cond
@@ -2245,8 +2431,10 @@
       (else (format out "null")))
     (gauntlet-json-key out "klaww")
     (cond
-      ((and *target* (gauntlet-in-level? 'beach))
+      ((and *target* (or (gauntlet-in-level? 'beach) *gauntlet-klaww-home*))
        (gauntlet-json-open out)
+       (gauntlet-json-key out "state")
+       (format out "\"~A\"" (gauntlet-klaww-state-name))
        (gauntlet-json-key out "hits")
        (format out "~D" *gauntlet-klaww-hits*)
        (gauntlet-json-key out "max")
@@ -2323,6 +2511,8 @@
        (format 0 "GAUNTLET DROP: bomb-bridge asked for off Geyser Rock, ignored~%")))
     ;; the herd, aimed at Jak's spot from where he faces
     ((string= kind "stampede") (gauntlet-stampede-ahead!))
+    ;; Klaww falls: onto the pelican's nest on the beach, ahead of Jak anywhere else
+    ((string= kind "klaww") (gauntlet-klaww-drop!))
     (else (format 0 "GAUNTLET DROP: do not know how to drop ~S~%" kind)))
   0)
 
