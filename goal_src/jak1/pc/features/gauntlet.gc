@@ -7,6 +7,9 @@
 ;; changed since the last look is a new request; a name this file does not know
 ;; is logged and dropped. `jakc drop <name>` writes it.
 ;;
+;; On Geyser Rock (level training) the bomb also drops by itself, on a fixed spot on the bridge, the first time Jak walks
+;; within GAUNTLET_BRIDGE_TRIGGER_RADIUS of it, and again only after he has been farther than GAUNTLET_BRIDGE_REARM_RANGE away.
+;;
 ;; The bomb is the big dark eco bomb Gol and Maia's robot drops in the final
 ;; boss (darkecobomb, levels/finalboss/robotboss-weapon.gc), made available
 ;; outside the Citadel:
@@ -25,16 +28,35 @@
 ;; counts down and goes off) with a manipy for a body, the game's own way to put
 ;; a character on screen from code (the Yellow Sage does the same in
 ;; levels/training/training-obs.gc). The body has no collision of its own, so
-;; there is nothing to stand on, push against or get stuck in; the only thing it
-;; ever does to Jak is kill him, with his normal death, when it explodes (unless a recent hit still has him invulnerable).
+;; there is nothing to stand on, push against or get stuck in. It does two things to Jak:
+;;   - while it counts down it pulls him toward it, like gravity, so that the jump he knows
+;;     (off a Geyser Rock pillar, say) is dragged short and the runner has something to deal
+;;     with besides the clock. The pull is the game's own way of moving Jak from outside, the
+;;     sunken whirlpool's and the moving platforms': a collision-checked step each frame
+;;     (fill-cache-for-shape! then integrate-and-collide!, status restored after), never a write
+;;     to his velocity, which his own control recomputes every frame. Standing or running on the
+;;     ground he is only nudged; in the air nothing grips him and the pull builds as fast as
+;;     gravity would;
+;;   - when it explodes it kills him, with his normal death, if he is within the blast
+;;     (unless a recent hit still has him invulnerable).
 
 (defconstant GAUNTLET_DROP_POLL_FRAMES 30) ;; how often the request file is looked at, about twice a second
 (defconstant GAUNTLET_BOMB_DROP_HEIGHT (meters 25)) ;; how high above Jak the bomb appears
 (defconstant GAUNTLET_BOMB_GRAVITY (meters 30)) ;; its fall, in meters per second per second (about 1.3 s from 25 m)
 (defconstant GAUNTLET_BOMB_COUNTDOWN (seconds 4)) ;; from landing to blast, with the warning beeps speeding up
 (defconstant GAUNTLET_BOMB_BLAST_RADIUS (meters 35)) ;; Jak inside this when it goes off is killed, unless a recent hit still has him invulnerable
+;; The pull. Jak's top run speed is 10 m/s (target-speed of *walk-mods*, surface-h.gc) and a running jump 10 to 16 m/s
+;; (*jump-mods*, *forward-jump-mods*), against gravity of 60 m/s^2 (GRAVITY_AMOUNT). A runner who starts under the bomb
+;; covers 40 m in the countdown against a 35 m blast, so the pull on foot must cost him under 5 m in all.
+(defconstant GAUNTLET_BOMB_PULL_RADIUS GAUNTLET_BOMB_BLAST_RADIUS) ;; the bomb pulls Jak while he is closer than this, measured sideways
+(defconstant GAUNTLET_BOMB_PULL (meters 20)) ;; in the air Jak is dragged toward the bomb faster every second by this much, a third of gravity: a 0.7 s jump loses 4.6 m, a 1 s flip loses 10 m
+(defconstant GAUNTLET_BOMB_GROUND_PULL (meters 0.5)) ;; on his feet, or in water, he slides toward it at this steady speed: felt standing still, a 2 m cost over a 4 s run
 (defconstant GAUNTLET_BOMB_FIRST_TICK 0.9) ;; the finale's warning curve: the first beep when the clock reaches this cosine
 (defconstant GAUNTLET_BOMB_TICK_STEP 0.06) ;; and each beep lowers the bar by this much, so they come faster and faster
+;; The bridge on Geyser Rock (level training): the bomb also drops there by itself, on a fixed spot, when Jak walks onto it.
+;; The tall pillar runners jump from is about 17 m away, so the pull drags that jump back toward the bridge.
+(defconstant GAUNTLET_BRIDGE_TRIGGER_RADIUS (meters 5)) ;; Jak this close to the bridge spot, sideways, sets the bomb off
+(defconstant GAUNTLET_BRIDGE_REARM_RANGE (meters 60)) ;; and it will not drop again until he has been farther than this from it, which dying and respawning also does
 (defconstant GAUNTLET_GROUND_PROBE_UP (meters 2)) ;; the ground under Jak is searched for from this far above his feet
 (defconstant GAUNTLET_GROUND_PROBE_LENGTH (meters 20)) ;; ... and this far down
 (defconstant GAUNTLET_PART_GROUP_BLAST 1000) ;; ids this file adds to the particle tables, above any the game uses
@@ -366,7 +388,9 @@
   ((body      handle)
    (ground-y  float)
    (fall-from float)
-   (next-tick float))
+   (next-tick float)
+   (pull-speed float)
+   (pulling symbol))
   (:states
    gauntlet-bomb-fall
    gauntlet-bomb-countdown
@@ -425,11 +449,58 @@
           (format 0 " main ~M ~M ~M ground ~M~%" (-> probe x) (-> probe y) (-> probe z) (-> self ground-y))))))
   0)
 
+;; ------------------------------------------------------------------ the pull --
+
+(defun gauntlet-pullable? ((jak target))
+  "True when Jak is moving of his own accord, on foot, in the air or in water, where a sideways step is safe. Not while
+   he is dying or something else has grabbed him (a cutscene, a sage, a warp gate), and not while he hangs from an
+   edge, where his own state holds him in place."
+  (and (not (logtest? (-> jak state-flags) (state-flags dying grabbed)))
+       (not (real-movie?))
+       (!= (-> jak next-state name) 'target-edge-grab)))
+
+(defun gauntlet-jak-gripped? ((jak target))
+  "True when Jak has something under his feet to push against: the ground, or the water he stands in."
+  (or (logtest? (-> jak control status) (cshape-moving-flags onground))
+      (logtest? (-> jak water flag) (water-flag touch-water))))
+
+(defbehavior gauntlet-bomb-pull gauntlet-bomb ()
+  "One frame of the bomb's gravity well. Jak within GAUNTLET_BOMB_PULL_RADIUS of the bomb, sideways, is stepped toward
+   it, never up or down and never past it. Gripped he moves at GAUNTLET_BOMB_GROUND_PULL; in the air his pull speed
+   grows by GAUNTLET_BOMB_PULL every second and starts over from the ground speed when he lands. The step is the whirlpool's
+   (levels/sunken/whirlpool.gc): the cache filled around him, integrate-and-collide! with the sideways velocity, his
+   status put back so his own state logic does not see a move it did not make."
+  (let ((jak *target*))
+    (when (and jak (gauntlet-pullable? jak))
+      (let* ((control (-> jak control))
+             (toward (vector-! (new 'stack-no-clear 'vector) (-> self root trans) (-> control trans)))
+             (distance (vector-xz-length toward)))
+        (cond
+          ((or (>= distance GAUNTLET_BOMB_PULL_RADIUS) (< distance 1.0))
+           (set! (-> self pull-speed) 0.0))
+          (else
+           (when (not (-> self pulling))
+             (set! (-> self pulling) #t)
+             (format 0 "GAUNTLET BOMB pull starts, Jak ~M m away~%" distance))
+           (if (gauntlet-jak-gripped? jak)
+             (set! (-> self pull-speed) GAUNTLET_BOMB_GROUND_PULL)
+             (+! (-> self pull-speed) (* GAUNTLET_BOMB_PULL (seconds-per-frame))))
+           ;; never carry him past the bomb: the speed is capped at what covers the distance in one frame
+           (set! (-> toward y) 0.0)
+           (vector-xz-normalize! toward (fmin (-> self pull-speed) (/ distance (seconds-per-frame))))
+           (fill-cache-for-shape! control (+ 8192.0 (vector-xz-length toward)) (-> control root-prim collide-with))
+           (let ((status (-> control status)))
+             (integrate-and-collide! control toward)
+             (set! (-> control status) status)))))))
+  0)
+
 (defbehavior gauntlet-bomb-init-by-other gauntlet-bomb ((where vector))
   "Appear GAUNTLET_BOMB_DROP_HEIGHT above where, which is where Jak stands, and fall to the ground under it."
   ;; keep ticking whatever the actors around do (the finale's bomb does the same)
   (logclear! (-> self mask) (process-mask actor-pause))
   (set! (-> self body) (the-as handle #f))
+  (set! (-> self pull-speed) 0.0)
+  (set! (-> self pulling) #f)
   (set! (-> self root) (new 'process 'trsqv))
   (let ((ground (new 'stack-no-clear 'vector)))
     (gauntlet-ground-below where ground)
@@ -480,8 +551,13 @@
     (behavior ()
       (set-time! (-> self state-time))
       (set! (-> self next-tick) GAUNTLET_BOMB_FIRST_TICK))
+  :exit
+    (behavior ()
+      (if (-> self pulling)
+        (format 0 "GAUNTLET BOMB pull ends, Jak ~M m away~%" (if *target* (vector-vector-xz-distance (-> self root trans) (target-pos 0)) 0.0))))
   :trans
     (behavior ()
+      (gauntlet-bomb-pull)
       (let* ((elapsed (- (current-time) (-> self state-time)))
              (remaining (fmax 0.0 (/ (the float (- GAUNTLET_BOMB_COUNTDOWN elapsed)) (the float GAUNTLET_BOMB_COUNTDOWN)))))
         ;; the finale's own warning: a beep and a flash each time the clock's cosine drops under the bar,
@@ -524,11 +600,41 @@
     (behavior ()
       (deactivate self)))
 
-(defun gauntlet-bomb-drop! ()
-  "Drop the bomb on Jak's spot, if its art is there to draw."
+(define *gauntlet-bomb* (the-as handle #f)) ;; the bomb last dropped, so the bridge knows whether one is still alive
+
+(defun gauntlet-bomb-alive? ()
+  "True while the last bomb dropped is still in the world, from the moment it appears to the end of its blast."
+  (if (handle->process *gauntlet-bomb*) #t #f))
+
+(defun gauntlet-bomb-drop! ((where vector))
+  "Drop the bomb on where, if its art is there to draw."
   (if (gauntlet-art-ready? *gauntlet-darkecobomb-sg*)
-    (process-spawn gauntlet-bomb :init gauntlet-bomb-init-by-other (target-pos 0) :to *entity-pool*)
+    (let ((bomb (process-spawn gauntlet-bomb :init gauntlet-bomb-init-by-other where :to *entity-pool*)))
+      (if bomb (set! *gauntlet-bomb* (ppointer->handle bomb))))
     (format 0 "GAUNTLET DROP: the bomb's art group is not loaded, nothing dropped~%"))
+  0)
+
+;; ---------------------------------------------------------------- the bridge --
+
+(define *gauntlet-bridge-spot* (new 'static 'vector :x (meters -1313.8) :y (meters 40.5) :z (meters 946.4) :w 1.0))
+(define *gauntlet-bridge-armed* #t) ;; false from the drop until Jak has been far from the bridge again
+
+(defun gauntlet-in-training? ()
+  "True when Jak is in Geyser Rock."
+  (let ((lev (level-get-target-inside *level*)))
+    (and lev (= (-> lev name) 'training))))
+
+(defun gauntlet-bridge-poll! ()
+  "Per-frame: on Geyser Rock, drop one bomb on the bridge spot when Jak comes within GAUNTLET_BRIDGE_TRIGGER_RADIUS of it
+   and no bomb is alive; do not again until he has been farther than GAUNTLET_BRIDGE_REARM_RANGE from it."
+  (when (and *target* (gauntlet-in-training?))
+    (let ((distance (vector-vector-xz-distance (target-pos 0) *gauntlet-bridge-spot*)))
+      (cond
+        ((> distance GAUNTLET_BRIDGE_REARM_RANGE) (set! *gauntlet-bridge-armed* #t))
+        ((and *gauntlet-bridge-armed* (< distance GAUNTLET_BRIDGE_TRIGGER_RADIUS) (not (gauntlet-bomb-alive?)))
+         (set! *gauntlet-bridge-armed* #f)
+         (format 0 "GAUNTLET BRIDGE: Jak is ~M m from the bridge spot, dropping the bomb on it~%" distance)
+         (gauntlet-bomb-drop! *gauntlet-bridge-spot*)))))
   0)
 
 ;; ------------------------------------------------------------------ the poll --
@@ -546,13 +652,14 @@
   "Drop what kind names at Jak's spot."
   (cond
     ((not *target*) (format 0 "GAUNTLET DROP: ~S asked for with no Jak in the world~%" kind))
-    ((string= kind "bomb") (gauntlet-bomb-drop!))
+    ((string= kind "bomb") (gauntlet-bomb-drop! (target-pos 0)))
     (else (format 0 "GAUNTLET DROP: do not know how to drop ~S~%" kind)))
   0)
 
 (defun gauntlet-drop-poll! ()
-  "Per-frame hook: every GAUNTLET_DROP_POLL_FRAMES frames look at the request counter, and drop once
-   when it has changed since the last look."
+  "Per-frame hook: the bridge is watched every frame; every GAUNTLET_DROP_POLL_FRAMES frames look at the request counter,
+   and drop once when it has changed since the last look."
+  (gauntlet-bridge-poll!)
   (+! *gauntlet-drop-countdown* -1)
   (when (>= 0 *gauntlet-drop-countdown*)
     (set! *gauntlet-drop-countdown* GAUNTLET_DROP_POLL_FRAMES)
