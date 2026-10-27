@@ -549,12 +549,14 @@
 
 (defun gauntlet-volley-start ((volley gauntlet-volley) (origin vector))
   "Capture the aim at Jak once. The whole volley sweeps around this heading, it is not re-aimed per shot.
-   Shots leave from origin (the cane) and aim at Jak's chest, so on higher or lower ground the fan tilts toward him."
+   Shots leave from origin (the cane) on a level line toward Jak, like every shooting enemy in the game."
   (let ((heading (-> volley heading)))
     (set! (-> heading quad) (-> (target-pos 0) quad))
-    ;; aim at his chest, not his feet; the pitch stays in the heading, and the sweep (a rotation about world y) keeps it
-    (+! (-> heading y) 4915.2)
     (vector-! heading heading origin)
+    ;; level on purpose: this is the tutorial, the shot does not track Jak's height. A shot can pass under or over him
+    ;; when he stands higher or lower than the cane, and the player learns the pattern and adjusts. The sweep (a
+    ;; rotation about world y) keeps it level.
+    (set! (-> heading y) 0.0)
     (vector-normalize! heading 1.0))
   ;; the shots always leave from the cane, wherever Jak stands
   (set! (-> volley muzzle quad) (-> origin quad))
