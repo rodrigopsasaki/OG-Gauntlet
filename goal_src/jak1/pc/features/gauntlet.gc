@@ -1326,6 +1326,16 @@
    (buttons handle 3)))
 
 (define *gauntlet-klaww-world* (new 'global 'gauntlet-klaww-world))
+
+(defun gauntlet-klaww-forget-all! ()
+  "Every handle in the world points at no process. A null handle is one whose process is #f, not zero: handle->process asks
+   `(if (-> handle process) ...)` and zero is true in GOAL, so a zeroed handle is read through address 0."
+  (set! (-> *gauntlet-klaww-world* klaww) (the-as handle #f))
+  (dotimes (i GAUNTLET_KLAWW_BUTTONS)
+    (set! (-> *gauntlet-klaww-world* buttons i) (the-as handle #f)))
+  0)
+
+(gauntlet-klaww-forget-all!)
 (define *gauntlet-klaww-hits* 0) ;; blasts that have reached him since Jak came to the beach
 (define *gauntlet-klaww-presses* 0) ;; buttons pressed since then
 (define *gauntlet-klaww-throws* 0) ;; boulders thrown since then, which also numbers them in the log
@@ -1862,9 +1872,7 @@
     (gauntlet-klaww-remove (-> *gauntlet-klaww-world* klaww))
     (dotimes (i GAUNTLET_KLAWW_BUTTONS)
       (gauntlet-klaww-remove (-> *gauntlet-klaww-world* buttons i)))
-    (set! (-> *gauntlet-klaww-world* klaww) (the-as handle #f))
-    (dotimes (i GAUNTLET_KLAWW_BUTTONS)
-      (set! (-> *gauntlet-klaww-world* buttons i) (the-as handle #f)))
+    (gauntlet-klaww-forget-all!)
     (set! *gauntlet-klaww-hits* 0)
     (set! *gauntlet-klaww-presses* 0)
     (set! *gauntlet-klaww-throws* 0)
