@@ -849,7 +849,8 @@
                ((and (= (-> block param 1) 'punch) (= v1-2 1)) (save-reminder s4-0 2 0) 2)
                ((zero? v1-2))
                ((= v1-2 1)))
-             (let* ((s4-1 proc)
+             (let* ((sage-out? (if (handle->process (-> self sage)) #t #f)) ;; the sage is standing on this dummy right now
+                    (s4-1 proc)
                     (v1-14 (if (and (nonzero? s4-1) (type-type? (-> s4-1 type) process-drawable)) s4-1))
                     (f30-0 (cond
                              (v1-14
@@ -864,15 +865,20 @@
                (go-virtual hit
                            f30-0
                            (if a0-24 (get-middle-of-bsphere-overlap a0-24 (-> self intersection)) (target-pos 0))
+                           ;; While the sage stands on this dummy he is what the player sees and aims at, so any attack that
+                           ;; reaches the dummy breaks it and the sage dies with it. Without this, a pole dummy (scarecrow-b)
+                           ;; only broke from a jump hit on its top sphere (prim 2), far above where the sage stands. With no
+                           ;; sage out the vanilla rule is untouched.
                            (the-as symbol
-                                   (and ((method-of-type touching-shapes-entry prims-touching?)
-                                         (the-as touching-shapes-entry (-> block param 0))
-                                         (the-as collide-shape-moving (-> self root))
-                                         (the-as uint 2))
-                                        (or (= (-> self type) scarecrow-a)
-                                            (and (= (-> proc type) target)
-                                                 (logtest? (-> (the-as target proc) control mod-surface flags) (surface-flags jump))
-                                                 (not (logtest? (-> (the-as target proc) control status) (cshape-moving-flags onsurf))))))))))))
+                                   (or sage-out?
+                                       (and ((method-of-type touching-shapes-entry prims-touching?)
+                                             (the-as touching-shapes-entry (-> block param 0))
+                                             (the-as collide-shape-moving (-> self root))
+                                             (the-as uint 2))
+                                            (or (= (-> self type) scarecrow-a)
+                                                (and (= (-> proc type) target)
+                                                     (logtest? (-> (the-as target proc) control mod-surface flags) (surface-flags jump))
+                                                     (not (logtest? (-> (the-as target proc) control status) (cshape-moving-flags onsurf)))))))))))))
         (('touch) (send-shove-back (-> self root) proc (the-as touching-shapes-entry (-> block param 0)) 0.7 6144.0 16384.0))))
   :trans
     (behavior ()
