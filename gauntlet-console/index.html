@@ -159,6 +159,7 @@
       <span>Settings</span>
       <span><span id="save-status" class="stat"></span> <button id="reset-all" class="small">Reset all to defaults</button></span>
     </h2>
+    <p id="no-state" class="note" hidden>Start the game to load its settings.</p>
     <div id="settings"></div>
     <p class="footer-note">Changes are sent a moment after you stop moving a control. The game checks for them about twice a second. The tag on each row says when a change takes effect.</p>
   </section>
@@ -307,6 +308,11 @@ function buildSettings(schema) {
 
 function renderSettings(payload) {
   const state = payload.state;
+  // before the game has ever reported, the sliders have no real values to show
+  $("no-state").hidden = state !== null;
+  for (const node of document.querySelectorAll("#settings input, #settings button, #reset-all")) {
+    node.disabled = state === null;
+  }
   const inEffect = state ? state.settings : {};
   const written = payload.written ? payload.written.settings : {};
   const defaults = state ? state.defaults : {};
