@@ -364,4 +364,11 @@
   ;; pris tpage 400; their models are in GAME.fr3 (common_art_groups again).
   "yakow-ag.go"
   "tpage-400.go"
+  ;; gauntlet: Klaww, the ogre boss, who stands in the pelican's nest at Sentinel Beach. His art group ships in OGR.DGO only, with
+  ;; its textures (his own, and the boulder's) in Mountain Pass's pris tpage 967; his models are in GAME.fr3 (common_art_groups again).
+  "ogreboss-ag.go"
+  "tpage-967.go"
+  ;; gauntlet: the buttons beside the green eco cloggers that shoot him. generic-button-ag ships in SUN.DGO only, with its three
+  ;; textures in Lost Precursor City's tfrag tpage 661; its models are in GAME.fr3 (common_art_groups again).
+  "generic-button-ag.go"
  ))

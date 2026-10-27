@@ -131,8 +131,10 @@
   // extracted into GAME.fr3. The art group itself must also be listed in goal_src/jak1/dgos/game.gd.
   // gauntlet mod: the training dummies turn into the Yellow Sage, whose art group otherwise only ships in CIT.DGO,
   // the dark eco bomb of the final boss can be dropped on Jak anywhere, its art group otherwise only in FIN.DGO,
-  // and a herd of yakows can charge Jak anywhere, their art group otherwise only in VI1.DGO.
-  "common_art_groups": ["yellowsage-ag", "darkecobomb-ag", "yakow-ag"],
+  // a herd of yakows can charge Jak anywhere, their art group otherwise only in VI1.DGO,
+  // and Klaww, the ogre boss of Mountain Pass (art group otherwise only in OGR.DGO), stands in the pelican's nest at Sentinel
+  // Beach, with the generic button (art group otherwise only in SUN.DGO) that shoots him.
+  "common_art_groups": ["yellowsage-ag", "darkecobomb-ag", "yakow-ag", "ogreboss-ag", "generic-button-ag"],
 
   // whether or not to dump out streamed audio files to decompiler_out/<game>/audio/sfx and decompiler_out/<game>/audio/voice_lines
   "rip_streamed_audio": false,
