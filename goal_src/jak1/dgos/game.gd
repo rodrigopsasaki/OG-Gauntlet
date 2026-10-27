@@ -360,4 +360,8 @@
   ;; textures in the final boss's tpage 1419; its models are in GAME.fr3 (common_art_groups again).
   "darkecobomb-ag.go"
   "tpage-1419.go"
+  ;; gauntlet: the yakows that can charge Jak anywhere. Their art group ships in VI1.DGO only, with its textures in Sandover's
+  ;; pris tpage 400; their models are in GAME.fr3 (common_art_groups again).
+  "yakow-ag.go"
+  "tpage-400.go"
  ))
