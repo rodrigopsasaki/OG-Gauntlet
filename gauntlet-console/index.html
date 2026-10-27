@@ -134,6 +134,7 @@
         <button id="t-bomb" class="danger">Bomb on Jak</button>
         <button id="t-bomb-bridge" class="danger">Bomb on the bridge</button>
         <button id="t-stampede" class="danger">Stampede</button>
+        <button id="t-klaww" class="danger">Klaww falls</button>
         <button id="t-trip">Trip</button>
         <button id="t-freeze">Freeze</button>
         <button id="t-save-spot">Save spot</button>
@@ -348,7 +349,7 @@ async function trigger(action, arg) {
   }
 }
 
-for (const action of ["bomb", "bomb-bridge", "stampede", "trip", "freeze", "save-spot", "load-spot"]) {
+for (const action of ["bomb", "bomb-bridge", "stampede", "klaww", "trip", "freeze", "save-spot", "load-spot"]) {
   $(`t-${action}`).addEventListener("click", () => trigger(action));
 }
 $("t-warp").addEventListener("click", () => trigger("warp", $("warp-select").value));
@@ -375,8 +376,8 @@ function renderHeader(payload) {
   const klaww = state && state.klaww;
   $("klaww-stat").hidden = !klaww;
   if (klaww) {
-    const down = klaww.alive ? "" : ", defeated";
-    $("klaww").textContent = `${klaww.hits} of ${klaww.max} hits, ${klaww.buttonsPressed} of ${klaww.buttons} buttons${down}`;
+    // waiting for the pelican, falling, landing, fighting or defeated
+    $("klaww").textContent = `${klaww.state}, ${klaww.hits} of ${klaww.max} hits, ${klaww.buttonsPressed} of ${klaww.buttons} buttons`;
   }
 
   const writtenRev = payload.written ? payload.written.revision : null;
@@ -405,6 +406,8 @@ function renderTriggers(payload) {
   $("bridge-note").hidden = onGeyser || !state;
   // the herd charges at Jak from ahead of where he faces, on any level, so it only needs a running game
   $("t-stampede").disabled = !payload.live;
+  // Klaww falls on the nest on the beach and ahead of Jak anywhere else, so he too only needs a running game
+  $("t-klaww").disabled = !payload.live;
 }
 
 function renderBomb(payload) {

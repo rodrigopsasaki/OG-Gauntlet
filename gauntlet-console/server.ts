@@ -311,9 +311,9 @@ const SETTINGS: readonly SettingSpec[] = [
   flag(
     "klaww-enabled",
     "Klaww",
-    "Klaww on the beach",
+    "Klaww",
     "live",
-    "Klaww stands in the pelican's nest at Sentinel Beach and throws boulders at Jak, and the buttons beside the green eco cloggers shoot back. Off takes him and the buttons away and forgets the fight.",
+    "Klaww falls onto the pelican when it lands at its nest at Sentinel Beach and throws boulders at Jak; three buttons around the beach throw boulders back. Off takes him and the buttons away and forgets the fight. The Klaww falls button still needs this on.",
   ),
   num(
     "klaww-throw-interval",
@@ -411,7 +411,9 @@ interface BridgeState {
   distance: number;
 }
 interface KlawwState {
-  /** Blasts that have reached him since Jak came to the beach. */
+  /** Where the fight is: waiting for the pelican, falling, landing, fighting, or defeated. */
+  state: string;
+  /** Boulders that have reached him since this fight began. */
   hits: number;
   /** Hits it takes to bring him down. */
   max: number;
@@ -429,7 +431,7 @@ interface GauntletState {
   jak: JakState | null;
   bomb: BombState | null;
   bridge: BridgeState | null;
-  /** null off the beach, and for a game build that does not publish him. */
+  /** null unless Jak is on the beach or a fight is on, and for a game build that does not publish him. */
   klaww: KlawwState | null;
   effects: { enabled: boolean };
 }
@@ -522,6 +524,7 @@ function parseGauntletState(raw: unknown): GauntletState {
         : orNull(root.klaww, (value) => {
             const klaww = needRecord(value, "state.klaww");
             return {
+              state: needString(klaww, "state", "state.klaww"),
               hits: needNumber(klaww, "hits", "state.klaww"),
               max: needNumber(klaww, "max", "state.klaww"),
               alive: needBoolean(klaww, "alive", "state.klaww"),
@@ -715,7 +718,7 @@ async function resetSettings(): Promise<{ revision: number; settings: SettingMap
 // ---------------------------------------------------------------------------
 
 /** What the game's drop request channel (`gauntlet-drop-request.txt`) understands. */
-const DROP_WORDS = ["bomb", "bomb-bridge", "stampede"] as const;
+const DROP_WORDS = ["bomb", "bomb-bridge", "stampede", "klaww"] as const;
 type DropWord = (typeof DROP_WORDS)[number];
 
 function isDropWord(value: unknown): value is DropWord {
@@ -808,6 +811,7 @@ function commandLine(action: Action, arg: unknown): string {
     case "bomb":
     case "bomb-bridge":
     case "stampede":
+    case "klaww":
       throw new HttpError(500, "drops do not use the command file");
   }
 }
