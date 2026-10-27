@@ -10,3 +10,57 @@
 ;; what the name says at Jak's spot. Polled every frame from twitch-poll!, a
 ;; no-op except one exists-check per 30 frames.
 (define-extern gauntlet-drop-poll! (function none))
+
+;; ------------------------------------------------------------ the tunables --
+
+;; Everything the gauntlet console can steer. The defaults are written once, as constants in game units (meters are
+;; 4096 units, seconds are 300 ticks, degrees are 65536 per turn); the globals start from them and are what the mod
+;; reads on every use. pc/features/gauntlet.gc owns the settings file that overwrites the globals and the state file
+;; that publishes them next to these same defaults, so the reset path and the "defaults" the console shows read one truth.
+;; gauntlet.gc and levels/training/training-obs.gc both read the globals, which is why they live here, ahead of both.
+(defconstant GAUNTLET_BOMB_COUNTDOWN_DEFAULT (seconds 4)) ;; from landing to blast, with the warning beeps speeding up
+(defconstant GAUNTLET_BOMB_BLAST_RADIUS_DEFAULT (meters 35)) ;; Jak inside this when it goes off is killed, unless a recent hit still has him invulnerable
+(defconstant GAUNTLET_BOMB_PULL_RADIUS_DEFAULT GAUNTLET_BOMB_BLAST_RADIUS_DEFAULT) ;; the bomb pulls Jak while he is closer than this, measured sideways
+(defconstant GAUNTLET_BOMB_PULL_DEFAULT (meters 20)) ;; in the air Jak is dragged toward the bomb faster every second by this much, a third of gravity: a 0.7 s jump loses 4.6 m, a 1 s flip loses 10 m
+(defconstant GAUNTLET_BOMB_GROUND_PULL_DEFAULT (meters 0.5)) ;; on his feet, or in water, he slides toward it at this steady speed: felt standing still, a 2 m cost over a 4 s run
+(defconstant GAUNTLET_BOMB_DROP_HEIGHT_DEFAULT (meters 25)) ;; how high above Jak the bomb appears
+(defconstant GAUNTLET_BOMB_GRAVITY_DEFAULT (meters 30)) ;; its fall, in meters per second per second (about 1.3 s from 25 m)
+(defconstant GAUNTLET_BRIDGE_ENABLED_DEFAULT #t) ;; the bomb drops by itself on the bridge
+(defconstant GAUNTLET_BRIDGE_TRIGGER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to the bridge spot, sideways, sets the bomb off
+(defconstant GAUNTLET_BRIDGE_REARM_RANGE_DEFAULT (meters 60)) ;; and it will not drop again until he has been farther than this from it, which dying and respawning also does
+(defconstant GAUNTLET_DUMMIES_ENABLED_DEFAULT #t) ;; the training dummies turn into sages and shoot
+(defconstant GAUNTLET_DUMMY_VOLLEY_INTERVAL_DEFAULT (seconds 3.0)) ;; time between volley starts, per dummy
+(defconstant GAUNTLET_DUMMY_VOLLEY_GAP_DEFAULT (seconds 0.4)) ;; time between shots within a volley
+(defconstant GAUNTLET_DUMMY_VOLLEY_SIZE_DEFAULT 5) ;; shots per volley, swept across a fan centred on the aim at Jak
+(defconstant GAUNTLET_DUMMY_VOLLEY_SPREAD_DEFAULT (degrees 15)) ;; angle between neighbouring shots in the fan
+(defconstant GAUNTLET_DUMMY_RANGE_DEFAULT (meters 20)) ;; a dummy turns into a sage and fires once Jak is this close
+(defconstant GAUNTLET_SAGE_LEAVE_RANGE_DEFAULT (meters 24)) ;; the sage leaves only beyond this, so Jak on the edge of range does not flicker him in and out
+;; The first dummy heralds the rest from the top of the stairs (28 m from it), so the player learns early
+;; that the dummies shoot. It wakes from further away, and every shot rule is otherwise the same.
+(defconstant GAUNTLET_HERALD_RANGE_DEFAULT (meters 30)) ;; its appear and firing range
+(defconstant GAUNTLET_HERALD_LEAVE_RANGE_DEFAULT (meters 34)) ;; its sage leaves beyond this
+(defconstant GAUNTLET_DUMMY_SHOT_SPEED_DEFAULT (meters 40)) ;; Jak's own shot is 60; slower here so a sidestep beats it
+
+;; Times are in ticks (300 a second), lengths and speeds in game units, the spread in rotation units.
+;; Which of them apply to something already in the world is the console contract's business: a bomb in the air keeps
+;; the countdown, drop height and gravity it was dropped with, a sage keeps the ranges he appeared with.
+(define *gauntlet-bomb-countdown* (the int GAUNTLET_BOMB_COUNTDOWN_DEFAULT))
+(define *gauntlet-bomb-blast-radius* GAUNTLET_BOMB_BLAST_RADIUS_DEFAULT)
+(define *gauntlet-bomb-pull-radius* GAUNTLET_BOMB_PULL_RADIUS_DEFAULT)
+(define *gauntlet-bomb-pull* GAUNTLET_BOMB_PULL_DEFAULT) ;; per second, per second
+(define *gauntlet-bomb-ground-pull* GAUNTLET_BOMB_GROUND_PULL_DEFAULT) ;; per second
+(define *gauntlet-bomb-drop-height* GAUNTLET_BOMB_DROP_HEIGHT_DEFAULT)
+(define *gauntlet-bomb-gravity* GAUNTLET_BOMB_GRAVITY_DEFAULT) ;; per second, per second
+(define *gauntlet-bridge-enabled* GAUNTLET_BRIDGE_ENABLED_DEFAULT) ;; off: the bomb never drops by itself on the bridge
+(define *gauntlet-bridge-trigger-radius* GAUNTLET_BRIDGE_TRIGGER_RADIUS_DEFAULT)
+(define *gauntlet-bridge-rearm-range* GAUNTLET_BRIDGE_REARM_RANGE_DEFAULT)
+(define *gauntlet-dummies-enabled* GAUNTLET_DUMMIES_ENABLED_DEFAULT) ;; off: the training dummies are the game's own, no sage and no shots
+(define *gauntlet-dummy-volley-interval* (the int GAUNTLET_DUMMY_VOLLEY_INTERVAL_DEFAULT))
+(define *gauntlet-dummy-volley-gap* (the int GAUNTLET_DUMMY_VOLLEY_GAP_DEFAULT))
+(define *gauntlet-dummy-volley-size* GAUNTLET_DUMMY_VOLLEY_SIZE_DEFAULT)
+(define *gauntlet-dummy-volley-spread* GAUNTLET_DUMMY_VOLLEY_SPREAD_DEFAULT)
+(define *gauntlet-dummy-range* GAUNTLET_DUMMY_RANGE_DEFAULT)
+(define *gauntlet-dummy-leave-range* GAUNTLET_SAGE_LEAVE_RANGE_DEFAULT)
+(define *gauntlet-herald-range* GAUNTLET_HERALD_RANGE_DEFAULT)
+(define *gauntlet-herald-leave-range* GAUNTLET_HERALD_LEAVE_RANGE_DEFAULT)
+(define *gauntlet-dummy-shot-speed* GAUNTLET_DUMMY_SHOT_SPEED_DEFAULT) ;; per second

@@ -8,7 +8,7 @@
 ;; is logged and dropped. `jakc drop <name>` writes it.
 ;;
 ;; On Geyser Rock (level training) the bomb also drops by itself, on a fixed spot on the bridge, the first time Jak walks
-;; within GAUNTLET_BRIDGE_TRIGGER_RADIUS of it, and again only after he has been farther than GAUNTLET_BRIDGE_REARM_RANGE away.
+;; within *gauntlet-bridge-trigger-radius* of it, and again only after he has been farther than *gauntlet-bridge-rearm-range* away.
 ;;
 ;; The bomb is the big dark eco bomb Gol and Maia's robot drops in the final
 ;; boss (darkecobomb, levels/finalboss/robotboss-weapon.gc), made available
@@ -41,22 +41,13 @@
 ;;     (unless a recent hit still has him invulnerable).
 
 (defconstant GAUNTLET_DROP_POLL_FRAMES 30) ;; how often the request file is looked at, about twice a second
-(defconstant GAUNTLET_BOMB_DROP_HEIGHT (meters 25)) ;; how high above Jak the bomb appears
-(defconstant GAUNTLET_BOMB_GRAVITY (meters 30)) ;; its fall, in meters per second per second (about 1.3 s from 25 m)
-(defconstant GAUNTLET_BOMB_COUNTDOWN (seconds 4)) ;; from landing to blast, with the warning beeps speeding up
-(defconstant GAUNTLET_BOMB_BLAST_RADIUS (meters 35)) ;; Jak inside this when it goes off is killed, unless a recent hit still has him invulnerable
-;; The pull. Jak's top run speed is 10 m/s (target-speed of *walk-mods*, surface-h.gc) and a running jump 10 to 16 m/s
-;; (*jump-mods*, *forward-jump-mods*), against gravity of 60 m/s^2 (GRAVITY_AMOUNT). A runner who starts under the bomb
-;; covers 40 m in the countdown against a 35 m blast, so the pull on foot must cost him under 5 m in all.
-(defconstant GAUNTLET_BOMB_PULL_RADIUS GAUNTLET_BOMB_BLAST_RADIUS) ;; the bomb pulls Jak while he is closer than this, measured sideways
-(defconstant GAUNTLET_BOMB_PULL (meters 20)) ;; in the air Jak is dragged toward the bomb faster every second by this much, a third of gravity: a 0.7 s jump loses 4.6 m, a 1 s flip loses 10 m
-(defconstant GAUNTLET_BOMB_GROUND_PULL (meters 0.5)) ;; on his feet, or in water, he slides toward it at this steady speed: felt standing still, a 2 m cost over a 4 s run
+;; The tunables (countdown, radii, the pull, the bridge, the dummies' volleys) are globals with their defaults in
+;; gauntlet-h.gc. The pull's design, for reading them against: Jak's top run speed is 10 m/s (target-speed of *walk-mods*,
+;; surface-h.gc) and a running jump 10 to 16 m/s (*jump-mods*, *forward-jump-mods*), against gravity of 60 m/s^2
+;; (GRAVITY_AMOUNT). A runner who starts under the bomb covers 40 m in the countdown against a 35 m blast, so the pull on
+;; foot must cost him under 5 m in all.
 (defconstant GAUNTLET_BOMB_FIRST_TICK 0.9) ;; the finale's warning curve: the first beep when the clock reaches this cosine
 (defconstant GAUNTLET_BOMB_TICK_STEP 0.06) ;; and each beep lowers the bar by this much, so they come faster and faster
-;; The bridge on Geyser Rock (level training): the bomb also drops there by itself, on a fixed spot, when Jak walks onto it.
-;; The tall pillar runners jump from is about 17 m away, so the pull drags that jump back toward the bridge.
-(defconstant GAUNTLET_BRIDGE_TRIGGER_RADIUS (meters 5)) ;; Jak this close to the bridge spot, sideways, sets the bomb off
-(defconstant GAUNTLET_BRIDGE_REARM_RANGE (meters 60)) ;; and it will not drop again until he has been farther than this from it, which dying and respawning also does
 (defconstant GAUNTLET_GROUND_PROBE_UP (meters 2)) ;; the ground under Jak is searched for from this far above his feet
 (defconstant GAUNTLET_GROUND_PROBE_LENGTH (meters 20)) ;; ... and this far down
 (defconstant GAUNTLET_PART_GROUP_BLAST 1000) ;; ids this file adds to the particle tables, above any the game uses
@@ -390,7 +381,9 @@
    (fall-from float)
    (next-tick float)
    (pull-speed float)
-   (pulling symbol))
+   (pulling symbol)
+   (countdown int)
+   (gravity float))
   (:states
    gauntlet-bomb-fall
    gauntlet-bomb-countdown
@@ -465,9 +458,9 @@
       (logtest? (-> jak water flag) (water-flag touch-water))))
 
 (defbehavior gauntlet-bomb-pull gauntlet-bomb ()
-  "One frame of the bomb's gravity well. Jak within GAUNTLET_BOMB_PULL_RADIUS of the bomb, sideways, is stepped toward
-   it, never up or down and never past it. Gripped he moves at GAUNTLET_BOMB_GROUND_PULL; in the air his pull speed
-   grows by GAUNTLET_BOMB_PULL every second and starts over from the ground speed when he lands. The step is the whirlpool's
+  "One frame of the bomb's gravity well. Jak within *gauntlet-bomb-pull-radius* of the bomb, sideways, is stepped toward
+   it, never up or down and never past it. Gripped he moves at *gauntlet-bomb-ground-pull*; in the air his pull speed
+   grows by *gauntlet-bomb-pull* every second and starts over from the ground speed when he lands. The step is the whirlpool's
    (levels/sunken/whirlpool.gc): the cache filled around him, integrate-and-collide! with the sideways velocity, his
    status put back so his own state logic does not see a move it did not make."
   (let ((jak *target*))
@@ -476,15 +469,15 @@
              (toward (vector-! (new 'stack-no-clear 'vector) (-> self root trans) (-> control trans)))
              (distance (vector-xz-length toward)))
         (cond
-          ((or (>= distance GAUNTLET_BOMB_PULL_RADIUS) (< distance 1.0))
+          ((or (>= distance *gauntlet-bomb-pull-radius*) (< distance 1.0))
            (set! (-> self pull-speed) 0.0))
           (else
            (when (not (-> self pulling))
              (set! (-> self pulling) #t)
              (format 0 "GAUNTLET BOMB pull starts, Jak ~M m away~%" distance))
            (if (gauntlet-jak-gripped? jak)
-             (set! (-> self pull-speed) GAUNTLET_BOMB_GROUND_PULL)
-             (+! (-> self pull-speed) (* GAUNTLET_BOMB_PULL (seconds-per-frame))))
+             (set! (-> self pull-speed) *gauntlet-bomb-ground-pull*)
+             (+! (-> self pull-speed) (* *gauntlet-bomb-pull* (seconds-per-frame))))
            ;; never carry him past the bomb: the speed is capped at what covers the distance in one frame
            (set! (-> toward y) 0.0)
            (vector-xz-normalize! toward (fmin (-> self pull-speed) (/ distance (seconds-per-frame))))
@@ -495,18 +488,21 @@
   0)
 
 (defbehavior gauntlet-bomb-init-by-other gauntlet-bomb ((where vector))
-  "Appear GAUNTLET_BOMB_DROP_HEIGHT above where, which is where Jak stands, and fall to the ground under it."
+  "Appear *gauntlet-bomb-drop-height* above where, which is where Jak stands, and fall to the ground under it. The countdown
+   and the fall's gravity are taken now, so changing them while the bomb is in the air does not bend this bomb's clock."
   ;; keep ticking whatever the actors around do (the finale's bomb does the same)
   (logclear! (-> self mask) (process-mask actor-pause))
   (set! (-> self body) (the-as handle #f))
   (set! (-> self pull-speed) 0.0)
   (set! (-> self pulling) #f)
+  (set! (-> self countdown) *gauntlet-bomb-countdown*)
+  (set! (-> self gravity) *gauntlet-bomb-gravity*)
   (set! (-> self root) (new 'process 'trsqv))
   (let ((ground (new 'stack-no-clear 'vector)))
     (gauntlet-ground-below where ground)
     (set! (-> self ground-y) (-> ground y)))
   (set! (-> self root trans quad) (-> where quad))
-  (+! (-> self root trans y) GAUNTLET_BOMB_DROP_HEIGHT)
+  (+! (-> self root trans y) *gauntlet-bomb-drop-height*)
   (set! (-> self fall-from) (-> self root trans y))
   (quaternion-identity! (-> self root quat))
   (vector-identity! (-> self root scale))
@@ -529,7 +525,7 @@
         ;; no body, no bomb
         (if (not body) (go gauntlet-bomb-gone))
         (let* ((fallen (gauntlet-seconds-since (-> self state-time)))
-               (y (- (-> self fall-from) (* 0.5 GAUNTLET_BOMB_GRAVITY fallen fallen))))
+               (y (- (-> self fall-from) (* 0.5 (-> self gravity) fallen fallen))))
           (set! (-> self root trans y) (fmax y (-> self ground-y)))
           (send-event body 'trans (-> self root trans))
           (if (>= (-> self ground-y) y) (go gauntlet-bomb-countdown)))))
@@ -559,14 +555,14 @@
     (behavior ()
       (gauntlet-bomb-pull)
       (let* ((elapsed (- (current-time) (-> self state-time)))
-             (remaining (fmax 0.0 (/ (the float (- GAUNTLET_BOMB_COUNTDOWN elapsed)) (the float GAUNTLET_BOMB_COUNTDOWN)))))
+             (remaining (fmax 0.0 (/ (the float (- (-> self countdown) elapsed)) (the float (-> self countdown))))))
         ;; the finale's own warning: a beep and a flash each time the clock's cosine drops under the bar,
         ;; and the bar drops with every beep, so they come faster as the end nears
         (when (< (cos (* 16384.0 (- 1.0 remaining))) (-> self next-tick))
           (process-spawn part-tracker :init part-tracker-init (get-part-group GAUNTLET_PART_GROUP_TICK) 150 #f #f #f (-> self root trans) :to *entity-pool*)
           (+! (-> self next-tick) (- GAUNTLET_BOMB_TICK_STEP))
           (sound-play "robo-warning"))
-        (if (>= elapsed GAUNTLET_BOMB_COUNTDOWN) (go gauntlet-bomb-explode))))
+        (if (>= elapsed (-> self countdown)) (go gauntlet-bomb-explode))))
   :code
     (behavior ()
       (sound-play "bomb-open")
@@ -589,7 +585,7 @@
       (let ((body (gauntlet-bomb-body (-> self body))))
         (if body (send-event body 'draw #f)))
       ;; Jak inside the blast loses all his health: he takes his hit reaction, then dies the normal death. A plain 'attack, so a recent hit's invulnerability spares him
-      (when (and *target* (< (vector-vector-distance (-> self root trans) (target-pos 0)) GAUNTLET_BOMB_BLAST_RADIUS))
+      (when (and *target* (< (vector-vector-distance (-> self root trans) (target-pos 0)) *gauntlet-bomb-blast-radius*))
         (send-event *target* 'attack #f (static-attack-info ((mode 'death)))))
       ;; Jak's hit reads the bomb for where it came from when he next runs, so it stays until he has
       (suspend-for (seconds 1))
@@ -616,6 +612,9 @@
 
 ;; ---------------------------------------------------------------- the bridge --
 
+;; The bridge on Geyser Rock (level training): the bomb also drops there by itself, on a fixed spot, when Jak walks onto it.
+;; The tall pillar runners jump from is about 17 m away, so the pull drags that jump back toward the bridge.
+
 (define *gauntlet-bridge-spot* (new 'static 'vector :x (meters -1313.8) :y (meters 40.5) :z (meters 946.4) :w 1.0))
 (define *gauntlet-bridge-armed* #t) ;; false from the drop until Jak has been far from the bridge again
 
@@ -625,16 +624,395 @@
     (and lev (= (-> lev name) 'training))))
 
 (defun gauntlet-bridge-poll! ()
-  "Per-frame: on Geyser Rock, drop one bomb on the bridge spot when Jak comes within GAUNTLET_BRIDGE_TRIGGER_RADIUS of it
-   and no bomb is alive; do not again until he has been farther than GAUNTLET_BRIDGE_REARM_RANGE from it."
+  "Per-frame: on Geyser Rock, drop one bomb on the bridge spot when Jak comes within *gauntlet-bridge-trigger-radius* of it
+   and no bomb is alive; do not again until he has been farther than *gauntlet-bridge-rearm-range* from it. With
+   *gauntlet-bridge-enabled* off it never drops, though it keeps track of Jak coming and going."
   (when (and *target* (gauntlet-in-training?))
     (let ((distance (vector-vector-xz-distance (target-pos 0) *gauntlet-bridge-spot*)))
       (cond
-        ((> distance GAUNTLET_BRIDGE_REARM_RANGE) (set! *gauntlet-bridge-armed* #t))
-        ((and *gauntlet-bridge-armed* (< distance GAUNTLET_BRIDGE_TRIGGER_RADIUS) (not (gauntlet-bomb-alive?)))
+        ((> distance *gauntlet-bridge-rearm-range*) (set! *gauntlet-bridge-armed* #t))
+        ((and *gauntlet-bridge-enabled* *gauntlet-bridge-armed* (< distance *gauntlet-bridge-trigger-radius*) (not (gauntlet-bomb-alive?)))
          (set! *gauntlet-bridge-armed* #f)
          (format 0 "GAUNTLET BRIDGE: Jak is ~M m from the bridge spot, dropping the bomb on it~%" distance)
          (gauntlet-bomb-drop! *gauntlet-bridge-spot*)))))
+  0)
+
+;; --------------------------------------------------------------- the console --
+
+;; A local web console steers the mod while it runs, through two files in Mods/ (the contract is the console's).
+;;   gauntlet-settings.gc  the console writes, the game reads: (revision N) first, then one (key value) per setting, in
+;;                         human units (meters, seconds, degrees, #t / #f). Looked at every GAUNTLET_SETTINGS_POLL_FRAMES
+;;                         frames, and applied only when the revision is not the one in effect. A file is the whole
+;;                         truth: a key it does not name goes back to its default. Unknown keys and values that are not
+;;                         numbers (or are outside the key's range) are skipped and logged, never fatal.
+;;   gauntlet-state.json   the game writes, the console reads, every GAUNTLET_STATE_POLL_FRAMES frames: the settings in
+;;                         effect next to the defaults, and where Jak, the bomb and the bridge are.
+;; Every setting is one row of gauntlet-setting-table, which names it, says what unit the file speaks, which global holds
+;; it, what its default is and what range it may take; applying, resetting and publishing it are all generated from that
+;; row, so a setting cannot be added to one and forgotten in another.
+
+(defconstant GAUNTLET_SETTINGS_POLL_FRAMES 30) ;; how often the settings file is looked at
+(defconstant GAUNTLET_STATE_POLL_FRAMES 15) ;; how often the state file is written
+
+(defmacro gauntlet-setting-table (row)
+  "Expand row once per setting: (row name unit global default lowest highest). The unit is how the file speaks and
+   how the global holds it: seconds (file: seconds, global: ticks), meters (file: meters, global: game units, which
+   also covers meters per second and per second squared), degrees (file: degrees, global: rotation units), count
+   (both a whole number), flag (#t or #f). The range is in file units and is ignored for a flag."
+  `(begin
+     (,row "bomb-countdown" seconds *gauntlet-bomb-countdown* GAUNTLET_BOMB_COUNTDOWN_DEFAULT 0.5 120.0)
+     (,row "bomb-blast-radius" meters *gauntlet-bomb-blast-radius* GAUNTLET_BOMB_BLAST_RADIUS_DEFAULT 0.0 500.0)
+     (,row "bomb-pull-radius" meters *gauntlet-bomb-pull-radius* GAUNTLET_BOMB_PULL_RADIUS_DEFAULT 0.0 500.0)
+     (,row "bomb-pull" meters *gauntlet-bomb-pull* GAUNTLET_BOMB_PULL_DEFAULT 0.0 500.0)
+     (,row "bomb-ground-pull" meters *gauntlet-bomb-ground-pull* GAUNTLET_BOMB_GROUND_PULL_DEFAULT 0.0 50.0)
+     (,row "bomb-drop-height" meters *gauntlet-bomb-drop-height* GAUNTLET_BOMB_DROP_HEIGHT_DEFAULT 0.0 200.0)
+     (,row "bomb-gravity" meters *gauntlet-bomb-gravity* GAUNTLET_BOMB_GRAVITY_DEFAULT 1.0 500.0)
+     (,row "bridge-enabled" flag *gauntlet-bridge-enabled* GAUNTLET_BRIDGE_ENABLED_DEFAULT 0 0)
+     (,row "bridge-trigger-radius" meters *gauntlet-bridge-trigger-radius* GAUNTLET_BRIDGE_TRIGGER_RADIUS_DEFAULT 0.0 200.0)
+     (,row "bridge-rearm-range" meters *gauntlet-bridge-rearm-range* GAUNTLET_BRIDGE_REARM_RANGE_DEFAULT 0.0 1000.0)
+     (,row "dummies-enabled" flag *gauntlet-dummies-enabled* GAUNTLET_DUMMIES_ENABLED_DEFAULT 0 0)
+     (,row "dummy-volley-interval" seconds *gauntlet-dummy-volley-interval* GAUNTLET_DUMMY_VOLLEY_INTERVAL_DEFAULT 0.1 120.0)
+     (,row "dummy-volley-gap" seconds *gauntlet-dummy-volley-gap* GAUNTLET_DUMMY_VOLLEY_GAP_DEFAULT 0.05 60.0)
+     (,row "dummy-volley-size" count *gauntlet-dummy-volley-size* GAUNTLET_DUMMY_VOLLEY_SIZE_DEFAULT 1.0 50.0)
+     (,row "dummy-volley-spread" degrees *gauntlet-dummy-volley-spread* GAUNTLET_DUMMY_VOLLEY_SPREAD_DEFAULT 0.0 90.0)
+     (,row "dummy-range" meters *gauntlet-dummy-range* GAUNTLET_DUMMY_RANGE_DEFAULT 0.0 500.0)
+     (,row "dummy-leave-range" meters *gauntlet-dummy-leave-range* GAUNTLET_SAGE_LEAVE_RANGE_DEFAULT 0.0 500.0)
+     (,row "herald-range" meters *gauntlet-herald-range* GAUNTLET_HERALD_RANGE_DEFAULT 0.0 500.0)
+     (,row "herald-leave-range" meters *gauntlet-herald-leave-range* GAUNTLET_HERALD_LEAVE_RANGE_DEFAULT 0.0 500.0)
+     (,row "dummy-shot-speed" meters *gauntlet-dummy-shot-speed* GAUNTLET_DUMMY_SHOT_SPEED_DEFAULT 0.0 500.0)))
+
+;; ---- the settings file
+
+(define *gauntlet-settings-revision* 0) ;; the revision in effect: 0 until a file has been applied
+(define *gauntlet-settings-countdown* 0)
+(define *gauntlet-settings-applied* 0) ;; keys the file being applied has set so far
+(define *gauntlet-settings-bad-revision-told* #f) ;; a file with no revision is told about once, not every poll
+(define *gauntlet-setting-key* (new 'global 'string 64 ""))
+(define *gauntlet-setting-number* 0.0) ;; what gauntlet-read-number! last read
+(define *gauntlet-setting-flag* #f) ;; what gauntlet-read-flag! last read
+
+(defmacro gauntlet-row-reset (name unit global default lo hi)
+  "One setting back to its default."
+  `(set! ,global ,(if (eq? unit 'seconds) `(the int ,default) default)))
+
+(defmacro gauntlet-row-apply (name unit global default lo hi)
+  "If key is this setting, read its value from the file and set the global, or skip the key."
+  (if (eq? unit 'flag)
+    `(when (string= key ,name)
+       (set! handled #t)
+       (if (gauntlet-read-flag! file)
+         (begin
+           (set! ,global *gauntlet-setting-flag*)
+           (+! *gauntlet-settings-applied* 1))
+         (gauntlet-setting-skip! ,name)))
+    `(when (string= key ,name)
+       (set! handled #t)
+       (if (gauntlet-read-number! file ,lo ,hi)
+         (begin
+           (set! ,global
+                 ,(cond
+                    ((eq? unit 'seconds) '(the int (+ (* *gauntlet-setting-number* 300.0) 0.5)))
+                    ((eq? unit 'meters) '(* *gauntlet-setting-number* METER_LENGTH))
+                    ((eq? unit 'degrees) '(* *gauntlet-setting-number* (/ DEGREES_PER_ROT 360.0)))
+                    (#t '(the int (+ *gauntlet-setting-number* 0.5)))))
+           (+! *gauntlet-settings-applied* 1))
+         (gauntlet-setting-skip! ,name)))))
+
+(defun gauntlet-settings-reset! ()
+  "Every setting back to its default."
+  (gauntlet-setting-table gauntlet-row-reset)
+  0)
+
+(defun gauntlet-setting-skip! ((name string))
+  "A key whose value is not usable: it keeps its default."
+  (format 0 "GAUNTLET SETTINGS ~S skipped, its value is not a usable one~%" name)
+  0)
+
+(defun gauntlet-number-word? ((word string))
+  "True when word is a plain decimal number: digits, one dot, and a minus sign in front. The game's own string->float
+   reads anything as a number (garbage as 0.0), so a value is only trusted after this."
+  (let ((digits 0)
+        (dots 0)
+        (clean #t))
+    (dotimes (i (length word))
+      (let ((c (-> word data i)))
+        (cond
+          ((and (>= c #\0) (<= c #\9)) (+! digits 1))
+          ((= c #\.) (+! dots 1))
+          ((and (= c #\-) (zero? i)))
+          (else (set! clean #f)))))
+    (and clean (> digits 0) (<= dots 1))))
+
+(defun gauntlet-read-word! ((file file-stream))
+  "The next word of the file in *pc-temp-string*, which is empty when the file has no more."
+  (set! (-> *pc-temp-string* data 0) 0)
+  (file-stream-seek-past-whitespace file)
+  (file-stream-read-word file)
+  *pc-temp-string*)
+
+(defun gauntlet-read-number! ((file file-stream) (lowest float) (highest float))
+  "Read the next word as a number in [lowest, highest] into *gauntlet-setting-number*. False when it is not one."
+  (let ((word (gauntlet-read-word! file)))
+    (when (gauntlet-number-word? word)
+      (let ((value (string->float word)))
+        (when (and (>= value lowest) (<= value highest))
+          (set! *gauntlet-setting-number* value)
+          (return #t)))))
+  #f)
+
+(defun gauntlet-read-flag! ((file file-stream))
+  "Read the next word as #t or #f into *gauntlet-setting-flag*. False when it is neither."
+  (let ((word (gauntlet-read-word! file)))
+    (cond
+      ((string= word "#t") (set! *gauntlet-setting-flag* #t) #t)
+      ((string= word "#f") (set! *gauntlet-setting-flag* #f) #t)
+      (else #f))))
+
+(defun gauntlet-skip-past-close ((file file-stream))
+  "Read on through the closing bracket of the form being read, whatever is left in it, nested forms included."
+  (let ((depth 1))
+    (while (> depth 0)
+      (let ((c (file-stream-getc file)))
+        (cond
+          ((= c #x28) (+! depth 1))
+          ((= c #x29) (+! depth -1))
+          ((= c 255) (set! depth 0))))))
+  0)
+
+(defun gauntlet-form-open? ((file file-stream))
+  "True when the next thing in the file is an opening bracket, which is read."
+  (file-stream-seek-past-whitespace file)
+  (= #x28 (file-stream-getc file)))
+
+(defun gauntlet-settings-apply-key! ((file file-stream) (key string))
+  "Apply the setting key names, reading its value from the file; an unknown key is skipped."
+  (let ((handled #f))
+    (gauntlet-setting-table gauntlet-row-apply)
+    (when (not handled)
+      (format 0 "GAUNTLET SETTINGS ~S skipped, it is not a setting this build knows~%" key)))
+  0)
+
+(defun gauntlet-settings-read-revision ((file file-stream))
+  "The revision the file opens with, or -1 when its first form is not (revision N)."
+  (when (gauntlet-form-open? file)
+    (gauntlet-read-word! file)
+    (when (string= *pc-temp-string* "revision")
+      (let ((word (gauntlet-read-word! file)))
+        (when (gauntlet-number-word? word)
+          (let ((revision (the int (string->float word))))
+            (gauntlet-skip-past-close file)
+            (return revision))))))
+  -1)
+
+(defun gauntlet-settings-poll! ()
+  "Every GAUNTLET_SETTINGS_POLL_FRAMES frames, and on the first look of a boot: read Mods/gauntlet-settings.gc if it is
+   there, and if its revision is not the one in effect, put every setting back to its default and apply the file's keys over
+   them. A file that has gone away takes the settings it had set with it."
+  (+! *gauntlet-settings-countdown* -1)
+  (when (>= 0 *gauntlet-settings-countdown*)
+    (set! *gauntlet-settings-countdown* GAUNTLET_SETTINGS_POLL_FRAMES)
+    (format (clear *pc-temp-string-1*) "~S/Mods/gauntlet-settings.gc" *pc-settings-folder*)
+    (cond
+      ((not (pc-filepath-exists? *pc-temp-string-1*))
+       (when (nonzero? *gauntlet-settings-revision*)
+         (gauntlet-settings-reset!)
+         (format 0 "GAUNTLET SETTINGS file is gone, defaults restored (was revision ~D)~%" *gauntlet-settings-revision*)
+         (set! *gauntlet-settings-revision* 0)))
+      (else
+       (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'read)))
+         (when (file-stream-valid? file)
+           (let ((revision (gauntlet-settings-read-revision file)))
+             (cond
+               ((< revision 0)
+                (when (not *gauntlet-settings-bad-revision-told*)
+                  (set! *gauntlet-settings-bad-revision-told* #t)
+                  (format 0 "GAUNTLET SETTINGS file does not open with (revision N), ignored~%")))
+               ((= revision *gauntlet-settings-revision*))
+               (else
+                (set! *gauntlet-settings-bad-revision-told* #f)
+                (gauntlet-settings-reset!)
+                (set! *gauntlet-settings-applied* 0)
+                ;; every form after the revision: its key, then the key's own reader takes the value
+                (while (gauntlet-form-open? file)
+                  (gauntlet-read-word! file)
+                  (format (clear *gauntlet-setting-key*) "~S" *pc-temp-string*)
+                  (gauntlet-settings-apply-key! file *gauntlet-setting-key*)
+                  (gauntlet-skip-past-close file))
+                (set! *gauntlet-settings-revision* revision)
+                (format 0 "GAUNTLET SETTINGS revision ~D applied, ~D keys~%" revision *gauntlet-settings-applied*))))
+           (file-stream-close file))))))
+  0)
+
+;; ---- the state file
+
+(define *gauntlet-frame* 0) ;; polls so far, which is what the state file's frame counts
+(define *gauntlet-state-countdown* 0)
+(define *gauntlet-state-text* (new 'global 'string 4096 "")) ;; the file is built here and written in one go, so a reader catches as little of it half-written as possible
+(define *gauntlet-json-first* #t) ;; true until the object being written has a member, so the next one needs no comma
+
+(defun gauntlet-json-key ((out string) (name string))
+  "Start the next member of the object being written: its comma if it needs one, and its name."
+  (format out "~S\"~S\":" (if *gauntlet-json-first* "" ",") name)
+  (set! *gauntlet-json-first* #f)
+  0)
+
+(defun gauntlet-json-open ((out string))
+  (format out "{")
+  (set! *gauntlet-json-first* #t)
+  0)
+
+(defun gauntlet-json-close ((out string))
+  (format out "}")
+  (set! *gauntlet-json-first* #f)
+  0)
+
+(defun gauntlet-json-fixed ((out string) (value float))
+  "Append value with three decimals, rounded. format's own ~F cuts digits off instead of rounding them, which would
+   turn a 15.0 that went through rotation units and back into 14.9999."
+  (let* ((scaled (the int (if (< value 0.0) (- (* value 1000.0) 0.5) (+ (* value 1000.0) 0.5))))
+         (magnitude (if (< scaled 0) (- scaled) scaled))
+         (whole (/ magnitude 1000))
+         (fraction (- magnitude (* whole 1000)))
+         (hundreds (/ fraction 100))
+         (tens (/ (- fraction (* hundreds 100)) 10))
+         (ones (- fraction (* hundreds 100) (* tens 10))))
+    (format out "~S~D.~D~D~D" (if (< scaled 0) "-" "") whole hundreds tens ones))
+  0)
+
+(defmacro gauntlet-json-row (name unit source)
+  "Write one setting, from source (its global or its default), as the member name in the file's own units."
+  (cond
+    ((eq? unit 'flag) `(begin (gauntlet-json-key out ,name) (format out "~S" (if ,source "true" "false"))))
+    ((eq? unit 'count) `(begin (gauntlet-json-key out ,name) (format out "~D" ,source)))
+    (#t
+     `(begin
+        (gauntlet-json-key out ,name)
+        (gauntlet-json-fixed out
+                             ,(cond
+                                ((eq? unit 'seconds) `(/ (the float ,source) 300.0))
+                                ((eq? unit 'meters) `(/ ,source METER_LENGTH))
+                                (#t `(/ ,source (/ DEGREES_PER_ROT 360.0)))))))))
+
+(defmacro gauntlet-row-write-now (name unit global default lo hi)
+  `(gauntlet-json-row ,name ,unit ,global))
+
+(defmacro gauntlet-row-write-default (name unit global default lo hi)
+  `(gauntlet-json-row ,name ,unit ,default))
+
+(defun gauntlet-json-meters ((out string) (name string) (units float))
+  "The member name, a length given in game units, written in meters."
+  (gauntlet-json-key out name)
+  (gauntlet-json-fixed out (/ units METER_LENGTH))
+  0)
+
+(defun gauntlet-bomb-process ()
+  "The bomb last dropped, if it is still in the world."
+  (let ((proc (handle->process *gauntlet-bomb*)))
+    (the-as gauntlet-bomb (if (and proc (type-type? (-> proc type) gauntlet-bomb)) proc))))
+
+(defun gauntlet-bomb-state-name ((bomb gauntlet-bomb))
+  "What the state file calls the bomb's state, or #f for one that is only waiting to be cleaned up."
+  (let ((state (-> bomb next-state)))
+    (if state
+      (case (-> state name)
+        (('gauntlet-bomb-fall) 'falling)
+        (('gauntlet-bomb-countdown) 'countdown)
+        (('gauntlet-bomb-explode) 'exploding)
+        (else #f))
+      #f)))
+
+(defun gauntlet-bomb-remaining ((bomb gauntlet-bomb) (state-name symbol))
+  "Seconds the bomb has left on its clock: all of it while it falls, none once it has gone off."
+  (cond
+    ((= state-name 'falling) (/ (the float (-> bomb countdown)) 300.0))
+    ((= state-name 'countdown)
+     (/ (the float (max 0 (- (-> bomb countdown) (- (current-time) (-> bomb state-time))))) 300.0))
+    (else 0.0)))
+
+(defun gauntlet-state-write-world! ((out string))
+  "Level, Jak, the bomb and the bridge: the members of the state file that are not settings."
+  (let ((in-training (and *target* (gauntlet-in-training?))))
+    (gauntlet-json-key out "level")
+    (format out "\"~A\"" (if *target* (aif (level-get-target-inside *level*) (-> it name) 'none) 'none))
+    (gauntlet-json-key out "jak")
+    (cond
+      (*target*
+       (gauntlet-json-open out)
+       (gauntlet-json-meters out "x" (-> (target-pos 0) x))
+       (gauntlet-json-meters out "y" (-> (target-pos 0) y))
+       (gauntlet-json-meters out "z" (-> (target-pos 0) z))
+       (gauntlet-json-key out "onGround")
+       (format out "~S" (if (logtest? (-> *target* control status) (cshape-moving-flags onground onsurf)) "true" "false"))
+       (gauntlet-json-close out))
+      (else (format out "null")))
+    (gauntlet-json-key out "bomb")
+    (let* ((bomb (gauntlet-bomb-process))
+           (state-name (if bomb (gauntlet-bomb-state-name bomb) #f)))
+      (cond
+        (state-name
+         (gauntlet-json-open out)
+         (gauntlet-json-key out "state")
+         (format out "\"~A\"" state-name)
+         (gauntlet-json-meters out "x" (-> bomb root trans x))
+         (gauntlet-json-meters out "y" (-> bomb root trans y))
+         (gauntlet-json-meters out "z" (-> bomb root trans z))
+         (gauntlet-json-key out "remaining")
+         (gauntlet-json-fixed out (gauntlet-bomb-remaining bomb state-name))
+         (gauntlet-json-key out "jakDistance")
+         (if *target*
+           (gauntlet-json-fixed out (/ (vector-vector-distance (-> bomb root trans) (target-pos 0)) METER_LENGTH))
+           (format out "null"))
+         (gauntlet-json-close out))
+        (else (format out "null"))))
+    (gauntlet-json-key out "bridge")
+    (cond
+      (in-training
+       (gauntlet-json-open out)
+       (gauntlet-json-key out "armed")
+       (format out "~S" (if *gauntlet-bridge-armed* "true" "false"))
+       (gauntlet-json-key out "distance")
+       (gauntlet-json-fixed out (/ (vector-vector-xz-distance (target-pos 0) *gauntlet-bridge-spot*) METER_LENGTH))
+       (gauntlet-json-close out))
+      (else (format out "null")))
+    (gauntlet-json-key out "effects")
+    (gauntlet-json-open out)
+    (gauntlet-json-key out "enabled")
+    (format out "~S" (if (-> *pc-settings* twitch-effects?) "true" "false"))
+    (gauntlet-json-close out))
+  0)
+
+(defun gauntlet-state-write! ()
+  "Write Mods/gauntlet-state.json."
+  (let ((out (clear *gauntlet-state-text*)))
+    (gauntlet-json-open out)
+    (gauntlet-json-key out "frame")
+    (format out "~D" *gauntlet-frame*)
+    (gauntlet-json-key out "revision")
+    (format out "~D" *gauntlet-settings-revision*)
+    (gauntlet-json-key out "settings")
+    (gauntlet-json-open out)
+    (gauntlet-setting-table gauntlet-row-write-now)
+    (gauntlet-json-close out)
+    (gauntlet-json-key out "defaults")
+    (gauntlet-json-open out)
+    (gauntlet-setting-table gauntlet-row-write-default)
+    (gauntlet-json-close out)
+    (gauntlet-state-write-world! out)
+    (gauntlet-json-close out)
+    (format out "~%")
+    (format (clear *pc-temp-string-1*) "~S/Mods/gauntlet-state.json" *pc-settings-folder*)
+    (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'write)))
+      (when (file-stream-valid? file)
+        (file-stream-write file (-> out data) (the-as uint (length out)))
+        (file-stream-close file))))
+  0)
+
+(defun gauntlet-state-poll! ()
+  "Every GAUNTLET_STATE_POLL_FRAMES frames, publish the state."
+  (+! *gauntlet-state-countdown* -1)
+  (when (>= 0 *gauntlet-state-countdown*)
+    (set! *gauntlet-state-countdown* GAUNTLET_STATE_POLL_FRAMES)
+    (gauntlet-state-write!))
   0)
 
 ;; ------------------------------------------------------------------ the poll --
@@ -653,12 +1031,20 @@
   (cond
     ((not *target*) (format 0 "GAUNTLET DROP: ~S asked for with no Jak in the world~%" kind))
     ((string= kind "bomb") (gauntlet-bomb-drop! (target-pos 0)))
+    ;; the console's bomb on the bridge: the spot itself, whatever the trigger radius or the arming say
+    ((string= kind "bomb-bridge")
+     (if (gauntlet-in-training?)
+       (gauntlet-bomb-drop! *gauntlet-bridge-spot*)
+       (format 0 "GAUNTLET DROP: bomb-bridge asked for off Geyser Rock, ignored~%")))
     (else (format 0 "GAUNTLET DROP: do not know how to drop ~S~%" kind)))
   0)
 
 (defun gauntlet-drop-poll! ()
-  "Per-frame hook: the bridge is watched every frame; every GAUNTLET_DROP_POLL_FRAMES frames look at the request counter,
-   and drop once when it has changed since the last look."
+  "Per-frame hook: the console's settings are looked at first, so what they say holds for this frame; the bridge is watched
+   every frame; every GAUNTLET_DROP_POLL_FRAMES frames look at the request counter, and drop once when it has changed since
+   the last look; last, the state file, which then describes this frame."
+  (+! *gauntlet-frame* 1)
+  (gauntlet-settings-poll!)
   (gauntlet-bridge-poll!)
   (+! *gauntlet-drop-countdown* -1)
   (when (>= 0 *gauntlet-drop-countdown*)
@@ -679,4 +1065,5 @@
               (gauntlet-drop! *pc-temp-string*)))
           (file-stream-close file))))
     (set! *gauntlet-drop-primed* #t))
+  (gauntlet-state-poll!)
   (none))

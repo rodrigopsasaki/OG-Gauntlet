@@ -1290,7 +1290,7 @@
 ;; The code
 (goal-src-sequence
   "levels/training/"
-  :deps ("$OUT/obj/ticky.o") ;; makes us depend on the whole engine
+  :deps ("$OUT/obj/ticky.o" "$OUT/obj/gauntlet-h.o") ;; the first makes us depend on the whole engine, the second is the gauntlet tunables training-obs reads
 
   "training-obs.gc"
   "training-part.gc"
