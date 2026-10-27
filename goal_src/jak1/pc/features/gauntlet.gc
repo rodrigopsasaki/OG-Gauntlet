@@ -917,7 +917,7 @@
                (- (-> spot z) (* (-> heading z) GAUNTLET_STAMPEDE_APPROACH))
                size
                speed)
-       (format 0 "GAUNTLET STAMPEDE red yakows: ~D of ~D~A~%" red-count size (if (> red-count 0) ", the first slots, the lead row first" ""))
+       (format 0 "GAUNTLET STAMPEDE red yakows: ~D of ~D~S~%" red-count size (if (> red-count 0) ", the first slots, the lead row first" ""))
        (dotimes (i size)
          (gauntlet-stampede-slot i slot)
          ;; upstream is behind the heading, and the herd's right is the heading turned a quarter, (z, -x)
