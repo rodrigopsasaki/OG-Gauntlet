@@ -122,6 +122,7 @@
   <span id="live" class="pill"><span class="dot"></span><span id="live-text">connecting</span></span>
   <span class="stat">Level <b id="level">-</b></span>
   <span class="stat">Jak <b id="jak">-</b></span>
+  <span class="stat" id="bridge-stat" hidden>Bridge <b id="bridge">-</b></span>
   <span class="stat">Settings <b id="revision">-</b></span>
 </header>
 <main>
@@ -355,9 +356,13 @@ function renderHeader(payload) {
   else if (payload.ageMs === null) $("live-text").textContent = "game not running, never seen";
   else $("live-text").textContent = `game not running, last seen ${Math.round(payload.ageMs / 1000)}s ago`;
 
-  $("level").textContent = state ? state.level : "-";
+  $("level").textContent = state ? (state.level === "none" ? "no Jak" : state.level) : "-";
   const jak = state && state.jak;
   $("jak").textContent = jak ? `${Math.round(jak.x)}, ${Math.round(jak.y)}, ${Math.round(jak.z)}${jak.onGround ? "" : " (air)"}` : "-";
+
+  const bridge = state && state.bridge;
+  $("bridge-stat").hidden = !bridge;
+  if (bridge) $("bridge").textContent = `${bridge.armed ? "armed" : "not armed"}, ${fmt(bridge.distance)} m`;
 
   const writtenRev = payload.written ? payload.written.revision : null;
   const gameRev = state ? state.revision : null;
@@ -391,14 +396,22 @@ function renderBomb(payload) {
   $("bomb-card").hidden = !bomb;
   if (!bomb) return;
   const radius = state.settings["bomb-blast-radius"];
-  $("bomb-state").textContent = `Bomb ${bomb.state}`;
+  const titles = { falling: "Bomb falling", countdown: "Bomb counting down", exploding: "Bomb exploding" };
+  $("bomb-state").textContent = titles[bomb.state] ?? `Bomb ${bomb.state}`;
+  // remaining is the full countdown while falling and 0 once exploding: only the countdown ticks
   $("bomb-time").textContent = bomb.state === "countdown" ? `${fmt(Math.max(0, bomb.remaining))} s` : "";
+  const text = $("bomb-distance");
+  text.textContent = "";
+  if (bomb.jakDistance === null) {
+    $("bomb-meter").classList.remove("inside");
+    $("bomb-fill").style.width = "0%";
+    text.append("no Jak");
+    return;
+  }
   const inside = radius !== undefined && bomb.jakDistance <= radius;
   $("bomb-meter").classList.toggle("inside", inside);
   const scale = radius === undefined ? 100 : radius * 2;
   $("bomb-fill").style.width = `${Math.min(100, (bomb.jakDistance / scale) * 100)}%`;
-  const text = $("bomb-distance");
-  text.textContent = "";
   text.append(`Jak is ${fmt(bomb.jakDistance)} m away`);
   if (radius !== undefined) {
     text.append(`, blast radius ${fmt(radius, 0)} m. `);

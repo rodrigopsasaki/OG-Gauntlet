@@ -315,7 +315,8 @@ interface BombState {
   y: number;
   z: number;
   remaining: number;
-  jakDistance: number;
+  /** null when there is no Jak to measure against. */
+  jakDistance: number | null;
 }
 interface BridgeState {
   armed: boolean;
@@ -404,7 +405,8 @@ function parseGauntletState(raw: unknown): GauntletState {
         y: needNumber(bomb, "y", "state.bomb"),
         z: needNumber(bomb, "z", "state.bomb"),
         remaining: needNumber(bomb, "remaining", "state.bomb"),
-        jakDistance: needNumber(bomb, "jakDistance", "state.bomb"),
+        jakDistance:
+          bomb.jakDistance === null ? null : needNumber(bomb, "jakDistance", "state.bomb"),
       };
     }),
     bridge: orNull(root.bridge, (value) => {
@@ -561,7 +563,9 @@ function describeSpec(spec: SettingSpec): string {
 async function baseForWrite(): Promise<SettingsFile> {
   const file = await readSettingsFile();
   const inGame = snapshot.state;
-  const base = file?.settings ?? inGame?.settings ?? {};
+  // the game resets every setting to its default on a new revision and then applies the
+  // file's keys, so always write the full key set: defaults underneath, then what is in force
+  const base = { ...inGame?.defaults, ...(file?.settings ?? inGame?.settings) };
   const revision = Math.max(file?.revision ?? 0, inGame?.revision ?? 0);
   return { revision, settings: { ...base } };
 }
