@@ -414,6 +414,7 @@
   (jump-probe-poll!)
   (gravity-probe-poll!)
   (snapshot-poll!)
+  (gauntlet-drop-poll!)
   ;; only the build that owns Mods/jak-run-state.js writes it: archipelago's
   ;; own ap-write-state! flips *run-state-owner?* off after the merge, so the
   ;; two writers never race for the same file

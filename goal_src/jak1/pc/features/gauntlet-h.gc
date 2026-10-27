@@ -1,0 +1,12 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; Declarations for the gauntlet drops (pc/features/gauntlet.gc). twitch-poll!
+;; calls the per-frame poll and compiles before the module, so the call needs
+;; declaring here the way run-state-h.gc does for run-state.gc.
+
+;; Things dropped on Jak on request, on every level. A counter and a name are
+;; written to Mods/gauntlet-drop-request.txt ("7 bomb"); a changed counter drops
+;; what the name says at Jak's spot. Polled every frame from twitch-poll!, a
+;; no-op except one exists-check per 30 frames.
+(define-extern gauntlet-drop-poll! (function none))

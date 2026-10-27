@@ -1,0 +1,575 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; Gauntlet drops: things that fall out of the sky onto Jak on request, on any
+;; level. The request is a file, Mods/gauntlet-drop-request.txt, whose first word
+;; is a counter and whose second names what to drop ("7 bomb"). A counter that
+;; changed since the last look is a new request; a name this file does not know
+;; is logged and dropped. `jakc drop <name>` writes it.
+;;
+;; The bomb is the big dark eco bomb Gol and Maia's robot drops in the final
+;; boss (darkecobomb, levels/finalboss/robotboss-weapon.gc), made available
+;; outside the Citadel:
+;;   - its art group is in GAME.CGO (common_art_groups in the decompiler config,
+;;     darkecobomb-ag.go and the tpages it needs in game.gd), and its skelgroup
+;;     asks for texture level 2 so it is found there;
+;;   - its blast and warning particles are copied below from robotboss-part.gc
+;;     under new ids, because that file only loads with FIN.DGO. The textures
+;;     are all from the common "effects" tpage;
+;;   - its sounds are COMMON.SBK ones: bomb-open and robo-warning are what the
+;;     finale itself plays, and the blast is "explosion", the one the misty
+;;     balloon lurker's mine makes. The finale's own blast sound, explod-bomb,
+;;     lives in FINALBOS.SBK and would be silent here.
+;;
+;; The bomb is a brain (gauntlet-bomb, a bare process-drawable that falls,
+;; counts down and goes off) with a manipy for a body, the game's own way to put
+;; a character on screen from code (the Yellow Sage does the same in
+;; levels/training/training-obs.gc). The body has no collision of its own, so
+;; there is nothing to stand on, push against or get stuck in; the only thing it
+;; ever does to Jak is one hit when it explodes.
+
+(defconstant GAUNTLET_DROP_POLL_FRAMES 30) ;; how often the request file is looked at, about twice a second
+(defconstant GAUNTLET_BOMB_DROP_HEIGHT (meters 25)) ;; how high above Jak the bomb appears
+(defconstant GAUNTLET_BOMB_GRAVITY (meters 30)) ;; its fall, in meters per second per second (about 1.3 s from 25 m)
+(defconstant GAUNTLET_BOMB_COUNTDOWN (seconds 4)) ;; from landing to blast, with the warning beeps speeding up
+(defconstant GAUNTLET_BOMB_BLAST_RADIUS (meters 8)) ;; Jak inside this when it goes off takes one hit
+(defconstant GAUNTLET_BOMB_FIRST_TICK 0.9) ;; the finale's warning curve: the first beep when the clock reaches this cosine
+(defconstant GAUNTLET_BOMB_TICK_STEP 0.06) ;; and each beep lowers the bar by this much, so they come faster and faster
+(defconstant GAUNTLET_GROUND_PROBE_UP (meters 2)) ;; the ground under Jak is searched for from this far above his feet
+(defconstant GAUNTLET_GROUND_PROBE_LENGTH (meters 20)) ;; ... and this far down
+(defconstant GAUNTLET_PART_GROUP_BLAST 1000) ;; ids this file adds to the particle tables, above any the game uses
+(defconstant GAUNTLET_PART_GROUP_TICK 1001)
+
+;; ------------------------------------------------------------ the particles --
+
+;; group-final-boss-mine-explosion (619) as group 1000, parts 2499-2511 as 3500-3512
+(defpartgroup group-gauntlet-bomb-blast
+  :id 1000
+  :flags (use-local-clock)
+  :bounds (static-bspherem 0 0 0 64)
+  :parts
+  ((sp-item 3501 :flags (is-3d) :period (seconds 3) :length (seconds 0.017))
+   (sp-item 3502 :period (seconds 3) :length (seconds 0.017))
+   (sp-item 3503 :period (seconds 3) :length (seconds 0.135))
+   (sp-item 3504 :period (seconds 3) :length (seconds 0.067) :binding 3500)
+   (sp-item 3505 :period (seconds 3) :length (seconds 0.135))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3500 :flags (start-dead))
+   (sp-item 3506 :period (seconds 3) :length (seconds 0.067))))
+
+(defpart 3504
+  :init-specs
+  ((:texture (bigpuff effects))
+   (:num 2.0)
+   (:y (meters 0))
+   (:scale-x (meters 4) (meters 2))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 0.0)
+   (:g 0.0)
+   (:b 0.0)
+   (:a 32.0 64.0)
+   (:vel-y (meters 0.64) (meters 0.85333335))
+   (:scalevel-x (meters 0))
+   (:rotvel-z (degrees -0.3) (degrees 0.6))
+   (:scalevel-y :copy scalevel-x)
+   (:accel-y (meters -0.007166667) (meters -0.013833334))
+   (:friction 0.88 0.04)
+   (:timer (seconds 1) (seconds 0.997))
+   (:flags (bit2 bit14))
+   (:conerot-x (degrees 35) (degrees 55))
+   (:conerot-y (degrees 0) (degrees 360))
+   (:conerot-radius (meters 0) (meters 10))))
+
+(defpart 3500
+  :init-specs
+  ((:texture (bigpuff effects))
+   (:num 1.0)
+   (:scale-x (meters 2) (meters 4))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 64.0)
+   (:g 64.0)
+   (:b 128.0)
+   (:a 32.0 32.0)
+   (:scalevel-x (meters 0.01) (meters 0.01))
+   (:rotvel-z (degrees -0.6) (degrees 1.2))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-a -0.14222223)
+   (:timer (seconds 1.5))
+   (:flags (bit2 bit3 bit14))
+   (:next-time (seconds 0.14))
+   (:next-launcher 3507)))
+
+(defpart 3507
+  :init-specs ((:fade-r -0.14222223) (:fade-g -0.14222223) (:fade-b -0.14222223)))
+
+(defpart 3503
+  :init-specs
+  ((:texture (hotdot effects))
+   (:num 64.0)
+   (:y (meters 0))
+   (:scale-x (meters 2.6) (meters 2))
+   (:scale-y :copy scale-x)
+   (:r 196.0 64.0)
+   (:g 192.0 64.0)
+   (:b 192.0)
+   (:a 16.0 112.0)
+   (:vel-y (meters 0.64) (meters 1.28))
+   (:scalevel-x (meters -0.009333333))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-r -1.4222223)
+   (:fade-g -1.4222223)
+   (:accel-y (meters -0.0011666666) (meters -0.011166667))
+   (:friction 0.85)
+   (:timer (seconds 2.5))
+   (:flags (bit2 bit14))
+   (:next-time (seconds 0.1) (seconds 0.297))
+   (:next-launcher 3508)
+   (:conerot-x (degrees 0) (degrees 140))
+   (:conerot-y (degrees 0) (degrees 360))
+   (:conerot-radius (meters 2) (meters 12))
+   (:rotate-y (degrees 0) (degrees 360))))
+
+(defpart 3508
+  :init-specs ((:fade-r 0.0) (:fade-g 0.0) (:fade-b 0.0) (:fade-a -0.21333334)))
+
+(defpart 3506
+  :init-specs
+  ((:texture (hotdot effects))
+   (:num 6.0)
+   (:y (meters 0))
+   (:scale-x (meters 0.6) (meters 0.2))
+   (:rot-z (degrees 0) (degrees 180))
+   (:scale-y (meters 256))
+   (:r 255.0)
+   (:g 196.0)
+   (:b 64.0)
+   (:a 32.0 96.0)
+   (:scalevel-y (meters 6))
+   (:fade-r -1.6)
+   (:fade-g -1.0666667)
+   (:fade-b 1.0666667)
+   (:fade-a -1.0666667)
+   (:timer (seconds 0.4))
+   (:flags (bit2 bit3 bit14))))
+
+(defpart 3502
+  :init-specs
+  ((:texture (starflash effects))
+   (:num 1.0)
+   (:y (meters 0))
+   (:scale-x (meters 160))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 128.0)
+   (:g 128.0)
+   (:b 255.0)
+   (:a 128.0)
+   (:fade-a -1.7066667)
+   (:timer (seconds 0.25))
+   (:flags (bit2 bit3 bit14))))
+
+(defpart 3505
+  :init-specs
+  ((:texture (bigpuff effects))
+   (:num 32.0)
+   (:y (meters 10))
+   (:scale-x (meters 20) (meters 16))
+   (:rot-z (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 192.0)
+   (:g 192.0)
+   (:b 255.0)
+   (:a 16.0 80.0)
+   (:vel-y (meters 0.21333334) (meters 0.42666668))
+   (:scalevel-x (meters 0.06666667))
+   (:rotvel-z (degrees -0.3) (degrees 0.6))
+   (:scalevel-y :copy scalevel-x)
+   (:accel-y (meters 0.0005) (meters 0.0005))
+   (:friction 0.87)
+   (:timer (seconds 2.5))
+   (:flags (bit2 bit14))
+   (:next-time (seconds 0.14))
+   (:next-launcher 3509)
+   (:conerot-x (degrees 60) (degrees 40))
+   (:conerot-y (degrees 0) (degrees 360))
+   (:conerot-radius (meters 0) (meters 20))))
+
+(defpart 3509
+  :init-specs ((:fade-r -1.6) (:fade-g -1.6) (:fade-b -1.0666667) (:next-time (seconds 0.2)) (:next-launcher 3510)))
+
+(defpart 3510
+  :init-specs
+  ((:fade-r -0.26666668)
+   (:fade-g -0.26666668)
+   (:fade-b -0.17777778)
+   (:fade-a -0.16)
+   (:next-time (seconds 0.6))
+   (:next-launcher 3511)))
+
+(defpart 3511
+  :init-specs ((:fade-r -0.114285715) (:fade-g -0.114285715) (:fade-b 0.0)))
+
+(defpart 3501
+  :init-specs
+  ((:texture (water-ring effects))
+   (:num 4.0)
+   (:y (meters 10))
+   (:scale-x (meters 30))
+   (:rot-y (degrees 0) (degrees 360))
+   (:scale-y :copy scale-x)
+   (:r 64.0)
+   (:g 64.0)
+   (:b 255.0)
+   (:a 128.0)
+   (:scalevel-x (meters 0.33333334) (meters 0.6666667))
+   (:scalevel-y :copy scalevel-x)
+   (:timer (seconds 1.1))
+   (:flags (bit2 bit3 bit12 bit14))
+   (:next-time (seconds 0.2))
+   (:next-launcher 3512)))
+
+(defpart 3512
+  :init-specs ((:fade-a -1.4222223)))
+
+
+;; group-robotboss-darkecobomb-tick (663) as group 1001, parts 2756-2759 as 3513-3516
+(defpartgroup group-gauntlet-bomb-tick
+  :id 1001
+  :duration (seconds 3)
+  :flags (use-local-clock)
+  :bounds (static-bspherem 0 0 0 64)
+  :parts ((sp-item 3513) (sp-item 3514) (sp-item 3515) (sp-item 3516)))
+
+(defpart 3516
+  :init-specs
+  ((:texture (hotdot effects))
+   (:num 0.5)
+   (:y (meters 0))
+   (:scale-x (meters 10) (meters 16))
+   (:scale-y :copy scale-x)
+   (:g 0.0 128.0)
+   (:b 128.0 128.0)
+   (:a 128.0)
+   (:scalevel-x (meters -0.0033333334))
+   (:scalevel-y :copy scalevel-x)
+   (:fade-a -2.1333334)
+   (:timer (seconds 0.2))
+   (:flags (bit2 bit3 bit14))))
+
+(defpart 3515
+  :init-specs
+  ((:texture (lightning3 effects))
+   (:num 0.2 1.0)
+   (:y (meters 0) (meters 1))
+   (:scale-x (meters 16) (meters 6))
+   (:rot-x 4)
+   (:rot-z (degrees -160) (degrees 140))
+   (:scale-y (meters 0.6) (meters 0.3))
+   (:r 64.0)
+   (:g 64.0)
+   (:b 128.0)
+   (:a 128.0)
+   (:fade-a -1.6)
+   (:timer (seconds 0.3))
+   (:flags (bit2 bit3 bit14))
+   (:next-time (seconds 0.035))
+   (:next-launcher 146)))
+
+(defpart 3514
+  :init-specs
+  ((:texture (lightning2 effects))
+   (:num 0.2 1.0)
+   (:y (meters 0) (meters 1))
+   (:scale-x (meters 16) (meters 6))
+   (:rot-x 4)
+   (:rot-z (degrees -160) (degrees 140))
+   (:scale-y (meters 0.6) (meters 0.3))
+   (:r 64.0)
+   (:g 64.0)
+   (:b 128.0)
+   (:a 128.0)
+   (:fade-a -1.6)
+   (:timer (seconds 0.3))
+   (:flags (bit2 bit3 bit14))
+   (:next-time (seconds 0.035))
+   (:next-launcher 146)))
+
+(defpart 3513
+  :init-specs
+  ((:texture (lightning effects))
+   (:num 0.2 1.0)
+   (:y (meters 0) (meters 1))
+   (:scale-x (meters 16) (meters 6))
+   (:rot-x 4)
+   (:rot-z (degrees -160) (degrees 140))
+   (:scale-y (meters 0.6) (meters 0.3))
+   (:r 64.0)
+   (:g 64.0)
+   (:b 128.0)
+   (:a 128.0)
+   (:fade-a -1.6)
+   (:timer (seconds 0.3))
+   (:flags (bit2 bit3 bit14))
+   (:next-time (seconds 0.035))
+   (:next-launcher 146)))
+
+
+;; ------------------------------------------------------------------ the art --
+
+(defskelgroup *gauntlet-darkecobomb-sg*
+  darkecobomb
+  darkecobomb-lod0-jg
+  darkecobomb-idle-ja
+  ((darkecobomb-lod0-mg (meters 999999)))
+  :bounds (static-spherem 0 3.5 0 6)
+  :texture-level 2)
+
+;; Art groups from GAME.CGO are registered in level-default when they link, under the name stored in the group itself
+;; (the skelgroup's art-group-name, not the "-ag" file name). The bomb has no entity, so if initialize-skeleton ever
+;; failed for it, process-drawable-art-error would dereference (-> self entity extra perm) and fault the game. These two
+;; ask the questions initialize-skeleton asks, of the same art, so the bomb is only dropped when its init cannot take
+;; that path. The sage's pair in training-obs.gc is the same check.
+(defun gauntlet-art-complete? ((art art-group) (skel skeleton-group))
+  "True when the skelgroup's joint geometry and every lod mesh exist in the art group with the types the draw needs."
+  (when (or (>= (-> skel jgeo) (-> art length)) (!= (-> (-> art data (-> skel jgeo)) type) art-joint-geo))
+    (return #f))
+  (dotimes (lod (+ (-> skel max-lod) 1))
+    (when (or (>= (-> skel mgeo lod) (-> art length)) (!= (-> (-> art data (-> skel mgeo lod)) type) merc-ctrl))
+      (return #f)))
+  #t)
+
+(defun gauntlet-art-ready? ((skel skeleton-group))
+  "True when the skelgroup's art group is already registered in level-default and complete, which is where
+   initialize-skeleton looks for a texture-level 2 skelgroup. Never loads anything."
+  (let ((art (art-group-get-by-name (-> *level* level-default) (-> skel art-group-name))))
+    (and art (gauntlet-art-complete? art skel))))
+
+;; ------------------------------------------------------------------ the bomb --
+
+(deftype gauntlet-bomb (process-drawable)
+  ((body      handle)
+   (ground-y  float)
+   (fall-from float)
+   (next-tick float))
+  (:states
+   gauntlet-bomb-fall
+   gauntlet-bomb-countdown
+   gauntlet-bomb-explode
+   gauntlet-bomb-gone))
+
+(defun gauntlet-seconds-since ((start time-frame))
+  "How many seconds have passed since start."
+  (/ (the float (- (current-time) start)) (the float (seconds 1))))
+
+(defun gauntlet-ground-below ((where vector) (out vector))
+  "The ground under where, written to out. The ground is searched for from just above where, and where itself
+   stands in for it when there is none in reach, so the bomb always has somewhere to land."
+  (set! (-> out quad) (-> where quad))
+  (find-ground-and-draw-shadow where
+                               out
+                               0.0
+                               (collide-kind background ground-object)
+                               (the-as process-drawable #f)
+                               GAUNTLET_GROUND_PROBE_UP
+                               GAUNTLET_GROUND_PROBE_LENGTH)
+  ;; a probe that found nothing hands back a spot above the start, which is no ground
+  (if (< (+ (-> where y) GAUNTLET_GROUND_PROBE_UP) (-> out y))
+    (set! (-> out y) (-> where y)))
+  out)
+
+(defun gauntlet-bomb-body ((body handle))
+  "The manipy that draws the bomb, or #f once it is gone."
+  (let ((proc (handle->process body)))
+    (the-as manipy (if (and proc (type-type? (-> proc type) manipy)) proc))))
+
+(defbehavior gauntlet-bomb-play gauntlet-bomb ((anim string) (mode symbol))
+  "Have its body play anim through manipy's own events: mode 'play runs it once, 'loop runs it forever."
+  (let ((body (gauntlet-bomb-body (-> self body))))
+    (when body
+      (send-event body 'anim-mode mode)
+      (send-event body 'art-joint-anim anim 0)))
+  0)
+
+(defbehavior gauntlet-bomb-anim-done? gauntlet-bomb ()
+  "True once the 'play anim has reached its end."
+  (let ((body (gauntlet-bomb-body (-> self body))))
+    (and body (send-event body 'query 'done))))
+
+(defbehavior gauntlet-bomb-log gauntlet-bomb ((label string))
+  "One GAUNTLET BOMB line: where the root is and where the body's main joint is drawn, in meters, so a play test
+   can say whether its animations carry an offset from the root (the Yellow Sage's put him 7 m underground).
+   Printed in two format calls because format takes at most six arguments each."
+  (let ((body (gauntlet-bomb-body (-> self body))))
+    (when (and body (nonzero? (-> body skel)) (-> body node-list) (nonzero? (-> body node-list)))
+      (let ((nodes (-> body node-list))
+            (probe (new 'stack-no-clear 'vector)))
+        (when (< (joint-node-index darkecobomb-lod0-jg main) (-> nodes length))
+          (vector<-cspace! probe (-> nodes data (joint-node-index darkecobomb-lod0-jg main)))
+          (format 0 "GAUNTLET BOMB ~S root ~M ~M ~M" label (-> self root trans x) (-> self root trans y) (-> self root trans z))
+          (format 0 " main ~M ~M ~M ground ~M~%" (-> probe x) (-> probe y) (-> probe z) (-> self ground-y))))))
+  0)
+
+(defbehavior gauntlet-bomb-init-by-other gauntlet-bomb ((where vector))
+  "Appear GAUNTLET_BOMB_DROP_HEIGHT above where, which is where Jak stands, and fall to the ground under it."
+  ;; keep ticking whatever the actors around do (the finale's bomb does the same)
+  (logclear! (-> self mask) (process-mask actor-pause))
+  (set! (-> self body) (the-as handle #f))
+  (set! (-> self root) (new 'process 'trsqv))
+  (let ((ground (new 'stack-no-clear 'vector)))
+    (gauntlet-ground-below where ground)
+    (set! (-> self ground-y) (-> ground y)))
+  (set! (-> self root trans quad) (-> where quad))
+  (+! (-> self root trans y) GAUNTLET_BOMB_DROP_HEIGHT)
+  (set! (-> self fall-from) (-> self root trans y))
+  (quaternion-identity! (-> self root quat))
+  (vector-identity! (-> self root scale))
+  ;; no entity, and a body that has none either: its draw is filed under the default level, where common art lives
+  (set! (-> self entity) #f)
+  (let ((body (manipy-spawn (-> self root trans) #f *gauntlet-darkecobomb-sg* #f :to self)))
+    (when body
+      (set! (-> self body) (ppointer->handle body))
+      (send-event (ppointer->process body) 'rot-quat (-> self root quat))))
+  (go gauntlet-bomb-fall)
+  (none))
+
+(defstate gauntlet-bomb-fall (gauntlet-bomb)
+  :enter
+    (behavior ()
+      (set-time! (-> self state-time)))
+  :trans
+    (behavior ()
+      (let ((body (gauntlet-bomb-body (-> self body))))
+        ;; no body, no bomb
+        (if (not body) (go gauntlet-bomb-gone))
+        (let* ((fallen (gauntlet-seconds-since (-> self state-time)))
+               (y (- (-> self fall-from) (* 0.5 GAUNTLET_BOMB_GRAVITY fallen fallen))))
+          (set! (-> self root trans y) (fmax y (-> self ground-y)))
+          (send-event body 'trans (-> self root trans))
+          (if (>= (-> self ground-y) y) (go gauntlet-bomb-countdown)))))
+  :code
+    (behavior ()
+      (gauntlet-bomb-play "darkecobomb-blast" 'play)
+      ;; one frame for the body to take the new anim up, so 'done is asked of the right one
+      (suspend)
+      (until (gauntlet-bomb-anim-done?)
+        (suspend))
+      (gauntlet-bomb-play "darkecobomb-idle" 'loop)
+      (suspend-for (seconds 0.2))
+      (gauntlet-bomb-log "falling")
+      (loop
+        (suspend))))
+
+(defstate gauntlet-bomb-countdown (gauntlet-bomb)
+  :enter
+    (behavior ()
+      (set-time! (-> self state-time))
+      (set! (-> self next-tick) GAUNTLET_BOMB_FIRST_TICK))
+  :trans
+    (behavior ()
+      (let* ((elapsed (- (current-time) (-> self state-time)))
+             (remaining (fmax 0.0 (/ (the float (- GAUNTLET_BOMB_COUNTDOWN elapsed)) (the float GAUNTLET_BOMB_COUNTDOWN)))))
+        ;; the finale's own warning: a beep and a flash each time the clock's cosine drops under the bar,
+        ;; and the bar drops with every beep, so they come faster as the end nears
+        (when (< (cos (* 16384.0 (- 1.0 remaining))) (-> self next-tick))
+          (process-spawn part-tracker :init part-tracker-init (get-part-group GAUNTLET_PART_GROUP_TICK) 150 #f #f #f (-> self root trans) :to *entity-pool*)
+          (+! (-> self next-tick) (- GAUNTLET_BOMB_TICK_STEP))
+          (sound-play "robo-warning"))
+        (if (>= elapsed GAUNTLET_BOMB_COUNTDOWN) (go gauntlet-bomb-explode))))
+  :code
+    (behavior ()
+      (sound-play "bomb-open")
+      (gauntlet-bomb-play "darkecobomb-open" 'play)
+      (suspend)
+      (until (gauntlet-bomb-anim-done?)
+        (suspend))
+      (gauntlet-bomb-play "darkecobomb-spin-cycle" 'loop)
+      (suspend-for (seconds 0.2))
+      (gauntlet-bomb-log "landed")
+      (loop
+        (suspend))))
+
+(defstate gauntlet-bomb-explode (gauntlet-bomb)
+  :code
+    (behavior ()
+      (sound-play "explosion" :position #f)
+      (activate! *camera-smush-control* 819.2 37 600 1.0 0.995)
+      (process-spawn part-tracker :init part-tracker-init (get-part-group GAUNTLET_PART_GROUP_BLAST) 900 #f #f #f (-> self root trans) :to *entity-pool*)
+      (let ((body (gauntlet-bomb-body (-> self body))))
+        (if body (send-event body 'draw #f)))
+      ;; one ordinary hit, once, for Jak inside the blast
+      (when (and *target* (< (vector-vector-distance (-> self root trans) (target-pos 0)) GAUNTLET_BOMB_BLAST_RADIUS))
+        (send-event *target* 'attack #f (static-attack-info ((mode 'explode)))))
+      ;; Jak's hit reads the bomb for where it came from when he next runs, so it stays until he has
+      (suspend-for (seconds 1))
+      (deactivate self)))
+
+(defstate gauntlet-bomb-gone (gauntlet-bomb)
+  :code
+    (behavior ()
+      (deactivate self)))
+
+(defun gauntlet-bomb-drop! ()
+  "Drop the bomb on Jak's spot, if its art is there to draw."
+  (if (gauntlet-art-ready? *gauntlet-darkecobomb-sg*)
+    (process-spawn gauntlet-bomb :init gauntlet-bomb-init-by-other (target-pos 0) :to *entity-pool*)
+    (format 0 "GAUNTLET DROP: the bomb's art group is not loaded, nothing dropped~%"))
+  0)
+
+;; ------------------------------------------------------------------ the poll --
+
+(define *gauntlet-drop-countdown* 0)
+(define *gauntlet-drop-seen* (new 'global 'string 64 ""))
+;; The request file outlives the game, so the first look of a fresh boot only
+;; records where its counter is, as the snapshot poll does: a request made
+;; before the game started must not go off the moment it does. A boot that
+;; finds no file counts as the first look too, so the first request ever
+;; made, which creates the file, is not swallowed.
+(define *gauntlet-drop-primed* #f)
+
+(defun gauntlet-drop! ((kind string))
+  "Drop what kind names at Jak's spot."
+  (cond
+    ((not *target*) (format 0 "GAUNTLET DROP: ~S asked for with no Jak in the world~%" kind))
+    ((string= kind "bomb") (gauntlet-bomb-drop!))
+    (else (format 0 "GAUNTLET DROP: do not know how to drop ~S~%" kind)))
+  0)
+
+(defun gauntlet-drop-poll! ()
+  "Per-frame hook: every GAUNTLET_DROP_POLL_FRAMES frames look at the request counter, and drop once
+   when it has changed since the last look."
+  (+! *gauntlet-drop-countdown* -1)
+  (when (>= 0 *gauntlet-drop-countdown*)
+    (set! *gauntlet-drop-countdown* GAUNTLET_DROP_POLL_FRAMES)
+    (format (clear *pc-temp-string-1*) "~S/Mods/gauntlet-drop-request.txt" *pc-settings-folder*)
+    (when (pc-filepath-exists? *pc-temp-string-1*)
+      (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'read)))
+        (when (file-stream-valid? file)
+          (file-stream-seek-past-whitespace file)
+          (file-stream-read-word file)
+          ;; the first word is the counter: an unchanged one means nothing new
+          (when (not (string= *pc-temp-string* *gauntlet-drop-seen*))
+            (format (clear *gauntlet-drop-seen*) "~S" *pc-temp-string*)
+            (when *gauntlet-drop-primed*
+              ;; the second word names what to drop
+              (file-stream-seek-past-whitespace file)
+              (file-stream-read-word file)
+              (gauntlet-drop! *pc-temp-string*)))
+          (file-stream-close file))))
+    (set! *gauntlet-drop-primed* #t))
+  (none))

@@ -129,8 +129,9 @@
 
   // art groups that should always be possible to access, whatever level is loaded. Their models are
   // extracted into GAME.fr3. The art group itself must also be listed in goal_src/jak1/dgos/game.gd.
-  // gauntlet mod: the training dummies turn into the Yellow Sage, whose art group otherwise only ships in CIT.DGO.
-  "common_art_groups": ["yellowsage-ag"],
+  // gauntlet mod: the training dummies turn into the Yellow Sage, whose art group otherwise only ships in CIT.DGO,
+  // and the dark eco bomb of the final boss can be dropped on Jak anywhere, its art group otherwise only in FIN.DGO.
+  "common_art_groups": ["yellowsage-ag", "darkecobomb-ag"],
 
   // whether or not to dump out streamed audio files to decompiler_out/<game>/audio/sfx and decompiler_out/<game>/audio/voice_lines
   "rip_streamed_audio": false,

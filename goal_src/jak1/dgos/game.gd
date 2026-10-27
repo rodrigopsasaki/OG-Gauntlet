@@ -196,6 +196,7 @@
   "speedruns-h.o"
   "twitch-h.o" ;; added (twitch integration)
   "run-state-h.o" ;; added (run-state publisher)
+  "gauntlet-h.o" ;; added (gauntlet drops)
   "game-info.o"
   "game-save.o"
   "settings.o"
@@ -350,8 +351,13 @@
   "ropebridge.o"
   "ticky.o"
   "hud-classes-pc.o" ;; added
+  "gauntlet.o" ;; added (gauntlet drops, after generic-obs and shadow whose symbols its states read at link time)
   ;; gauntlet: the yellow sage the training dummies turn into. His art group and its tpage ship in CIT.DGO only,
   ;; so they live here, with his models in GAME.fr3 (common_art_groups in the decompiler config).
   "yellowsage-ag.go"
   "tpage-1417.go"
+  ;; gauntlet: the dark eco bomb that can be dropped on Jak anywhere. Its art group ships in FIN.DGO only, with its
+  ;; textures in the final boss's tpage 1419; its models are in GAME.fr3 (common_art_groups again).
+  "darkecobomb-ag.go"
+  "tpage-1419.go"
  ))

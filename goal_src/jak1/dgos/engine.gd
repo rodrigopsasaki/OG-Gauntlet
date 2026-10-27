@@ -200,6 +200,7 @@
   "speedruns-h.o"
   "twitch-h.o" ;; added (twitch integration)
   "run-state-h.o" ;; added (run-state publisher)
+  "gauntlet-h.o" ;; added (gauntlet drops)
   "game-info.o"
   "game-save.o"
   "settings.o"
@@ -314,5 +315,6 @@
   "entity-debug.o" ;; added
   "subtitle.o" ;; added
   "default-menu-pc.o" ;; added
+  "gauntlet.o" ;; added (gauntlet drops, after generic-obs and shadow whose symbols its states read at link time)
  ))
 
