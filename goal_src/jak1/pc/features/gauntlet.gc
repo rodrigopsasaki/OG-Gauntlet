@@ -1017,14 +1017,14 @@
 ;;
 ;; The buttons are basebutton's own (engine/common-obs/basebutton.gc): a subtype that only changes what a press does. The
 ;; engine's button already runs without an entity (spawned-by-other? is how the game's own spawned buttons work: no perm
-;; status, no actor link), presses on Jak's flop, sinks, and stays down. The press fires a blast instead of sending an actor
+;; status, no actor link), presses on Jak's flop, sinks, and stays down. The press throws a boulder back at Klaww instead of sending an actor
 ;; event, and the skeleton is asked for through a skelgroup of our own, with texture level 2 and sort 1 like every other
 ;; common-art character, since the stock one would draw in the default sink group.
 ;;
 ;; A hit is one of GAUNTLET_KLAWW_MAX_HITS. The count survives Klaww's own flinches and even his death, and is only reset
 ;; when Jak leaves the beach, which also takes the buttons, so the fight starts over the next time he comes back.
 
-(defconstant GAUNTLET_KLAWW_MAX_HITS 3) ;; blasts it takes to bring him down
+(defconstant GAUNTLET_KLAWW_MAX_HITS 3) ;; boulders it takes to bring him down
 (defconstant GAUNTLET_KLAWW_BUTTONS 3) ;; rows gauntlet-klaww-button-table can hold: one per hit
 (defconstant GAUNTLET_KLAWW_FALL_HEIGHT (meters 60)) ;; he starts this far above the ground he will land on: high enough to be seen coming
 (defconstant GAUNTLET_KLAWW_FALL_GRAVITY (meters 40)) ;; per second per second, so the drop takes 1.7 s: a plunge, not a float
@@ -1037,14 +1037,15 @@
 (defconstant GAUNTLET_KLAWW_BOULDER_GRAVITY (meters 10)) ;; per second per second: a lob, not the game's flat 5 or Jak's own 60
 (defconstant GAUNTLET_KLAWW_SHOVE_BACK (meters 5)) ;; how far a landing throws Jak off, about, away from where it landed
 (defconstant GAUNTLET_KLAWW_SHOVE_UP (meters 2))
-(defconstant GAUNTLET_KLAWW_BOLT_SPEED (meters 45)) ;; the button's blast, 100 m to his chest in 2.2 s
-(defconstant GAUNTLET_KLAWW_BOLT_LIFT (meters 1.5)) ;; it leaves from this far above the button
+(defconstant GAUNTLET_KLAWW_SHOT_SPEED (meters 40)) ;; sideways: the boulder a button throws back, 100 m to his chest in 2.5 s
+(defconstant GAUNTLET_KLAWW_SHOT_GRAVITY (meters 14)) ;; per second per second: a steeper lob than his own, so the arc reads from far away
+(defconstant GAUNTLET_KLAWW_SHOT_LIFT (meters 1.5)) ;; it leaves from this far above the button
+(defconstant GAUNTLET_KLAWW_FLINCH (seconds 0.4)) ;; how long a hit boulder's flinch takes: the ogre's own takes 0.15 s, stretched so it reads across the beach
 (defconstant GAUNTLET_KLAWW_MARKER_LIFT (meters 0.3)) ;; the landing circle floats this far over the ground so it is not buried
 (defconstant GAUNTLET_KLAWW_PROBE_RAISE (meters 3)) ;; the ground under a hand-picked spot is searched for from this far above it, so a rise in the ground does not bury the search
 (defconstant GAUNTLET_KLAWW_CHEST (meters 8.75)) ;; the chest's height in his bind pose, for a chest to aim at before his skeleton has been drawn
 (defconstant GAUNTLET_PART_GROUP_KLAWW_TRAIL 1002) ;; ids this file adds to the particle tables, after the bomb's
 (defconstant GAUNTLET_PART_GROUP_KLAWW_IMPACT 1003)
-(defconstant GAUNTLET_PART_GROUP_KLAWW_BOLT 1004)
 (defconstant GAUNTLET_PART_KLAWW_MARKER 3532)
 (defconstant GAUNTLET_PART_KLAWW_CENTER 3533)
 
@@ -1223,45 +1224,6 @@
 (defpart 3529
   :init-specs ((:fade-r 0.0) (:fade-g 0.0) (:fade-b 0.0)))
 
-;; The blast a button fires: the yellow eco of Jak's own shot, drawn simply (a glowing core and a smoke trail) because
-;; projectile-yellow rewrites shared particle specs from the shot's heading on every launch. Spawned each frame at the
-;; blast's position, the way the boulder's trail is.
-(defpartgroup group-gauntlet-klaww-bolt
-  :id 1004
-  :bounds (static-bspherem 0 0 0 3)
-  :parts ((sp-item 3530) (sp-item 3531)))
-
-(defpart 3530
-  :init-specs
-  ((:texture (hotdot effects))
-   (:num 1.0)
-   (:scale-x (meters 1.4) (meters 0.4))
-   (:scale-y :copy scale-x)
-   (:r 255.0)
-   (:g 210.0 30.0)
-   (:b 16.0)
-   (:a 110.0)
-   (:fade-a -1.0)
-   (:timer (seconds 0.12))
-   (:flags (bit2 bit3 bit14))))
-
-(defpart 3531
-  :init-specs
-  ((:texture (bigpuff effects))
-   (:num 0.5 0.5)
-   (:scale-x (meters 1.2) (meters 0.6))
-   (:rot-z (degrees 0) (degrees 360))
-   (:scale-y :copy scale-x)
-   (:r 255.0)
-   (:g 190.0 40.0)
-   (:b 0.0)
-   (:a 48.0 32.0)
-   (:scalevel-x (meters 0.004))
-   (:scalevel-y :copy scalevel-x)
-   (:fade-a -0.16)
-   (:timer (seconds 0.5))
-   (:flags (bit2 bit14))))
-
 ;; Where a boulder will land: one of these launched on each spot of a ring, every frame. Orange so it reads as danger
 ;; against the sand, short-lived so a ring that moves or closes in leaves no trail.
 (defpart 3532
@@ -1314,6 +1276,17 @@
   :texture-level 2
   :sort 1)
 
+;; ogreboss-shoot-boulder-break, the boulder bursting into pieces that the ogre's own boulders do on impact
+;; (ogreboss-rock-explosion-effect), played once by a manipy
+(defskelgroup *gauntlet-klaww-boulder-break-sg*
+  ogreboss
+  ogreboss-shoot-boulder-break-lod0-jg
+  ogreboss-shoot-boulder-break-idle-ja
+  ((ogreboss-shoot-boulder-break-lod0-mg (meters 999999)))
+  :bounds (static-spherem 0 0 0 15)
+  :texture-level 2
+  :sort 1)
+
 ;; basebutton.gc's *generic-button-sg*, asking for the common art
 (defskelgroup *gauntlet-button-sg*
   generic-button
@@ -1333,11 +1306,18 @@
 ;; harvester-90 (-185.8 17.0 -528.3), the nearest to flat ground. Three actors stand on the y 17.0 shelf below the cliff
 ;; (beach-part-26 at -190.8 -516.0, the lurkerpuppy at -212.6 -516.5, and the rock under harvester-90 itself at 17.2), which is
 ;; how it is known to be level ground and not slope; the spot is 5.7 m from the first of them, on the cliff side.
-;; Rows 1 and 2 are for the other two buttons: one more line each, and the poll spawns them.
+;; Row 1 is on the y 16.4 plateau east of the nest, 68 m from it and 125 m from row 0: inside the four actors
+;; lurkerpuppy-50 and -51 (-100.7 and -110.4, 16.5, -448.5), bucket-1 (-83.4 15.7 -413.1) and windmill-one-11 (-88.9 16.9
+;; -419.7), all things that stand on that ground, so the point among them is ground at about the same height. Row 2 is 116 m
+;; on along the same plateau, 128 m from the nest, 7.8 m from lurkerpuppy-2 (-80.8 16.0 -314.7); that is still inside his
+;; 140 m range, so Jak is a target at every button. The three make a run: row 0 is the far corner and the others are long
+;; sprints apart with his boulders landing on the way. The y of each is a hint; the ground is probed for, and logged.
 (defmacro gauntlet-klaww-button-table (row)
   "Expand row once per button: (row index x y z)."
   `(begin
-     (,row 0 -188.0 17.0 -521.0)))
+     (,row 0 -188.0 17.0 -521.0)
+     (,row 1 -95.0 16.4 -436.0)
+     (,row 2 -86.5 16.0 -320.0)))
 
 (deftype gauntlet-klaww-world (structure)
   ((klaww   handle)
@@ -1356,7 +1336,7 @@
   0)
 
 (gauntlet-klaww-forget-all!)
-(define *gauntlet-klaww-hits* 0) ;; blasts that have reached him since Jak came to the beach
+(define *gauntlet-klaww-hits* 0) ;; boulders that have reached him since this fight began
 (define *gauntlet-klaww-presses* 0) ;; buttons pressed since then
 (define *gauntlet-klaww-throws* 0) ;; boulders thrown since then, which also numbers them in the log
 (define *gauntlet-klaww-defeated* #f) ;; true from the third hit until Jak leaves the beach
@@ -1395,17 +1375,14 @@
    (start-time time-frame)
    (flight     float)
    (radius     float)
-   (index      int))
+   (index      int)
+   (klaww      handle) ;; the Klaww a returned boulder is for, no process for his own
+   (returned   symbol)) ;; true for a boulder a button threw back at him, which is not a danger to Jak
   (:states
    gauntlet-boulder-fly
-   gauntlet-boulder-land))
-
-(deftype gauntlet-bolt (process-drawable)
-  ((klaww handle)
-   (aim   vector :inline))
-  (:states
-   gauntlet-bolt-fly
-   gauntlet-bolt-gone))
+   gauntlet-boulder-land
+   gauntlet-boulder-break
+   gauntlet-boulder-gone))
 
 (deftype gauntlet-button (basebutton)
   ())
@@ -1510,11 +1487,18 @@
   :trans
     (behavior ()
       (let ((elapsed (the float (- (current-time) (-> self start-time)))))
+        ;; no Klaww to reach any more (he was taken away mid-flight): a returned boulder is gone with him
+        (if (and (-> self returned) (not (gauntlet-klaww-of (-> self klaww))))
+          (go gauntlet-boulder-gone))
         ;; the whole arc is fixed at the throw: where it is now is only a function of the time since
         (eval-position! (-> self trajectory) (fmin elapsed (-> self flight)) (-> self root trans))
-        (gauntlet-boulder-mark-landing)
+        ;; his own boulders mark where they will land; a returned one is no danger to Jak and marks nothing
+        (if (not (-> self returned)) (gauntlet-boulder-mark-landing))
         (spawn (-> self part) (-> self root trans))
-        (if (>= elapsed (-> self flight)) (go gauntlet-boulder-land))))
+        (when (>= elapsed (-> self flight))
+          (if (-> self returned)
+            (go gauntlet-boulder-break)
+            (go gauntlet-boulder-land)))))
   :code
     (behavior ()
       (loop
@@ -1535,15 +1519,49 @@
       (deactivate self))
   :post ja-post)
 
-(defbehavior gauntlet-boulder-init-by-other gauntlet-boulder ((src vector) (dest vector) (index int))
-  "Appear at src, his claw, and fly to dest, the ground under where Jak stood, on a fixed ballistic arc: gravity and
-   flight time are taken now, the flight time from the distance at a fixed sideways speed, and nothing about the arc ever
-   changes again. Nothing steers it, nothing tracks Jak, and it collides with nothing on the way: the landing is
-   what it is about."
+(defstate gauntlet-boulder-gone (gauntlet-boulder)
+  :code
+    (behavior ()
+      (deactivate self)))
+
+(defstate gauntlet-boulder-break (gauntlet-boulder)
+  :code
+    (behavior ()
+      (set! (-> self root trans quad) (-> self land quad))
+      (format 0 "GAUNTLET KLAWW boulder ~D hit his chest~%" (-> self index))
+      (sound-play "explosion" :position #f)
+      (process-spawn part-tracker :init part-tracker-init (get-part-group GAUNTLET_PART_GROUP_KLAWW_IMPACT) 300 #f #f #f (-> self land) :to *entity-pool*)
+      (activate! *camera-smush-control* 819.2 37 600 1.0 0.995)
+      (let ((klaww (gauntlet-klaww-of (-> self klaww))))
+        (if klaww (send-event klaww 'hit)))
+      ;; the ogre's own boulder bursts into pieces (ogreboss-rock-explosion-effect): a manipy plays the break once, turned at random
+      (let ((pieces (manipy-spawn (-> self land) #f *gauntlet-klaww-boulder-break-sg* #f :to self)))
+        (ja-channel-set! 0)
+        (when pieces
+          (let ((pieces-handle (ppointer->handle pieces))
+                (turn (new 'stack-no-clear 'quaternion)))
+            (quaternion-axis-angle! turn 0.0 1.0 0.0 (* 65536.0 (rand-vu)))
+            (send-event (handle->process pieces-handle) 'rot-quat turn)
+            (send-event (handle->process pieces-handle) 'anim-mode 'play1)
+            (set-time! (-> self state-time))
+            ;; the pieces end themselves when the break is over; a stuck one is not waited for
+            (suspend)
+            (while (and (handle->process pieces-handle) (not (time-elapsed? (-> self state-time) (seconds 4))))
+              (suspend)))))
+      (deactivate self))
+  :post ja-post)
+
+(defbehavior gauntlet-boulder-setup gauntlet-boulder ((src vector) (dest vector) (index int) (speed float) (gravity float) (klaww handle))
+  "Appear at src and fly to dest on a fixed ballistic arc: gravity and flight time are taken now, the flight time from the
+   distance at speed sideways, and nothing about the arc ever changes again. Nothing steers it, nothing tracks anyone, and
+   it collides with nothing on the way: the landing is what it is about. klaww is the Klaww a boulder thrown back at him
+   is for, and no process for one he throws; the flight and what happens at the end differ by that."
   (stack-size-set! (-> self main-thread) 512)
   (logclear! (-> self mask) (process-mask actor-pause))
   (set! (-> self entity) #f)
   (set! (-> self index) index)
+  (set! (-> self klaww) klaww)
+  (set! (-> self returned) (if (handle->process klaww) #t #f))
   (set! (-> self radius) *gauntlet-klaww-boulder-radius*)
   (set! (-> self land quad) (-> dest quad))
   (set! (-> self root) (new 'process 'trsqv))
@@ -1551,13 +1569,13 @@
   (quaternion-identity! (-> self root quat))
   (vector-identity! (-> self root scale))
   (let* ((distance (vector-vector-xz-distance src dest))
-         (seconds-in-air (fmax GAUNTLET_KLAWW_BOULDER_MIN_FLIGHT (/ distance GAUNTLET_KLAWW_BOULDER_SPEED)))
+         (seconds-in-air (fmax GAUNTLET_KLAWW_BOULDER_MIN_FLIGHT (/ distance speed)))
          (ticks-per-second (the float (seconds 1)))
-         (gravity (- (/ GAUNTLET_KLAWW_BOULDER_GRAVITY (* ticks-per-second ticks-per-second)))))
+         (per-tick (- (/ gravity (* ticks-per-second ticks-per-second)))))
     (set! (-> self flight) (* seconds-in-air ticks-per-second))
     ;; the trajectory is evaluated in ticks, as the ogre's missile does
-    (setup-from-to-duration! (-> self trajectory) src dest (-> self flight) gravity)
-    (format 0 "GAUNTLET KLAWW throw ~D: boulder from ~M ~M ~M" index (-> src x) (-> src y) (-> src z))
+    (setup-from-to-duration! (-> self trajectory) src dest (-> self flight) per-tick)
+    (format 0 "GAUNTLET KLAWW ~A ~D: boulder from ~M ~M ~M" (if (-> self returned) "shot" "throw") index (-> src x) (-> src y) (-> src z))
     (format 0 " aimed at ~M ~M ~M, ~M m away, ~F s in the air~%" (-> dest x) (-> dest y) (-> dest z) distance seconds-in-air))
   (let ((spin (* DEGREES_PER_ROT (rand-vu))))
     (quaternion-axis-angle! (-> self tumble) (cos spin) 0.0 (sin spin) 2730.6667))
@@ -1568,59 +1586,14 @@
   (go gauntlet-boulder-fly)
   (none))
 
-;; ------------------------------------------------------------------- a blast --
+(defbehavior gauntlet-boulder-init-by-other gauntlet-boulder ((src vector) (dest vector) (index int))
+  "One of his own, from src, his claw, to dest, the ground under where Jak stood."
+  (gauntlet-boulder-setup src dest index GAUNTLET_KLAWW_BOULDER_SPEED GAUNTLET_KLAWW_BOULDER_GRAVITY (the-as handle #f))
+  (none))
 
-(defstate gauntlet-bolt-fly (gauntlet-bolt)
-  :enter
-    (behavior ()
-      (set-time! (-> self state-time)))
-  :trans
-    (behavior ()
-      (let ((klaww (gauntlet-klaww-of (-> self klaww))))
-        ;; no Klaww to reach, or one that has taken too long to: it fizzles where it is
-        (if (or (not klaww) (time-elapsed? (-> self state-time) (seconds 10)))
-          (go gauntlet-bolt-gone))
-        ;; straight at his chest as it is now, not at where it was: the chest sways a meter, and a blast that misses
-        ;; because of that would tell the player the button did nothing
-        (gauntlet-klaww-chest klaww (-> self aim))
-        (let* ((toward (vector-! (new 'stack-no-clear 'vector) (-> self aim) (-> self root trans)))
-               (distance (vector-length toward))
-               (step (* GAUNTLET_KLAWW_BOLT_SPEED (seconds-per-frame))))
-          (cond
-            ((<= distance step)
-             (set! (-> self root trans quad) (-> self aim quad))
-             (send-event klaww 'hit)
-             (go gauntlet-bolt-gone))
-            (else
-             (vector-normalize! toward step)
-             (vector+! (-> self root trans) (-> self root trans) toward)))))
-      (spawn (-> self part) (-> self root trans)))
-  :code
-    (behavior ()
-      (loop
-        (suspend))))
-
-(defstate gauntlet-bolt-gone (gauntlet-bolt)
-  :code
-    (behavior ()
-      (process-spawn part-tracker :init part-tracker-init group-part-yellow-eco-fireball-hit -1 #f #f #f (-> self root trans) :to *entity-pool*)
-      (sound-play "yellow-explode" :position #f)
-      (deactivate self)))
-
-(defbehavior gauntlet-bolt-init-by-other gauntlet-bolt ((origin vector) (klaww handle))
-  "A yellow eco blast leaves from just above origin, a button, and flies at Klaww's chest."
-  (stack-size-set! (-> self main-thread) 512)
-  (logclear! (-> self mask) (process-mask actor-pause))
-  (set! (-> self entity) #f)
-  (set! (-> self klaww) klaww)
-  (set! (-> self root) (new 'process 'trsqv))
-  (set! (-> self root trans quad) (-> origin quad))
-  (+! (-> self root trans y) GAUNTLET_KLAWW_BOLT_LIFT)
-  (quaternion-identity! (-> self root quat))
-  (vector-identity! (-> self root scale))
-  (set! (-> self part) (create-launch-control (get-part-group GAUNTLET_PART_GROUP_KLAWW_BOLT) self))
-  (sound-play "yellow-fire" :position #f)
-  (go gauntlet-bolt-fly)
+(defbehavior gauntlet-boulder-return-init-by-other gauntlet-boulder ((src vector) (dest vector) (index int) (klaww handle))
+  "One a button threw back, from src, just above the button, to dest, his chest as it was at the throw."
+  (gauntlet-boulder-setup src dest index GAUNTLET_KLAWW_SHOT_SPEED GAUNTLET_KLAWW_SHOT_GRAVITY klaww)
   (none))
 
 ;; ------------------------------------------------------------------- Klaww --
@@ -1656,7 +1629,7 @@
   0)
 
 (defbehavior gauntlet-klaww-take-hit gauntlet-klaww ()
-  "A blast has reached his chest: one more of GAUNTLET_KLAWW_MAX_HITS. He flinches, and the third hit brings him down."
+  "A boulder has reached his chest: one more of GAUNTLET_KLAWW_MAX_HITS. He flinches, and the third hit brings him down."
   (when (< *gauntlet-klaww-hits* GAUNTLET_KLAWW_MAX_HITS)
     (+! *gauntlet-klaww-hits* 1)
     (format 0 "GAUNTLET KLAWW hit ~D of ~D~%" *gauntlet-klaww-hits* GAUNTLET_KLAWW_MAX_HITS)
@@ -1666,7 +1639,7 @@
   0)
 
 (defbehavior gauntlet-klaww-event gauntlet-klaww ((proc process) (argc int) (message symbol) (block event-message-block))
-  "The only thing he listens to is a blast reaching him."
+  "The only thing he listens to is a boulder reaching his chest."
   (case message
     (('hit) (gauntlet-klaww-take-hit) #t)
     (else #f)))
@@ -1781,20 +1754,44 @@
       (go gauntlet-klaww-idle))
   :post ja-post)
 
-;; The flinch: the ogre's own hit-chest animation, whose first eight frames are the stagger the ogre blends in on a hit.
-;; It plays as the base animation, so a hit during a wind-up cancels the throw, which is a reward for the button.
+;; The flinch, the way the original fight shows a boulder landing on him (ogreboss-blend-hit-anim in levels/ogre/ogreboss.gc): the
+;; hit-chest animation's first eight frames blended over whatever he is doing, strongly (0.9) for the middle of the flinch and
+;; eased in and out, with the base animation carrying on underneath. Hits one and two are this; the last hit is the full
+;; ogreboss-hit animation, which the original plays for the boulder that finishes a stage.
+(defbehavior gauntlet-klaww-blend-flinch gauntlet-klaww ()
+  "Set the hit-chest channel for this moment of the flinch: how far through it (phase, 0 to 1) picks the frame, and the
+   weight rises over the first sixth, holds, and falls away over the second half."
+  (let* ((phase (fmin 1.0 (/ (the float (- (current-time) (-> self state-time))) (the float GAUNTLET_KLAWW_FLINCH))))
+         (weight (cond
+                   ((< phase 0.16666667) (* 5.4 phase))
+                   ((< phase 0.5) 0.9)
+                   (else (* 1.8 (- 1.0 phase)))))
+         (first-frame (ja-aframe 0.0 1)))
+    (ja :chan 1
+        :frame-interp weight
+        :num-func num-func-identity
+        :frame-num (+ first-frame (* phase (- (ja-aframe 8.0 1) first-frame)))))
+  0)
+
+;; A hit during a wind-up cancels the throw, which is a reward for the button.
 (defstate gauntlet-klaww-hit (gauntlet-klaww)
   :event gauntlet-klaww-event
+  :enter
+    (behavior ()
+      (set-time! (-> self state-time)))
   :trans
     (behavior ()
       (gauntlet-klaww-face-jak))
   :code
     (behavior ()
-      (ja-channel-push! 1 (seconds 0.08))
-      (ja-no-eval :group! ogreboss-hit-chest-ja :num! (seek! (ja-aframe 8.0 0)) :frame-num 0.0)
-      (until (ja-done? 0)
+      ;; the base animation carries on in channel 0; the flinch is laid over it in channel 1
+      (ja-channel-push! 2 (seconds 0.05))
+      (ja-no-eval :group! ogreboss-idle-ja :num! (seek!) :frame-num 0.0)
+      (ja :chan 1 :group! ogreboss-hit-chest-ja :num! min :frame-interp 0.0)
+      (until (time-elapsed? (-> self state-time) GAUNTLET_KLAWW_FLINCH)
+        (gauntlet-klaww-blend-flinch)
         (suspend)
-        (ja :num! (seek! (ja-aframe 8.0 0))))
+        (ja :num! (seek!)))
       (go gauntlet-klaww-idle))
   :post ja-post)
 
@@ -1859,8 +1856,9 @@
 ;; ----------------------------------------------------------------- a button --
 
 (defun gauntlet-button-fire ((button gauntlet-button))
-  "The button has been pressed: one blast, from the button, at Klaww's chest, if there is a Klaww to hit. A button is pressed
-   once (it stays down), so a press is a shot that can never be taken back or taken twice."
+  "The button has been pressed: one of Klaww's own boulders flies from the button to his chest, if there is a Klaww to hit.
+   The arc is fixed from the chest as it is at this moment. A button is pressed once (it stays down), so a press is a shot
+   that can never be taken back or taken twice."
   (+! *gauntlet-klaww-presses* 1)
   (format 0 "GAUNTLET KLAWW button ~D pressed, ~D of ~D~%" (-> button button-id) *gauntlet-klaww-presses* (gauntlet-klaww-button-count))
   (let ((klaww (gauntlet-klaww-process)))
@@ -1868,7 +1866,18 @@
       ((or (not klaww) *gauntlet-klaww-defeated*)
        (format 0 "GAUNTLET KLAWW button ~D: there is no Klaww to hit~%" (-> button button-id)))
       (else
-       (process-spawn gauntlet-bolt :init gauntlet-bolt-init-by-other (-> button root trans) (process->handle klaww) :to *entity-pool*))))
+       (let ((src (new 'stack-no-clear 'vector))
+             (chest (new 'stack-no-clear 'vector)))
+         (set! (-> src quad) (-> button root trans quad))
+         (+! (-> src y) GAUNTLET_KLAWW_SHOT_LIFT)
+         (gauntlet-klaww-chest klaww chest)
+         (process-spawn gauntlet-boulder
+                        :init gauntlet-boulder-return-init-by-other
+                        src
+                        chest
+                        (-> button button-id)
+                        (process->handle klaww)
+                        :to *entity-pool*)))))
   0)
 
 (defmethod basebutton-method-29 ((this gauntlet-button) (event symbol) (notify entity))
@@ -1963,6 +1972,7 @@
   "True when everything that is drawn is in the common art."
   (and (gauntlet-art-ready? *gauntlet-klaww-sg*)
        (gauntlet-art-ready? *gauntlet-klaww-boulder-sg*)
+       (gauntlet-art-ready? *gauntlet-klaww-boulder-break-sg*)
        (gauntlet-art-ready? *gauntlet-button-sg*)))
 
 (defun gauntlet-klaww-keep! ()
@@ -2010,7 +2020,7 @@
 
 (defun gauntlet-klaww-reset! ((why string))
   "Back to before Jak came: Klaww, the buttons, the count of hits and the beaten flag all gone. Boulders in the air are his
-   children, so they go with him; blasts in the air fizzle the next frame, with nothing to reach. Says so only when there was
+   children, so they go with him; boulders thrown back at him vanish in the air, with nothing to reach. Says so only when there was
    something to reset."
   (when (or (gauntlet-klaww-process) (gauntlet-klaww-any-button?) (> *gauntlet-klaww-hits* 0) (> *gauntlet-klaww-presses* 0) *gauntlet-klaww-defeated* *gauntlet-klaww-home*)
     (gauntlet-klaww-remove (-> *gauntlet-klaww-world* klaww))
