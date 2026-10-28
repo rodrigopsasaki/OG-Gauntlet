@@ -1,0 +1,11 @@
+{
+  "name": "gauntlet-voices",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node voices.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
