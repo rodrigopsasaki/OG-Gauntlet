@@ -95,6 +95,8 @@
 (defconstant GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT (seconds 3.0)) ;; from one boulder leaving his hand to the next, wind-up included (a throw takes as long as its animation, which is the floor)
 (defconstant GAUNTLET_KLAWW_RANGE_DEFAULT (meters 140)) ;; he throws while Jak is this close, sideways: the first button is 100 m from the nest, so Jak is still a target while he presses it
 (defconstant GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to where a boulder lands is hit; the landing marker draws this circle
+;; The skull TNT barrels of Mountain Pass stand where a table in gauntlet.gc puts them, on any level.
+(defconstant GAUNTLET_TNT_ENABLED_DEFAULT #t) ;; the barrels stand at their spots
 
 ;; Times are in ticks (300 a second), lengths and speeds in game units, the spread in rotation units, a chance or a
 ;; multiplier a plain float.
@@ -138,3 +140,4 @@
 (define *gauntlet-klaww-throw-interval* (the int GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT))
 (define *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT)
 (define *gauntlet-klaww-boulder-radius* GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT) ;; a boulder in the air keeps the radius it was thrown with
+(define *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT) ;; off: no barrels, and whatever stands is put away

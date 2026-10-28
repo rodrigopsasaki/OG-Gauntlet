@@ -37,7 +37,8 @@ type SettingGroup =
   | "Charged lurkers"
   | "Beach worms"
   | "Horde"
-  | "Klaww";
+  | "Klaww"
+  | "TNT barrels";
 type SettingValue = number | boolean;
 type SettingMap = Record<string, SettingValue>;
 
@@ -418,6 +419,13 @@ const SETTINGS: readonly SettingSpec[] = [
     [1, 15, 0.5],
     "next boulder",
     "Jak is hit if he is this close to where a boulder lands. The orange ring on the ground is this wide.",
+  ),
+  flag(
+    "tnt-enabled",
+    "TNT barrels",
+    "Skull TNT barrels",
+    "live",
+    "Mountain Pass's skull TNT barrels stand where the designer picked a spot for one (the first is on Sentinel Beach, between a power cell and the ground below it). Touching or attacking one kills Jak outright and the barrel explodes. A barrel that is gone stands again once Jak is more than 30 m from its spot. Off puts every barrel away and spawns none.",
   ),
 ];
 

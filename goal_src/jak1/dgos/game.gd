@@ -382,4 +382,8 @@
   ;; cube has no eyes or VRAM-read effects, so it does not need the page; generic-button-ag above lives the same way.
   "ice-cube-ag.go"
   "ice-cube-break-ag.go"
+  ;; gauntlet: the skull TNT barrels of Mountain Pass, which can stand wherever the designer picks a spot for one. Their art group
+  ;; ships in OGR.DGO only; its models, with their textures, are in GAME.fr3 (common_art_groups again). No tpage, for the VRAM
+  ;; reason above: the barrel has no eyes and no VRAM-read effects.
+  "tntbarrel-ag.go"
  ))
