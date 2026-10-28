@@ -2354,9 +2354,10 @@
 
 ;; ----------------------------------------------------------------- the health bar --
 
-;; Top centre of the screen while a fight is on: the label and one notch per hit he has left, the ones he has lost left in
-;; the frame, dim. It is drawn the way twitch.gc draws its log (a process in *active-pool* that draws every frame into the
-;; debug-no-zbuf bucket, with draw-string-xy-scaled for the text and draw-sprite2d-xy for the notches), because text added
+;; Top centre of the screen once Klaww has landed, until he is beaten (it comes up with the buttons, so his fall is not given
+;; away): the label and one notch per hit he has left, the ones he has lost left in the frame, dim. It is drawn the way
+;; twitch.gc draws its log (a process in *active-pool* that draws every frame into the debug-no-zbuf bucket, with
+;; draw-string-xy-scaled for the text and draw-sprite2d-xy for the notches), because text added
 ;; from the per-frame hook the poll runs in puts nothing on screen, and because those are the game's own 2D drawing, on
 ;; in normal play with no debug flag. The space is the 2D one: x from 0 to 512, y from 0 to about 224; notch widths are
 ;; divided by the aspect ratio scale, as pc-debug-common.gc does, so they are not stretched on a wide screen.
@@ -2369,17 +2370,19 @@
 (defconstant GAUNTLET_KLAWW_BAR_GAP 3)
 (defconstant GAUNTLET_KLAWW_BAR_PAD 3) ;; the dark frame around the notches
 
-(defun gauntlet-klaww-fight-on? ()
-  "True while the fight can be seen: Klaww is in the world and not beaten (falling, landing or fighting), and Jak is in the
-   level it is in."
+(defun gauntlet-klaww-bar-shown? ()
+  "True while the bar is up: Klaww is in the world, not beaten, and has landed (the very condition that stands the buttons
+   up, so bar and buttons appear together and his drop stays a surprise), and Jak is in the level the fight is in. While he
+   falls or lands, and while a death has put him away, it is down; once he is back and landed it is up again."
   (and *target*
        *gauntlet-klaww-home*
        (gauntlet-klaww-alive?)
+       (gauntlet-klaww-landed?)
        (gauntlet-in-level? *gauntlet-klaww-home*)))
 
 (defun gauntlet-klaww-bar-draw ()
-  "Draw this frame's bar, if there is a fight to show."
-  (when (gauntlet-klaww-fight-on?)
+  "Draw this frame's bar, if Klaww has landed and the fight is to be shown."
+  (when (gauntlet-klaww-bar-shown?)
     (let* ((aspect (-> *pc-settings* aspect-ratio-scale))
            (notch-w (max 1 (the int (/ (the float GAUNTLET_KLAWW_BAR_NOTCH_W) aspect))))
            (gap (max 1 (the int (/ (the float GAUNTLET_KLAWW_BAR_GAP) aspect))))
