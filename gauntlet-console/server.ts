@@ -36,6 +36,7 @@ type SettingGroup =
   | "Stampede"
   | "Charged lurkers"
   | "Beach worms"
+  | "Horde"
   | "Klaww";
 type SettingValue = number | boolean;
 type SettingMap = Record<string, SettingValue>;
@@ -355,6 +356,16 @@ const SETTINGS: readonly SettingSpec[] = [
     [0, 8, 1],
     "next rise",
     "How many ice cubes a worm raises, evenly around it, the first on the side facing Jak. A worm raises a new wave only once the last one is gone.",
+    true,
+  ),
+  num(
+    "lurker-multiplier",
+    "Horde",
+    "Lurkers where there was one",
+    "x",
+    [1, 5, 1],
+    "next birth",
+    "Every lurker the level places on the nav mesh (babaks, lurker crabs, hoppers, bonelurkers, ice cubes and the rest) comes with company: this many of it in all, the original and the clones standing around it on a 3 m ring. 3 turns 1 into 3 and 2 into 6; 1 is the game's own. A clone drops pills, never the power cell. Lurkers already in the world keep the company they were born with; the clones go when their level does, or when Jak walks far enough away that the original is put away (they come back fresh with it).",
     true,
   ),
   flag(

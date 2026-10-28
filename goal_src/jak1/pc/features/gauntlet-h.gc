@@ -80,6 +80,8 @@
 ;; The lurkerworms of Sentinel Beach pull Snowy Mountain's ice cubes up out of the sand when they rise (levels/beach/lurkerworm.gc).
 (defconstant GAUNTLET_WORM_CUBES_ENABLED_DEFAULT #t) ;; a worm that rises raises ice cubes around it
 (defconstant GAUNTLET_WORM_CUBE_COUNT_DEFAULT 2) ;; ice cubes per rise, evenly around the worm; a worm raises a new wave only once the last is gone
+;; Every lurker the level places has company (pc/features/gauntlet.gc, "the horde"; the hook is in engine/entity/entity.gc).
+(defconstant GAUNTLET_LURKER_MULTIPLIER_DEFAULT 3) ;; each lurker the level places becomes this many, itself and the clones born beside it: 6 where there are 2, 3 where there is 1. 1 is the game's own
 ;; Klaww stands in the pelican's nest at Sentinel Beach and lobs boulders at Jak. Three buttons on the beach shoot him; each hit is one of three.
 (defconstant GAUNTLET_KLAWW_ENABLED_DEFAULT #t) ;; Klaww and his buttons appear on the beach
 (defconstant GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT (seconds 3.0)) ;; from one boulder leaving his hand to the next, wind-up included (a throw takes as long as its animation, which is the floor)
@@ -121,6 +123,7 @@
 (define *gauntlet-babak-blue-speed* GAUNTLET_BABAK_BLUE_SPEED_DEFAULT) ;; a babak keeps the pace it was born with
 (define *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT) ;; off: the worms rise as the game made them
 (define *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT) ;; read at each rise
+(define *gauntlet-lurker-multiplier* GAUNTLET_LURKER_MULTIPLIER_DEFAULT) ;; read as each lurker is born; the ones already in the world keep their company
 (define *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT) ;; off: no Klaww, no buttons, and whatever stands is taken away
 (define *gauntlet-klaww-throw-interval* (the int GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT))
 (define *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT)

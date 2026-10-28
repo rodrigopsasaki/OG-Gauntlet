@@ -802,6 +802,12 @@
 (defmacro this-etype? (&rest types)
   `(or ,@(apply (lambda (x) `(begin (define-extern ,x type) (type-type? (-> this etype) ,x))) types)))
 
+;; gauntlet: called with an actor once birth! below has run for it, so the mod can add to the world around what was born
+;; (pc/features/gauntlet.gc, "the horde", sets it). It does nothing until then: entity.o links ahead of gauntlet.o in GAME.CGO,
+;; and ENGINE.CGO has no gauntlet.o at all. A hook is used, not a define-extern'd function, because a call to a function that
+;; is never defined crashes, and a hook that is never set is a call to nothing. Same shape as *menu-hook* and *pre-draw-hook*.
+(define *entity-born-hook* (the (function entity-actor none) nothing))
+
 (defmethod birth! ((this entity-actor))
   "Create a process for this entity and start it."
   ;; temp
@@ -831,6 +837,8 @@
        (when (not (birth-viewer entity-process this))
          (format 0 "ERROR: no proper process type named ~A exists in the code, could not start ~A~%" entity-type this)
          (logior! (-> this extra perm status) (entity-perm-status bit-0))))))
+  ;; gauntlet: whether anything was born is for the hook to see, from (-> this extra process)
+  (*entity-born-hook* this)
   this)
 
 (defun entity-deactivate-handler ((arg0 process) (arg1 entity-actor))

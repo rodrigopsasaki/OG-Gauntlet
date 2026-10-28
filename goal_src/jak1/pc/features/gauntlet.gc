@@ -25,6 +25,10 @@
 ;; around it (*gauntlet-worm-cube-count* of them), tinted sand. They are ordinary ice cubes from then on. The worm raises them
 ;; in levels/beach/lurkerworm.gc; ice-cube.gc is in GAME.CGO for it. The settings are only declared here.
 ;;
+;; On every level, each enemy that runs on the nav mesh (a babak, a lurker crab, a hopper...) is born with company: itself and
+;; clones born beside it by the same init, *gauntlet-lurker-multiplier* of them in all. See "the horde" below; the hook that
+;; hears of each birth is in engine/entity/entity.gc.
+;;
 ;; The bomb is the big dark eco bomb Gol and Maia's robot drops in the final
 ;; boss (darkecobomb, levels/finalboss/robotboss-weapon.gc), made available
 ;; outside the Citadel:
@@ -2235,6 +2239,171 @@
     ((gauntlet-in-level? 'beach) (gauntlet-klaww-keep!)))
   0)
 
+;; ------------------------------------------------------------------ the horde --
+
+;; Every enemy the level places that runs on the nav mesh (a babak, a lurker crab, a hopper, a bonelurker, an ice cube...) is
+;; born with company: *gauntlet-lurker-multiplier* minus one clones, standing on a ring around it. A clone is the same
+;; process, born by the same init-from-entity! from the same entity, but the entity's own process stays the original: the
+;; entity system's bookkeeping (dead, complete, culled when Jak walks away) is the original's alone, and process-entity-status!
+;; and entity-deactivate-handler both ignore a process that is not the one the entity names, so a clone dying or being
+;; taken away never marks the entity dead and never clears the original. engine/entity/entity.gc calls *entity-born-hook*
+;; after each birth; this is what answers.
+;;
+;; The entity system does not know the clones, so the mod ends them. Their entity is the original's, which is what makes the
+;; engine itself take them away when their level unloads (deactivate-entities sweeps *entity-pool* for processes whose entity
+;; is in the level). One small watcher per birth does the rest: it ends the clones when the original is culled by distance
+;; (a fresh original with fresh clones is born when Jak comes back, so they do not pile up), and ends itself when no clone
+;; is left. A clone outlives an original that was killed, as a lurker outlives its neighbour.
+
+(defconstant GAUNTLET_HORDE_MAX_CLONES 4) ;; the console's multiplier tops out at 5: the original and four clones. gauntlet-horde holds this many handles
+(defconstant GAUNTLET_HORDE_RING_RADIUS (meters 3)) ;; clones stand this far from the original, evenly around it
+
+(deftype gauntlet-horde (process)
+  ((ent        entity-actor) ;; the actor the clones are of; its memory is its level's, so it is read only while that level is active
+   (original   handle) ;; the actor's own process, the one the entity system manages
+   (level-name symbol) ;; the level the actor belongs to
+   (label      string) ;; the actor's name, copied: the entity's own is in the level's memory, which is gone when the level is
+   (clones     handle 4)) ;; GAUNTLET_HORDE_MAX_CLONES of them, a null handle (not a zero) where there is none
+  (:states
+   gauntlet-horde-watch))
+
+(defbehavior gauntlet-horde-clones-alive gauntlet-horde ()
+  "How many of the clones are still alive."
+  (let ((alive 0))
+    (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
+      (if (handle->process (-> self clones i)) (+! alive 1)))
+    alive))
+
+(defbehavior gauntlet-horde-remove-clones gauntlet-horde ()
+  "Take away every clone still alive."
+  (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
+    (let ((alive (handle->process (-> self clones i))))
+      (if alive (deactivate alive))))
+  0)
+
+(defbehavior gauntlet-horde-level-left? gauntlet-horde ()
+  "True once the level the actor belongs to is no longer the one running: from then on its entity is not to be read."
+  (!= (level-status *level* (-> self level-name)) 'active))
+
+(defbehavior gauntlet-horde-walked-away? gauntlet-horde ()
+  "True once the original is gone without having been killed: the entity system culled it because Jak walked away (or a
+   death reset the actors), and it will be born again, with fresh clones, when he comes back."
+  (and (not (handle->process (-> self original)))
+       (not (logtest? (-> self ent extra perm status) (entity-perm-status dead)))))
+
+(defstate gauntlet-horde-watch (gauntlet-horde)
+  :code
+    (behavior ()
+      (loop
+        (cond
+          ((gauntlet-horde-level-left?)
+           (gauntlet-horde-remove-clones)
+           (format 0 "GAUNTLET HORDE ~S clones culled (level unloaded)~%" (-> self label))
+           (deactivate self))
+          ((zero? (gauntlet-horde-clones-alive)) (deactivate self))
+          ((gauntlet-horde-walked-away?)
+           (gauntlet-horde-remove-clones)
+           (format 0 "GAUNTLET HORDE ~S clones culled (the original was culled, Jak walked away)~%" (-> self label))
+           (deactivate self)))
+        (suspend))))
+
+(defbehavior gauntlet-horde-init-by-other gauntlet-horde ((ent entity-actor) (original handle))
+  "Watch over the clones of the actor ent, whose own process original names. The clones are put in by the one who spawned us."
+  (set! (-> self ent) ent)
+  (set! (-> self original) original)
+  (set! (-> self level-name) (-> ent extra level name))
+  (set! (-> self label) (new 'process 'string 0 (res-lump-struct ent 'name string)))
+  (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
+    (set! (-> self clones i) (the-as handle #f)))
+  (go gauntlet-horde-watch)
+  (none))
+
+(defun gauntlet-horde-lurker? ((proc process))
+  "Whether proc, the process an actor was just born as, is one that gets company: anything on the nav mesh, but the few whose
+   story lives in the original. The cannon babak has its cannon, the ram boss its fight, the muse and the lightning moles
+   are caught for a power cell the task counts (a mole's task is counted through the actor's links), the sharkey reads the
+   actor's own spot every time it comes up so a clone would rise at the original's, and the double lurker marks the actor's
+   permanent record and carries a buddy of its own."
+  (and (type-type? (-> proc type) nav-enemy)
+       (case (-> proc type symbol)
+         (('babak-with-cannon 'ram-boss 'muse 'lightning-mole 'sharkey 'double-lurker) #f)
+         (else #t))))
+
+(defun gauntlet-horde-clone! ((ent entity-actor) (spot vector))
+  "Born one more process of the actor ent's type, standing at spot, and hand back a handle to it, or a null handle when there
+   is no process to be had or it died in its own init. This is init-entity (engine/entity/entity.gc) without its two links:
+   the process is put in *entity-pool* and given the entity, so the engine's level sweep finds it, but (-> ent extra process)
+   is not set, so it stays the original.
+   The actor's spot is lent: init-from-entity! reads the process's position from the entity (process-drawable-from-entity!),
+   and a nav enemy finds its nav poly at init, so the position must be right then, not moved to afterward. run-now-in-process
+   returns only when init is done (or has changed state, or died), and nothing else runs meanwhile, so the loan is
+   given back before anyone can see it. The only other reader of the spot is the entity system's own distance test, which is
+   not run in the middle of an init."
+  (let* ((kind (-> ent etype))
+         (info (entity-info-lookup kind))
+         (fresh (get-process *default-dead-pool* kind (if info (-> info heap-size) #x4000))))
+    (if (not fresh) (return (the-as handle #f)))
+    (set! (-> fresh type) kind)
+    (activate fresh *entity-pool* (res-lump-struct ent 'name basic) *scratch-memory-top*)
+    (set! (-> fresh entity) ent)
+    (let ((born (process->handle fresh))
+          (home (new 'stack-no-clear 'vector)))
+      (set! (-> home quad) (-> ent extra trans quad))
+      (set! (-> ent extra trans quad) (-> spot quad))
+      (run-now-in-process fresh (method-of-object fresh init-from-entity!) fresh ent)
+      (set! (-> ent extra trans quad) (-> home quad))
+      ;; whatever the actor drops is the original's: a clone drops pills as an ice cube of the beach does, and never the
+      ;; actor's power cell or special pickup. The pickup is made from the actor's lumps in init-defaults!, which has run.
+      (let* ((alive (handle->process born))
+             (nav (if alive (as-type alive nav-enemy))))
+        (when (and nav (nonzero? (-> nav enemy-info)))
+          (set! (-> nav enemy-info pickup-type) (pickup-type eco-pill-random))
+          (set! (-> nav enemy-info pickup-amount) (-> *FACT-bank* default-pill-inc))
+          (logclear! (-> nav enemy-info options) (fact-options has-power-cell))))
+      born)))
+
+(defun gauntlet-horde-born! ((ent entity-actor))
+  "The actor ent has just been born (the entity system's hook, below). If it came up as a lurker that gets company, and its
+   story is not already finished (a babak that gives its power cell back is not to be multiplied), spawn the watcher and
+   the clones on a ring around it, the first straight along the z axis, and say so."
+  (let* ((original (-> ent extra process))
+         (wanted (min (+ *gauntlet-lurker-multiplier* -1) GAUNTLET_HORDE_MAX_CLONES)))
+    (when (and original
+               (> wanted 0)
+               (not (logtest? (-> ent extra perm status) (entity-perm-status complete)))
+               (gauntlet-horde-lurker? original))
+      (let ((watcher (process-spawn gauntlet-horde :init gauntlet-horde-init-by-other ent (process->handle original) :to *entity-pool*)))
+        (when watcher
+          (let ((horde (-> watcher 0))
+                (home (new 'stack-no-clear 'vector))
+                (spot (new 'stack-no-clear 'vector))
+                (step (/ (degrees 360) (the float wanted)))
+                (born 0))
+            (set! (-> home quad) (-> ent extra trans quad))
+            ;; a clone is tried only if every one before it was born: the first that is not ends the line
+            (dotimes (i wanted)
+              (when (= born i)
+                (let ((angle (* step (the float i))))
+                  (set! (-> spot x) (+ (-> home x) (* GAUNTLET_HORDE_RING_RADIUS (sin angle))))
+                  (set! (-> spot y) (-> home y))
+                  (set! (-> spot z) (+ (-> home z) (* GAUNTLET_HORDE_RING_RADIUS (cos angle))))
+                  (set! (-> spot w) 1.0))
+                (let ((twin (gauntlet-horde-clone! ent spot)))
+                  (when (handle->process twin)
+                    (set! (-> horde clones born) twin)
+                    (+! born 1)))))
+            (if (< born wanted)
+              (format 0 "GAUNTLET HORDE ~S wanted +~D clones and no process was free for the rest~%" (-> horde label) wanted))
+            (cond
+              ((> born 0) (format 0 "GAUNTLET HORDE ~S ~A +~D clones~%" (-> horde label) (-> original type) born))
+              (else (deactivate horde))))))))
+  (none))
+
+;; gauntlet: engine/entity/entity.gc calls this after birth! has run for an actor
+(defun *entity-born-hook* ((ent entity-actor))
+  (gauntlet-horde-born! ent)
+  (none))
+
 ;; --------------------------------------------------------------- the console --
 
 ;; A local web console steers the mod while it runs, through two files in Mods/ (the contract is the console's).
@@ -2290,6 +2459,7 @@
      (,row "babak-blue-speed" ratio *gauntlet-babak-blue-speed* GAUNTLET_BABAK_BLUE_SPEED_DEFAULT 1.0 4.0)
      (,row "worm-cubes-enabled" flag *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT 0 0)
      (,row "worm-cube-count" count *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT 0.0 8.0)
+     (,row "lurker-multiplier" count *gauntlet-lurker-multiplier* GAUNTLET_LURKER_MULTIPLIER_DEFAULT 1.0 5.0)
      (,row "klaww-enabled" flag *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT 0 0)
      (,row "klaww-throw-interval" seconds *gauntlet-klaww-throw-interval* GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT 0.5 60.0)
      (,row "klaww-range" meters *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT 10.0 500.0)
