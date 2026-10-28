@@ -317,6 +317,13 @@ const SETTINGS: readonly SettingSpec[] = [
     true,
   ),
   flag(
+    "yakow-stampede-enabled",
+    "Stampede",
+    "Hitting a yakow sends a herd",
+    "live",
+    "Hitting one of the farm's yakows sends a herd charging at Jak from behind it, one herd at a time. The Stampede button still works when this is off.",
+  ),
+  flag(
     "babak-charge-enabled",
     "Charged lurkers",
     "Charged babaks",
