@@ -519,14 +519,18 @@
   ((volley       gauntlet-volley :inline)
    (appear-range float)
    (leave-range  float)
-   (body         handle)
-   (log-time     time-frame))
+   (body         handle))
   (:states
    gauntlet-sage-attack
    gauntlet-sage-vanish))
 
 (defconstant GAUNTLET_SAGE_ORIGIN_JOINT 3) ;; every sage in the game is drawn and culled around his main joint (process-taskable-method-40)
-(defconstant GAUNTLET_SAGE_LOG_JOINTS 5) ;; how many skeleton bones the GAUNTLET SAGE log line reports
+
+;; The telegraph. His three anims, measured from yellowsage-ag.go and the game log: idle 151 frames, attack-start 9,
+;; attack-loop 31, all playing at 15 frames a second. A 'play anim is done at its length minus 2, so the wind-up is
+;; 7 frames: 0.47 s.
+(defconstant GAUNTLET_SAGE_WINDUP (seconds 0.47)) ;; attack-start, from the moment it is asked for to its done
+(defconstant GAUNTLET_SAGE_PUFF_CLEAR (seconds 0.5)) ;; the smoke of his appearing hides him this long, so the first wind-up waits
 
 
 (defun gauntlet-jak-in-range? ((source process-drawable) (range float))
@@ -604,17 +608,31 @@
     (the-as manipy (if (and proc (type-type? (-> proc type) manipy)) proc))))
 
 (defbehavior gauntlet-sage-play gauntlet-sage ((anim string) (mode symbol) (blend time-frame))
-  "Have his body play anim through manipy's own events: mode 'play runs it once, 'loop runs it forever."
+  "Have his body play anim through manipy's own events: mode 'play runs it once, 'loop runs it forever.
+   The name is looked up here as well, the way manipy will look it up, because manipy keeps the current anim
+   without a word when a name finds nothing. One GAUNTLET SAGE line per call says what was found."
   (let ((body (gauntlet-sage-body (-> self body))))
     (when body
+      (let ((found (the-as art-joint-anim (lookup-art (-> body draw art-group) anim art-joint-anim))))
+        (if found
+          (format 0 "GAUNTLET SAGE pid ~D anim ~A (~D frames)~%" (-> self pid) anim (-> found data 0 length))
+          (format 0 "GAUNTLET SAGE pid ~D anim ~A NOT FOUND in the body's art group~%" (-> self pid) anim)))
       (send-event body 'anim-mode mode)
       (send-event body 'art-joint-anim anim blend)))
   0)
 
 (defbehavior gauntlet-sage-anim-done? gauntlet-sage ()
-  "True once the 'play anim has reached its end."
+  "True once the 'play anim he was last asked for has reached its end. The body takes a new anim up a frame
+   after being asked, so it must really be showing the anim asked for, or 'done would be answered for the previous one."
   (let ((body (gauntlet-sage-body (-> self body))))
-    (and body (send-event body 'query 'done))))
+    (and body
+         (> (-> body skel active-channels) 0)
+         (= (-> body skel root-channel 0 frame-group) (-> body new-joint-anim))
+         (send-event body 'query 'done))))
+
+(defbehavior gauntlet-sage-can-shoot? gauntlet-sage ()
+  "True while Jak is where this sage fires at him."
+  (and (gauntlet-jak-in-range? self (-> self appear-range)) (gauntlet-jak-shootable?)))
 
 (defbehavior gauntlet-sage-cane gauntlet-sage ((out vector))
   "Where the cane's exhaust is in the world, which is where the volleys leave. Falls back to where he stands."
@@ -657,49 +675,6 @@
         (send-event body 'trans planted))))
   0)
 
-(defun gauntlet-sage-log-body ((sage-pid int) (body manipy) (ground-y float))
-  "The GAUNTLET SAGE line for a body that is fully set up. Printed as one line in several format calls,
-   because format takes at most six arguments each."
-  (let* ((draw (-> body draw))
-         (skeleton (-> draw skeleton))
-         (nodes (-> body node-list))
-         (probe (new 'stack-no-clear 'vector)))
-    ;; status bits: draw 1 needs-clip, 2 hidden, 4 no-anim, 8 was-drawn, 16 no-skeleton-update, 32 skip-bones, 128 has-joint-channels
-    ;; skel bits: 1 inited, 8 blerc, 64 blerc-done, 128 eye-done, 256 eye
-    (format 0 "GAUNTLET SAGE: pid ~D body ~D draw #x~X skel #x~X lod ~D chan ~D"
-            sage-pid (-> body pid) (the int (-> draw status)) (the int (-> body skel status)) (-> draw cur-lod) (-> body skel active-channels))
-    (format 0 " frame ~F mode ~A mtx ~D/~D" (-> body skel root-channel 0 frame-num) (-> body anim-mode) (-> *matrix-engine* length) MATRIX_ENGINE_AMOUNT)
-    (format 0 " trans ~M ~M ~M" (-> body root trans x) (-> body root trans y) (-> body root trans z))
-    (format 0 " origin ~M ~M ~M" (-> draw origin x) (-> draw origin y) (-> draw origin z))
-    (when (< (joint-node-index yellowsage-lod0-jg caneExhaust) (-> nodes length))
-      (vector<-cspace! probe (-> nodes data GAUNTLET_SAGE_ORIGIN_JOINT))
-      (format 0 " main ~M ~M ~M" (-> probe x) (-> probe y) (-> probe z))
-      (vector<-cspace! probe (-> nodes data (joint-node-index yellowsage-lod0-jg caneExhaust)))
-      (format 0 " cane ~M ~M ~M" (-> probe x) (-> probe y) (-> probe z))
-      (gauntlet-sage-feet body probe)
-      (format 0 " feet ~M ~M ~M ground ~M" (-> probe x) (-> probe y) (-> probe z) ground-y))
-    ;; the world matrices the bone pass starts from; the translation row is where each bone sits, and the length of
-    ;; the x axis is its scale (about 1.0 for a sane bone, 0 or huge for a broken one)
-    (dotimes (i (min GAUNTLET_SAGE_LOG_JOINTS (-> nodes length)))
-      (format 0 " b~D ~M ~M ~M |x| ~F"
-              i (-> skeleton bones i position x) (-> skeleton bones i position y) (-> skeleton bones i position z)
-              (vector-length (-> skeleton bones i transform vector 0))))
-    (format 0 "~%"))
-  0)
-
-(defbehavior gauntlet-sage-log gauntlet-sage ()
-  "Once a second while he is out: one greppable GAUNTLET SAGE line about his body and what the renderer is fed.
-   Every read is guarded, because a null read takes the whole game down."
-  (when (time-elapsed? (-> self log-time) (seconds 1.0))
-    (set-time! (-> self log-time))
-    (let ((body (gauntlet-sage-body (-> self body))))
-      (cond
-        ((not body) (format 0 "GAUNTLET SAGE: pid ~D no body~%" (-> self pid)))
-        ((or (zero? (-> body draw)) (zero? (-> body skel)) (not (-> body node-list)) (zero? (-> body node-list)))
-         (format 0 "GAUNTLET SAGE: pid ~D body ~D not set up~%" (-> self pid) (-> body pid)))
-        (else (gauntlet-sage-log-body (-> self pid) body (-> self root trans y))))))
-  0)
-
 (defstate gauntlet-sage-attack (gauntlet-sage)
   :trans
     (behavior ()
@@ -709,23 +684,42 @@
           (go gauntlet-sage-vanish))
         (seek-to-point-toward-point! (-> self root) (target-pos 0) 524288.0 (seconds 0.1))
         (send-event body 'rot-quat (-> self root quat))
-        (gauntlet-sage-plant)
-        (gauntlet-sage-log)))
+        (gauntlet-sage-plant)))
   :code
     (behavior ()
-      (gauntlet-sage-play "yellowsage-yellowsage-attack-start" 'play (seconds 0.1))
-      ;; one frame for the body to take the new anim up, so 'done is asked of the right one
-      (suspend)
-      (until (gauntlet-sage-anim-done?)
-        (suspend))
-      (gauntlet-sage-play "yellowsage-yellowsage-attack-loop" 'loop 0)
-      ;; volleys only fly while the attack pose is held, and leave from his cane, where the Citadel beam starts
+      ;; Every volley is announced. He stands in his idle, winds up with attack-start so that the wind-up ends on the
+      ;; volley's first shot, holds attack-loop while the shots fly and drops back to idle after the last one. The
+      ;; volley itself is the dummies' (gauntlet-volley-start and -fire-next, aimed and swept the same way); only the
+      ;; timing around it is the sage's own, because the telegraph has to come before the first shot.
+      (gauntlet-sage-play "yellowsage-yellowsage-idle" 'loop 0)
+      ;; his first volley is due as soon as the smoke has cleared
+      (set! (-> self volley start-time) (- (current-time) *gauntlet-dummy-volley-interval*))
+      (suspend-for GAUNTLET_SAGE_PUFF_CLEAR)
       (loop
-        (gauntlet-volley-update self
-                                (-> self volley)
-                                (gauntlet-sage-cane (new 'stack-no-clear 'vector))
-                                (-> self appear-range))
-        (suspend))))
+        ;; The wind-up starts one wind-up early, so its end meets the moment the volley is due. When the interval is
+        ;; shorter than the wind-up it starts at once and the volley simply waits for it.
+        (until (and (gauntlet-sage-can-shoot?)
+                    (time-elapsed? (-> self volley start-time) (max 0 (- *gauntlet-dummy-volley-interval* GAUNTLET_SAGE_WINDUP))))
+          (suspend))
+        (gauntlet-sage-play "yellowsage-yellowsage-attack-start" 'play (seconds 0.1))
+        ;; one frame for the body to take the new anim up, so 'done is asked of the right one
+        (suspend)
+        (let ((asked-at (current-time)))
+          ;; the timeout is for an anim that is not there: he would otherwise wait for the wrong one to end
+          (until (or (gauntlet-sage-anim-done?) (time-elapsed? asked-at (seconds 2.0)))
+            (suspend)))
+        (cond
+          ((gauntlet-sage-can-shoot?)
+           (gauntlet-sage-play "yellowsage-yellowsage-attack-loop" 'loop 0)
+           ;; shots leave from his cane, where the Citadel beam starts
+           (gauntlet-volley-start (-> self volley) (gauntlet-sage-cane (new 'stack-no-clear 'vector)))
+           (gauntlet-volley-fire-next self (-> self volley))
+           (while (> (-> self volley shots-left) 0)
+             (gauntlet-volley-update self (-> self volley) (gauntlet-sage-cane (new 'stack-no-clear 'vector)) (-> self appear-range))
+             (suspend)))
+          ;; Jak was hit or left while he wound up: no volley, and the next wind-up waits its turn
+          (else (set-time! (-> self volley start-time))))
+        (gauntlet-sage-play "yellowsage-yellowsage-idle" 'loop (seconds 0.15)))))
 
 (defstate gauntlet-sage-vanish (gauntlet-sage)
   :code
