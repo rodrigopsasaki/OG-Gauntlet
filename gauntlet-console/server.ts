@@ -29,7 +29,14 @@ const MAX_BODY_BYTES = 64 * 1024;
 // Presentation: one entry per setting, keyed by the game's setting name.
 // ---------------------------------------------------------------------------
 
-type SettingGroup = "Bomb" | "Geyser bridge" | "Dummies" | "Stampede" | "Charged lurkers" | "Klaww";
+type SettingGroup =
+  | "Bomb"
+  | "Geyser bridge"
+  | "Dummies"
+  | "Stampede"
+  | "Charged lurkers"
+  | "Beach worms"
+  | "Klaww";
 type SettingValue = number | boolean;
 type SettingMap = Record<string, SettingValue>;
 
@@ -332,6 +339,23 @@ const SETTINGS: readonly SettingSpec[] = [
     [1, 4, 0.1],
     "next babak",
     "How many times faster a blue babak runs than a plain one. A babak keeps the pace it was born with.",
+  ),
+  flag(
+    "worm-cubes-enabled",
+    "Beach worms",
+    "Worms raise ice cubes",
+    "next rise",
+    "Each time a lurkerworm rises out of the sand at Sentinel Beach it pulls Snowy Mountain ice cubes up out of the ground around it, tinted sand. They appear, turn mean, charge Jak, tire and shatter as they do on the mountain. Off leaves the worms as the game made them.",
+  ),
+  num(
+    "worm-cube-count",
+    "Beach worms",
+    "Ice cubes per rise",
+    "",
+    [0, 8, 1],
+    "next rise",
+    "How many ice cubes a worm raises, evenly around it, the first on the side facing Jak. A worm raises a new wave only once the last one is gone.",
+    true,
   ),
   flag(
     "klaww-enabled",

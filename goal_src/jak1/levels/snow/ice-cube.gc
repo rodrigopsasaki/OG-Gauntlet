@@ -1,17 +1,25 @@
 ;;-*-Lisp-*-
 (in-package goal)
-(bundles "SNO.DGO")
-(require "levels/sunken/double-lurker.gc")
+;; gauntlet: ice cubes are raised out of the sand by the lurkerworms of Sentinel Beach, so ice-cube.gc is in GAME.CGO and
+;; not SNO.DGO (a .o in both would define its methods into the level heap too, and dangle when Snowy Mountain unloads).
+;; Snowy Mountain's own cubes use the copy in GAME.CGO as they always did. The double-lurker require is gone: it named a
+;; SUN.DGO file this one never used, and a GAME.CGO file cannot depend on a level.
+(bundles "GAME.CGO")
+(require "engine/common-obs/nav-enemy.gc")
 (require "engine/anim/joint-exploder.gc")
 
 ;; DECOMP BEGINS
 
+;; gauntlet: common art registers in level-default, and a cube on the beach has no snow entity to find it through, so both
+;; skelgroups ask for texture level 2 and sort 1 (the pris, character, draw group).
 (defskelgroup *ice-cube-break-sg*
   ice-cube-break
   ice-cube-break-lod0-jg
   -1
   ((ice-cube-break-lod0-mg (meters 999999)))
-  :bounds (static-spherem 0 -15 0 50))
+  :bounds (static-spherem 0 -15 0 50)
+  :texture-level 2
+  :sort 1)
 
 (deftype ice-cube (nav-enemy)
   ((part2                  sparticle-launch-control)
@@ -53,7 +61,9 @@
   -1
   ((ice-cube-lod0-mg (meters 20)) (ice-cube-lod1-mg (meters 40)) (ice-cube-lod2-mg (meters 999999)))
   :bounds (static-spherem 0 3 0 3.6)
-  :shadow ice-cube-shadow-mg)
+  :shadow ice-cube-shadow-mg
+  :texture-level 2
+  :sort 1)
 
 (define *ice-cube-nav-enemy-info*
   (new 'static
@@ -515,6 +525,41 @@
         (set! (-> this force-spawn-pt) (the-as int v1-21))
         (set! (-> this force-spawn-pt) -1))))
   (go ice-cube-trying-to-appear)
+  (none))
+
+;; gauntlet: the beach's lurkerworms raise ice cubes out of the sand (lurkerworm-rise in levels/beach/lurkerworm.gc). They are
+;; tinted sand, because they come up out of the beach; deliberately not an eco colour, since in this mod an eco colour means
+;; a charge. The first multiplies the cube's own colour, the second is light added on top; each is red, green, blue and an
+;; unused fourth.
+(define *gauntlet-sand-cube-color-mult* (new 'static 'vector :x 1.0 :y 0.82 :z 0.55 :w 1.0))
+(define *gauntlet-sand-cube-color-emissive* (new 'static 'vector :x 0.12 :y 0.07 :z 0.0 :w 0.0))
+
+(defbehavior ice-cube-init-by-other ice-cube ((owner entity-actor) (where vector) (facing vector))
+  "A cube raised out of the ground at where, facing the direction facing, and straight into its rise: init-from-entity!
+   without the entity. owner is the entity the cube borrows its nav mesh, path and lumps from, as a yeti's slave
+   borrows the yeti's; where is the ground it rises from."
+  (set! (-> self part) (create-launch-control group-ice-cube-appear1 self))
+  (set! (-> self part2) (create-launch-control group-ice-cube-appear2 self))
+  (set! (-> self part3) (create-launch-control group-ice-cube-shatter self))
+  (set! (-> self part4) (create-launch-control group-ice-cube-foot-puff self))
+  (initialize-collision self)
+  ;; the entity is read by the nav control and the path made in method-48, and by the fact info made with them
+  (set! (-> self entity) owner)
+  (nav-enemy-method-48 self)
+  ;; the method put the cube where the owner stands, facing as it does; the scale it set is already 1
+  (set! (-> self collide-info trans quad) (-> where quad))
+  (forward-up->quaternion (-> self collide-info quat) facing *up-vector*)
+  ;; the rise starts from the cube's height here, so it is put on the ground at its own spot (kept as given if no ground is found)
+  (ice-cube-method-51 self (-> self collide-info trans) (-> self collide-info trans))
+  (if (<= (-> self path curve num-cverts) 0) (go process-drawable-art-error "no path"))
+  ;; the owner's lumps are not a cube's: with no entity of its own to say otherwise, a cube drops pills, as a snow one does
+  (set! (-> self enemy-info pickup-type) (pickup-type eco-pill-random))
+  (set! (-> self enemy-info pickup-amount) (-> *FACT-bank* default-pill-inc))
+  (set! (-> self force-spawn-pt) -1)
+  (set! (-> self draw color-mult quad) (-> *gauntlet-sand-cube-color-mult* quad))
+  (set! (-> self draw color-emissive quad) (-> *gauntlet-sand-cube-color-emissive* quad))
+  ;; ice-cube-trying-to-appear is the entity's picker of a path point and a moment out of sight; this cube is already placed
+  (go ice-cube-appear)
   (none))
 
 (defmethod nav-enemy-method-60 ((this ice-cube) (arg0 symbol))

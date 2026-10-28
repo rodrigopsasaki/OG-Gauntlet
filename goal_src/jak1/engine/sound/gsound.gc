@@ -131,15 +131,16 @@
 
 (define *sound-bank-2* 'empty2)
 
-;; gauntlet: The yellow eco sounds (yellow-fire, yellow-buzz, yellow-explode, yellow-fizzle) ship only in the
-;; banks of levels with yellow eco, so the sage's shots were silent on Geyser Rock. Citadel is the smallest bank
-;; that holds all four, and it is the sage's home. It loads right after empty1 and empty2, so it takes the
-;; overlord slot behind the two level slots, which level banks keep reusing, and a level's own bank still wins
-;; a sound name both carry (the overlord looks names up in slot order). update-sound-banks treats it as always
-;; present, so a level asking for it never loads or unloads it.
-(define *sound-bank-resident* 'citadel)
+;; gauntlet: Snow is the resident bank because it carries two sets of sounds the mod needs on every level: the sage's
+;; yellow eco sounds (yellow-fire, yellow-buzz, yellow-explode, yellow-fizzle), which otherwise ship only in the banks of
+;; levels with yellow eco, and the ice cubes' (ice-stop, ice-explode), which the beach's worms now raise. It loads right
+;; after empty1 and empty2, so it takes the overlord slot behind the two level slots, which level banks keep reusing, and
+;; a level's own bank still wins a sound name both carry (the overlord looks names up in slot order). update-sound-banks
+;; treats it as always present, so a level asking for it, Snowy Mountain itself, never loads or unloads it or claims a
+;; level slot for it.
+(define *sound-bank-resident* 'snow)
 
-(sound-bank-load (static-sound-name "citadel"))
+(sound-bank-load (static-sound-name "snow"))
 
 (defun sound-reload-info ()
   (let ((cmd (the sound-rpc-reload-info (add-element *sound-loader-rpc*))))

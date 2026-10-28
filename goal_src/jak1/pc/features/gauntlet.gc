@@ -21,6 +21,10 @@
 ;; its nest with the stolen power cell, and throws boulders at Jak; three buttons around the beach throw boulders back, and
 ;; the cell is his to give up when he falls. "klaww" in the request file drops him anywhere. See "Klaww" below.
 ;;
+;; Also at Sentinel Beach, each time a lurkerworm rises out of the sand it pulls Snowy Mountain's ice cubes up out of the ground
+;; around it (*gauntlet-worm-cube-count* of them), tinted sand. They are ordinary ice cubes from then on. The worm raises them
+;; in levels/beach/lurkerworm.gc; ice-cube.gc is in GAME.CGO for it. The settings are only declared here.
+;;
 ;; The bomb is the big dark eco bomb Gol and Maia's robot drops in the final
 ;; boss (darkecobomb, levels/finalboss/robotboss-weapon.gc), made available
 ;; outside the Citadel:
@@ -2284,6 +2288,8 @@
      (,row "babak-charge-enabled" flag *gauntlet-babak-charge-enabled* GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT 0 0)
      (,row "babak-charge-chance" ratio *gauntlet-babak-charge-chance* GAUNTLET_BABAK_CHARGE_CHANCE_DEFAULT 0.0 1.0)
      (,row "babak-blue-speed" ratio *gauntlet-babak-blue-speed* GAUNTLET_BABAK_BLUE_SPEED_DEFAULT 1.0 4.0)
+     (,row "worm-cubes-enabled" flag *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT 0 0)
+     (,row "worm-cube-count" count *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT 0.0 8.0)
      (,row "klaww-enabled" flag *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT 0 0)
      (,row "klaww-throw-interval" seconds *gauntlet-klaww-throw-interval* GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT 0.5 60.0)
      (,row "klaww-range" meters *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT 10.0 500.0)

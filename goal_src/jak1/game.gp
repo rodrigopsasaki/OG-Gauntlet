@@ -521,7 +521,7 @@
 
 (goal-src-sequence
   "levels/beach/"
-  :deps ("$OUT/obj/ticky.o" "$OUT/obj/gauntlet-h.o") ;; the first makes us depend on the whole engine, the second declares what pelican.gc tells Klaww
+  :deps ("$OUT/obj/ticky.o" "$OUT/obj/gauntlet-h.o" "$OUT/obj/ice-cube.o") ;; the first makes us depend on the whole engine, the second declares what pelican.gc tells Klaww, the third is the cube lurkerworm.gc raises
   "air-h.gc"
   "air.gc"
   "wobbler.gc"
@@ -986,7 +986,6 @@
  :deps ("$OUT/obj/ticky.o")
  "target-snowball.gc"
  "target-ice.gc"
- "ice-cube.gc"
  "snow-ball.gc"
  "snow-obs.gc"
  "snow-flutflut-obs.gc"
@@ -2082,6 +2081,11 @@
  "common-obs/ropebridge.gc"
  "common-obs/ticky.gc"
  )
+
+;; gauntlet: the beach's lurkerworms raise ice cubes out of the sand, so ice-cube.gc is in GAME.CGO (and out of SNO.DGO) and
+;; compiles with the engine. It uses the engine only (nav-enemy, joint-exploder, collectables, hint-control, all earlier in
+;; the chain joint-exploder ends); nothing in the engine or in the snow level reads it.
+(goal-src "levels/snow/ice-cube.gc" "joint-exploder")
 
 (copy-mus-files "DANGER")
 

@@ -76,7 +76,10 @@
 (defconstant GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT 3) ;; yakows charged with red eco, the first slots of the herd: the lead row. Red hits for two and throws far
 (defconstant GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT #t) ;; babaks may be born charged with eco, on every level
 (defconstant GAUNTLET_BABAK_CHARGE_CHANCE_DEFAULT 0.5) ;; the chance, from 0 to 1, that a babak is charged when it is born; a charged one is red or blue by the toss of a coin
-(defconstant GAUNTLET_BABAK_BLUE_SPEED_DEFAULT 2.0) ;; a blue babak runs this many times faster than a plain one; a red one hits as hard as a red yakow
+(defconstant GAUNTLET_BABAK_BLUE_SPEED_DEFAULT 3.0) ;; a blue babak runs this many times faster than a plain one; a red one hits as hard as a red yakow
+;; The lurkerworms of Sentinel Beach pull Snowy Mountain's ice cubes up out of the sand when they rise (levels/beach/lurkerworm.gc).
+(defconstant GAUNTLET_WORM_CUBES_ENABLED_DEFAULT #t) ;; a worm that rises raises ice cubes around it
+(defconstant GAUNTLET_WORM_CUBE_COUNT_DEFAULT 2) ;; ice cubes per rise, evenly around the worm; a worm raises a new wave only once the last is gone
 ;; Klaww stands in the pelican's nest at Sentinel Beach and lobs boulders at Jak. Three buttons on the beach shoot him; each hit is one of three.
 (defconstant GAUNTLET_KLAWW_ENABLED_DEFAULT #t) ;; Klaww and his buttons appear on the beach
 (defconstant GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT (seconds 3.0)) ;; from one boulder leaving his hand to the next, wind-up included (a throw takes as long as its animation, which is the floor)
@@ -116,6 +119,8 @@
 (define *gauntlet-babak-charge-enabled* GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT) ;; off: babaks are the game's own, never charged
 (define *gauntlet-babak-charge-chance* GAUNTLET_BABAK_CHARGE_CHANCE_DEFAULT) ;; rolled once per babak, when it is born
 (define *gauntlet-babak-blue-speed* GAUNTLET_BABAK_BLUE_SPEED_DEFAULT) ;; a babak keeps the pace it was born with
+(define *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT) ;; off: the worms rise as the game made them
+(define *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT) ;; read at each rise
 (define *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT) ;; off: no Klaww, no buttons, and whatever stands is taken away
 (define *gauntlet-klaww-throw-interval* (the int GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT))
 (define *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT)

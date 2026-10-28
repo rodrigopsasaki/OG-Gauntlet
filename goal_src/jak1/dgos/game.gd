@@ -343,6 +343,7 @@
   "tippy.o"
   "joint-exploder.o"
   "babak.o"
+  "ice-cube.o" ;; gauntlet: the beach's lurkerworms raise ice cubes (moved from SNO.DGO, where a second copy would dangle when it unloads)
   "sharkey.o"
   "orb-cache.o"
   "plat.o"
@@ -371,4 +372,9 @@
   ;; gauntlet: the buttons beside the green eco cloggers that shoot him. generic-button-ag ships in SUN.DGO only, with its three
   ;; textures in Lost Precursor City's tfrag tpage 661; its models are in GAME.fr3 (common_art_groups again).
   "generic-button-ag.go"
+  ;; gauntlet: the ice cubes the beach's lurkerworms raise out of the sand. Their art groups ship in SNO.DGO (and stay there for
+  ;; Snowy Mountain), with their textures in tpage 842; their models are in GAME.fr3 (common_art_groups again).
+  "ice-cube-ag.go"
+  "ice-cube-break-ag.go"
+  "tpage-842.go"
  ))

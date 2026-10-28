@@ -133,8 +133,9 @@
   // the dark eco bomb of the final boss can be dropped on Jak anywhere, its art group otherwise only in FIN.DGO,
   // a herd of yakows can charge Jak anywhere, their art group otherwise only in VI1.DGO,
   // and Klaww, the ogre boss of Mountain Pass (art group otherwise only in OGR.DGO), stands in the pelican's nest at Sentinel
-  // Beach, with the generic button (art group otherwise only in SUN.DGO) that shoots him.
-  "common_art_groups": ["yellowsage-ag", "darkecobomb-ag", "yakow-ag", "ogreboss-ag", "generic-button-ag"],
+  // Beach, with the generic button (art group otherwise only in SUN.DGO) that shoots him,
+  // and the lurkerworms of Sentinel Beach raise Snowy Mountain's ice cubes (art groups otherwise only in SNO.DGO) out of the sand.
+  "common_art_groups": ["yellowsage-ag", "darkecobomb-ag", "yakow-ag", "ogreboss-ag", "generic-button-ag", "ice-cube-ag", "ice-cube-break-ag"],
 
   // whether or not to dump out streamed audio files to decompiler_out/<game>/audio/sfx and decompiler_out/<game>/audio/voice_lines
   "rip_streamed_audio": false,
