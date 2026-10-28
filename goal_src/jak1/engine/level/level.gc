@@ -1030,7 +1030,8 @@
                  (t0-0 (the-as symbol (car s3-0))))
             (while (not (null? s3-0))
               (cond
-                ((or (= gp-0 t0-0) (= s5-0 t0-0) (-> *setting-control* current movie)))
+                ;; gauntlet: the resident bank is always loaded, so it never claims a level slot (see gsound.gc).
+                ((or (= gp-0 t0-0) (= s5-0 t0-0) (= t0-0 *sound-bank-resident*) (-> *setting-control* current movie)))
                 ((not gp-0) (set! gp-0 t0-0))
                 ((not s5-0) (set! s5-0 t0-0))
                 (else (format 0 "ERROR: Soundbanks ~A, ~A and ~A all required~%" gp-0 s5-0 t0-0)))
