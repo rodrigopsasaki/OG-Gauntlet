@@ -1302,22 +1302,19 @@
 ;; The buttons, one table row each: (row index x y z), in meters. The y is a hint, the ground is probed for from just above
 ;; it, and the button stands on whatever is found.
 ;;
-;; Row 0 is beside the green eco cloggers (the harvesters on the cliff above the beach, beach-actors.json): 7.6 m from
-;; harvester-90 (-185.8 17.0 -528.3), the nearest to flat ground. Three actors stand on the y 17.0 shelf below the cliff
-;; (beach-part-26 at -190.8 -516.0, the lurkerpuppy at -212.6 -516.5, and the rock under harvester-90 itself at 17.2), which is
-;; how it is known to be level ground and not slope; the spot is 5.7 m from the first of them, on the cliff side.
-;; Row 1 is on the y 16.4 plateau east of the nest, 68 m from it and 125 m from row 0: inside the four actors
-;; lurkerpuppy-50 and -51 (-100.7 and -110.4, 16.5, -448.5), bucket-1 (-83.4 15.7 -413.1) and windmill-one-11 (-88.9 16.9
-;; -419.7), all things that stand on that ground, so the point among them is ground at about the same height. Row 2 is 116 m
-;; on along the same plateau, 128 m from the nest, 7.8 m from lurkerpuppy-2 (-80.8 16.0 -314.7); that is still inside his
-;; 140 m range, so Jak is a target at every button. The three make a run: row 0 is the far corner and the others are long
-;; sprints apart with his boulders landing on the way. The y of each is a hint; the ground is probed for, and logged.
+;; The three spots were picked in game by the mod's author, standing where each button should be (their own positions,
+;; 2026-10-27). Distances are from the nest, pelican-1, at (-162.25 11.65 -423.03).
+;; Row 0 is the teaching button: on the sand about 74 m south of the nest, an obviously out of place button that the player
+;; meets first. Pushing it sends a boulder at Klaww, which teaches that the out of place buttons are how he dies.
+;; Row 1 is on the high ground east of the nest, about 108 m from it.
+;; Row 2 is far west, about 242 m from the nest, beyond his 140 m throwing range (klaww-range), so on the way there he stops
+;; throwing; the boulder it sends back flies about 6 s.
 (defmacro gauntlet-klaww-button-table (row)
   "Expand row once per button: (row index x y z)."
   `(begin
-     (,row 0 -188.0 17.0 -521.0)
-     (,row 1 -95.0 16.4 -436.0)
-     (,row 2 -86.5 16.0 -320.0)))
+     (,row 0 -157.1 4.6 -348.7)
+     (,row 1 -64.6 16.7 -377.3)
+     (,row 2 -381.7 7.3 -526.1)))
 
 (deftype gauntlet-klaww-world (structure)
   ((klaww   handle)
