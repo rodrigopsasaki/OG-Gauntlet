@@ -82,6 +82,7 @@
   .meter .mark { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 2px; background: var(--text); }
   .inside-text { color: var(--bad); font-weight: 700; }
   .group { margin-bottom: 18px; }
+  .group-status { color: var(--muted); font-size: 12.5px; margin: 0 0 8px; font-variant-numeric: tabular-nums; }
   .group h3 {
     margin: 0 0 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center;
     padding-bottom: 6px; border-bottom: 1px solid var(--line);
@@ -305,7 +306,9 @@ function buildSettings(schema) {
     const specs = schema.filter((spec) => spec.group === group);
     const header = el("h3", {}, el("span", {}, group),
       el("button", { class: "small", onclick: () => resetKeys(specs.map((spec) => spec.key)) }, "Reset group"));
-    host.append(el("div", { class: "group" }, header, ...specs.map(buildRow)));
+    // the horde has a live readout above its sliders: the crowd the settings below are shaping
+    const readout = group === "Horde" ? [el("div", { id: "horde-status", class: "group-status", hidden: "" })] : [];
+    host.append(el("div", { class: "group" }, header, ...readout, ...specs.map(buildRow)));
   }
 }
 
@@ -378,6 +381,14 @@ function renderHeader(payload) {
   if (klaww) {
     // waiting for the pelican, falling, landing, fighting or defeated
     $("klaww").textContent = `${klaww.state}, ${klaww.hits} of ${klaww.max} hits, ${klaww.buttonsPressed} of ${klaww.buttons} buttons`;
+  }
+
+  // a game build older than the horde readout leaves the member out, and the line stays hidden
+  const horde = state && state.horde;
+  const hordeStatus = $("horde-status");
+  hordeStatus.hidden = !horde;
+  if (horde) {
+    hordeStatus.textContent = `Horde: ${horde.clones} of ${horde.max} clones in ${horde.groups} ${horde.groups === 1 ? "group" : "groups"}`;
   }
 
   const writtenRev = payload.written ? payload.written.revision : null;

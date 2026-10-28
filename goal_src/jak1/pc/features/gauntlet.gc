@@ -2254,25 +2254,55 @@
 ;; is in the level). One small watcher per birth does the rest: it ends the clones when the original is culled by distance
 ;; (a fresh original with fresh clones is born when Jak comes back, so they do not pile up), and ends itself when no clone
 ;; is left. A clone outlives an original that was killed, as a lurker outlives its neighbour.
+;;
+;; The crowd is capped (*gauntlet-horde-max-clones*, all groups together). The count is never kept, it is taken: a recount walks
+;; *entity-pool* and adds up, for each watcher standing, the clones whose handles still name a live process. A kept tally would
+;; have to hear about every way a clone can end (killed by Jak, put away with its watcher by reset-actors when Jak dies or a
+;; speedrun resets, swept with its level by deactivate-entities) and would drift on the one it missed; the handles cannot drift,
+;; because the kernel invalidates them. The walk costs one pass over a pool of a few hundred processes, once per birth and once
+;; per state write.
+;;
+;; Nothing here keeps a string: a field of a plain process subtype that points into the process's own heap is not moved when
+;; the heap compacts (engine/entity/relocate.gc adjusts only what each type's relocate method names, as nav-enemy's does for its
+;; neck and rand-gen), so a copy of the actor's name would dangle. The name is read from the entity instead, which is safe while
+;; the actor's level is active, and the line that is written once it is not names the level.
 
-(defconstant GAUNTLET_HORDE_MAX_CLONES 4) ;; the console's multiplier tops out at 5: the original and four clones. gauntlet-horde holds this many handles
+(defconstant GAUNTLET_HORDE_MAX_CLONES 4) ;; clones in ONE group: the console's multiplier tops out at 5, the original and four clones. gauntlet-horde holds this many handles (the cap on all groups together is the setting *gauntlet-horde-max-clones*)
 (defconstant GAUNTLET_HORDE_RING_RADIUS (meters 3)) ;; clones stand this far from the original, evenly around it
 
 (deftype gauntlet-horde (process)
   ((ent        entity-actor) ;; the actor the clones are of; its memory is its level's, so it is read only while that level is active
    (original   handle) ;; the actor's own process, the one the entity system manages
    (level-name symbol) ;; the level the actor belongs to
-   (label      string) ;; the actor's name, copied: the entity's own is in the level's memory, which is gone when the level is
    (clones     handle 4)) ;; GAUNTLET_HORDE_MAX_CLONES of them, a null handle (not a zero) where there is none
   (:states
    gauntlet-horde-watch))
 
-(defbehavior gauntlet-horde-clones-alive gauntlet-horde ()
-  "How many of the clones are still alive."
+(defun gauntlet-horde-live-clones ((horde gauntlet-horde))
+  "How many of horde's clones are still alive."
   (let ((alive 0))
     (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
-      (if (handle->process (-> self clones i)) (+! alive 1)))
+      (if (handle->process (-> horde clones i)) (+! alive 1)))
     alive))
+
+(define *gauntlet-horde-groups* 0) ;; watchers standing, as of the last gauntlet-horde-recount!
+(define *gauntlet-horde-clones* 0) ;; clones alive across them, as of the same recount
+
+(defun gauntlet-horde-tally! ((proc process))
+  "Add proc to the running totals if it is a watcher: one more group, and as many clones as its handles still name."
+  (let ((horde (as-type proc gauntlet-horde)))
+    (when horde
+      (+! *gauntlet-horde-groups* 1)
+      (+! *gauntlet-horde-clones* (gauntlet-horde-live-clones horde))))
+  (none))
+
+(defun gauntlet-horde-recount! ()
+  "Take the census of the horde into *gauntlet-horde-groups* and *gauntlet-horde-clones*, from the watchers standing in
+   *entity-pool* right now."
+  (set! *gauntlet-horde-groups* 0)
+  (set! *gauntlet-horde-clones* 0)
+  (iterate-process-tree *entity-pool* (lambda ((proc process)) (gauntlet-horde-tally! proc) (none)) *null-kernel-context*)
+  0)
 
 (defbehavior gauntlet-horde-remove-clones gauntlet-horde ()
   "Take away every clone still alive."
@@ -2284,6 +2314,10 @@
 (defbehavior gauntlet-horde-level-left? gauntlet-horde ()
   "True once the level the actor belongs to is no longer the one running: from then on its entity is not to be read."
   (!= (level-status *level* (-> self level-name)) 'active))
+
+(defbehavior gauntlet-horde-name gauntlet-horde ()
+  "The actor's name, read from its entity: only to be called while its level is active."
+  (res-lump-struct (-> self ent) 'name string))
 
 (defbehavior gauntlet-horde-walked-away? gauntlet-horde ()
   "True once the original is gone without having been killed: the entity system culled it because Jak walked away (or a
@@ -2298,12 +2332,15 @@
         (cond
           ((gauntlet-horde-level-left?)
            (gauntlet-horde-remove-clones)
-           (format 0 "GAUNTLET HORDE ~S clones culled (level unloaded)~%" (-> self label))
+           ;; the actor's name is in the level's memory, which is going: the level is named instead
+           (format 0 "GAUNTLET HORDE ~A clones culled (level unloaded)~%" (-> self level-name))
            (deactivate self))
-          ((zero? (gauntlet-horde-clones-alive)) (deactivate self))
+          ((zero? (gauntlet-horde-live-clones self))
+           (format 0 "GAUNTLET HORDE ~S watcher done (no clone left)~%" (gauntlet-horde-name))
+           (deactivate self))
           ((gauntlet-horde-walked-away?)
            (gauntlet-horde-remove-clones)
-           (format 0 "GAUNTLET HORDE ~S clones culled (the original was culled, Jak walked away)~%" (-> self label))
+           (format 0 "GAUNTLET HORDE ~S clones culled (the original was culled, Jak walked away)~%" (gauntlet-horde-name))
            (deactivate self)))
         (suspend))))
 
@@ -2312,10 +2349,6 @@
   (set! (-> self ent) ent)
   (set! (-> self original) original)
   (set! (-> self level-name) (-> ent extra level name))
-  ;; the size must be the name's length: string's new records the size it is given as allocated-length, not the size it
-  ;; allocated, and the process relocator walks the heap by asize-of, so a 0 here sent it into the name's characters
-  (let ((name (res-lump-struct ent 'name string)))
-    (set! (-> self label) (new 'process 'string (length name) name)))
   (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
     (set! (-> self clones i) (the-as handle #f)))
   (go gauntlet-horde-watch)
@@ -2368,38 +2401,47 @@
 (defun gauntlet-horde-born! ((ent entity-actor))
   "The actor ent has just been born (the entity system's hook, below). If it came up as a lurker that gets company, and its
    story is not already finished (a babak that gives its power cell back is not to be multiplied), spawn the watcher and
-   the clones on a ring around it, the first straight along the z axis, and say so."
+   the clones on a ring around it, the first straight along the z axis, and say so. The multiplier asks for some clones; the
+   cap on the live ones, counted afresh, says how many fit, possibly none, and then there is no watcher either."
   (let* ((original (-> ent extra process))
-         (wanted (min (+ *gauntlet-lurker-multiplier* -1) GAUNTLET_HORDE_MAX_CLONES)))
+         (asked (min (+ *gauntlet-lurker-multiplier* -1) GAUNTLET_HORDE_MAX_CLONES)))
     (when (and original
-               (> wanted 0)
+               (> asked 0)
                (not (logtest? (-> ent extra perm status) (entity-perm-status complete)))
                (gauntlet-horde-lurker? original))
-      (let ((watcher (process-spawn gauntlet-horde :init gauntlet-horde-init-by-other ent (process->handle original) :to *entity-pool*)))
-        (when watcher
-          (let ((horde (-> watcher 0))
-                (home (new 'stack-no-clear 'vector))
-                (spot (new 'stack-no-clear 'vector))
-                (step (/ (degrees 360) (the float wanted)))
-                (born 0))
-            (set! (-> home quad) (-> ent extra trans quad))
-            ;; a clone is tried only if every one before it was born: the first that is not ends the line
-            (dotimes (i wanted)
-              (when (= born i)
-                (let ((angle (* step (the float i))))
-                  (set! (-> spot x) (+ (-> home x) (* GAUNTLET_HORDE_RING_RADIUS (sin angle))))
-                  (set! (-> spot y) (-> home y))
-                  (set! (-> spot z) (+ (-> home z) (* GAUNTLET_HORDE_RING_RADIUS (cos angle))))
-                  (set! (-> spot w) 1.0))
-                (let ((twin (gauntlet-horde-clone! ent spot)))
-                  (when (handle->process twin)
-                    (set! (-> horde clones born) twin)
-                    (+! born 1)))))
-            (if (< born wanted)
-              (format 0 "GAUNTLET HORDE ~S wanted +~D clones and no process was free for the rest~%" (-> horde label) wanted))
-            (cond
-              ((> born 0) (format 0 "GAUNTLET HORDE ~S ~A +~D clones~%" (-> horde label) (-> original type) born))
-              (else (deactivate horde))))))))
+      (gauntlet-horde-recount!)
+      (let* ((name (res-lump-struct ent 'name string))
+             (room (max 0 (- *gauntlet-horde-max-clones* *gauntlet-horde-clones*)))
+             (wanted (min asked room)))
+        (if (< wanted asked)
+          (format 0 "GAUNTLET HORDE ~S capped: ~D of ~D clones asked for fit (~D alive, cap ~D)~%"
+                  name wanted asked *gauntlet-horde-clones* *gauntlet-horde-max-clones*))
+        (when (> wanted 0)
+          (let ((watcher (process-spawn gauntlet-horde :init gauntlet-horde-init-by-other ent (process->handle original) :to *entity-pool*)))
+            (when watcher
+              (let ((horde (-> watcher 0))
+                    (home (new 'stack-no-clear 'vector))
+                    (spot (new 'stack-no-clear 'vector))
+                    (step (/ (degrees 360) (the float wanted)))
+                    (born 0))
+                (set! (-> home quad) (-> ent extra trans quad))
+                ;; a clone is tried only if every one before it was born: the first that is not ends the line
+                (dotimes (i wanted)
+                  (when (= born i)
+                    (let ((angle (* step (the float i))))
+                      (set! (-> spot x) (+ (-> home x) (* GAUNTLET_HORDE_RING_RADIUS (sin angle))))
+                      (set! (-> spot y) (-> home y))
+                      (set! (-> spot z) (+ (-> home z) (* GAUNTLET_HORDE_RING_RADIUS (cos angle))))
+                      (set! (-> spot w) 1.0))
+                    (let ((twin (gauntlet-horde-clone! ent spot)))
+                      (when (handle->process twin)
+                        (set! (-> horde clones born) twin)
+                        (+! born 1)))))
+                (if (< born wanted)
+                  (format 0 "GAUNTLET HORDE ~S wanted +~D clones and no process was free for the rest~%" name wanted))
+                (cond
+                  ((> born 0) (format 0 "GAUNTLET HORDE ~S ~A +~D clones~%" name (-> original type) born))
+                  (else (deactivate horde))))))))))
   (none))
 
 ;; gauntlet: engine/entity/entity.gc calls this after birth! has run for an actor
@@ -2463,6 +2505,7 @@
      (,row "worm-cubes-enabled" flag *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT 0 0)
      (,row "worm-cube-count" count *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT 0.0 8.0)
      (,row "lurker-multiplier" count *gauntlet-lurker-multiplier* GAUNTLET_LURKER_MULTIPLIER_DEFAULT 1.0 5.0)
+     (,row "horde-max-clones" count *gauntlet-horde-max-clones* GAUNTLET_HORDE_MAX_CLONES_DEFAULT 0.0 300.0)
      (,row "klaww-enabled" flag *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT 0 0)
      (,row "klaww-throw-interval" seconds *gauntlet-klaww-throw-interval* GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT 0.5 60.0)
      (,row "klaww-range" meters *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT 10.0 500.0)
@@ -2732,7 +2775,7 @@
     (else 0.0)))
 
 (defun gauntlet-state-write-world! ((out string))
-  "Level, Jak, the bomb, the bridge and Klaww: the members of the state file that are not settings."
+  "Level, Jak, the bomb, the bridge, Klaww and the horde: the members of the state file that are not settings."
   (let ((in-training (and *target* (gauntlet-in-training?))))
     (gauntlet-json-key out "level")
     (format out "\"~A\"" (if *target* (aif (level-get-target-inside *level*) (-> it name) 'none) 'none))
@@ -2794,6 +2837,19 @@
        (format out "~D" (gauntlet-klaww-button-count))
        (gauntlet-json-close out))
       (else (format out "null")))
+    ;; always there, on every level: the census is taken now, so the numbers are this frame's
+    (gauntlet-json-key out "horde")
+    (gauntlet-horde-recount!)
+    (gauntlet-json-open out)
+    (gauntlet-json-key out "groups")
+    (format out "~D" *gauntlet-horde-groups*)
+    (gauntlet-json-key out "clones")
+    (format out "~D" *gauntlet-horde-clones*)
+    (gauntlet-json-key out "max")
+    (format out "~D" *gauntlet-horde-max-clones*)
+    (gauntlet-json-key out "multiplier")
+    (format out "~D" *gauntlet-lurker-multiplier*)
+    (gauntlet-json-close out)
     (gauntlet-json-key out "effects")
     (gauntlet-json-open out)
     (gauntlet-json-key out "enabled")

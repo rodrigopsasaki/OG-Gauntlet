@@ -368,6 +368,16 @@ const SETTINGS: readonly SettingSpec[] = [
     "Every lurker the level places on the nav mesh (babaks, lurker crabs, hoppers, bonelurkers, ice cubes and the rest) comes with company: this many of it in all, the original and the clones standing around it on a 3 m ring. 3 turns 1 into 3 and 2 into 6; 1 is the game's own. A clone drops pills, never the power cell. Lurkers already in the world keep the company they were born with; the clones go when their level does, or when Jak walks far enough away that the original is put away (they come back fresh with it).",
     true,
   ),
+  num(
+    "horde-max-clones",
+    "Horde",
+    "Clone cap",
+    "",
+    [0, 300, 5],
+    "live",
+    "The most clones alive at once, all groups together. A lurker born when the crowd is full gets only as many clones as fit, possibly none (the game logs it). Clones already standing are never taken away for it; lowering it only stops new ones until the crowd thins. 0 turns the clones off without touching the multiplier.",
+    true,
+  ),
   flag(
     "klaww-enabled",
     "Klaww",
@@ -482,6 +492,16 @@ interface KlawwState {
   buttonsPressed: number;
   buttons: number;
 }
+interface HordeState {
+  /** Watchers alive: one per lurker that was born with clones still standing. */
+  groups: number;
+  /** Clones alive across all groups. */
+  clones: number;
+  /** The cap on clones alive (the horde-max-clones setting in effect). */
+  max: number;
+  /** The lurker multiplier in effect (the lurker-multiplier setting). */
+  multiplier: number;
+}
 interface GauntletState {
   frame: number;
   revision: number;
@@ -493,6 +513,8 @@ interface GauntletState {
   bridge: BridgeState | null;
   /** null unless Jak is on the beach or a fight is on, and for a game build that does not publish him. */
   klaww: KlawwState | null;
+  /** null only for a game build that does not publish the horde. */
+  horde: HordeState | null;
   effects: { enabled: boolean };
 }
 
@@ -590,6 +612,18 @@ function parseGauntletState(raw: unknown): GauntletState {
               alive: needBoolean(klaww, "alive", "state.klaww"),
               buttonsPressed: needNumber(klaww, "buttonsPressed", "state.klaww"),
               buttons: needNumber(klaww, "buttons", "state.klaww"),
+            };
+          }),
+    horde:
+      root.horde === undefined
+        ? null
+        : orNull(root.horde, (value) => {
+            const horde = needRecord(value, "state.horde");
+            return {
+              groups: needNumber(horde, "groups", "state.horde"),
+              clones: needNumber(horde, "clones", "state.horde"),
+              max: needNumber(horde, "max", "state.horde"),
+              multiplier: needNumber(horde, "multiplier", "state.horde"),
             };
           }),
     effects: {
