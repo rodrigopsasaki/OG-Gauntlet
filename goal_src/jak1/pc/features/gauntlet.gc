@@ -2312,7 +2312,10 @@
   (set! (-> self ent) ent)
   (set! (-> self original) original)
   (set! (-> self level-name) (-> ent extra level name))
-  (set! (-> self label) (new 'process 'string 0 (res-lump-struct ent 'name string)))
+  ;; the size must be the name's length: string's new records the size it is given as allocated-length, not the size it
+  ;; allocated, and the process relocator walks the heap by asize-of, so a 0 here sent it into the name's characters
+  (let ((name (res-lump-struct ent 'name string)))
+    (set! (-> self label) (new 'process 'string (length name) name)))
   (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
     (set! (-> self clones i) (the-as handle #f)))
   (go gauntlet-horde-watch)

@@ -358,9 +358,11 @@
   "yellowsage-ag.go"
   "tpage-1417.go"
   ;; gauntlet: the dark eco bomb that can be dropped on Jak anywhere. Its art group ships in FIN.DGO only, with its
-  ;; textures in the final boss's tpage 1419; its models are in GAME.fr3 (common_art_groups again).
+  ;; textures in the final boss's tpage 1419; its models, with their textures, are in GAME.fr3 (common_art_groups again).
+  ;; tpage 1419 is NOT here: every tpage booted in GAME.CGO takes VRAM for good, and with it the boot uploads ran ~450 KB past
+  ;; the 4 MB the GS can address, which wrapped onto the font and garbled the title screen's text. The bomb draws from its fr3
+  ;; textures (see the ice cube note below) and has no eyes, so the 578 KB page bought nothing.
   "darkecobomb-ag.go"
-  "tpage-1419.go"
   ;; gauntlet: the yakows that can charge Jak anywhere. Their art group ships in VI1.DGO only, with its textures in Sandover's
   ;; pris tpage 400; their models are in GAME.fr3 (common_art_groups again).
   "yakow-ag.go"
