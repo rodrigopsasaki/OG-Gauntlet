@@ -29,7 +29,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 // Presentation: one entry per setting, keyed by the game's setting name.
 // ---------------------------------------------------------------------------
 
-type SettingGroup = "Bomb" | "Geyser bridge" | "Dummies" | "Stampede" | "Klaww";
+type SettingGroup = "Bomb" | "Geyser bridge" | "Dummies" | "Stampede" | "Charged lurkers" | "Klaww";
 type SettingValue = number | boolean;
 type SettingMap = Record<string, SettingValue>;
 
@@ -307,6 +307,31 @@ const SETTINGS: readonly SettingSpec[] = [
     "next herd",
     "How many yakows are charged with red eco, counted from the lead row. A red yakow costs two hits and throws Jak far.",
     true,
+  ),
+  flag(
+    "babak-charge-enabled",
+    "Charged lurkers",
+    "Charged babaks",
+    "next babak",
+    "Babaks are born charged with eco, on every level. Off leaves them as the game made them.",
+  ),
+  num(
+    "babak-charge-chance",
+    "Charged lurkers",
+    "Charge chance",
+    "",
+    [0, 1, 0.05],
+    "next babak",
+    "The chance a babak is charged when it is born, rolled once. A charged one is red or blue by a coin toss: blue runs at Jak faster, red costs two hits and throws him far.",
+  ),
+  num(
+    "babak-blue-speed",
+    "Charged lurkers",
+    "Blue speed",
+    "x",
+    [1, 4, 0.1],
+    "next babak",
+    "How many times faster a blue babak runs than a plain one. A babak keeps the pace it was born with.",
   ),
   flag(
     "klaww-enabled",

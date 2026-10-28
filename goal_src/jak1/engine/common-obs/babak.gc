@@ -2,10 +2,16 @@
 (in-package goal)
 (bundles "GAME.CGO")
 (require "engine/common-obs/nav-enemy.gc")
+(require "pc/features/gauntlet-h.gc")
 
 ;; DECOMP BEGINS
 
-(deftype babak (nav-enemy) ()
+;; gauntlet: a babak may be born charged with eco, on every level (babak.gc is in GAME.CGO). Blue runs at Jak faster, red
+;; hits twice as hard and throws him far, the same as the stampede's red yakows. Which one is rolled once, in
+;; nav-enemy-method-48, and kept here. See "the eco charge" in pc/features/gauntlet-h.gc.
+(deftype babak (nav-enemy)
+  ((charge   gauntlet-eco)
+   (run-pace float))
   (:states
    babak-run-to-cannon))
 
@@ -36,7 +42,9 @@
   :virtual #t
   :code
     (behavior ()
-      (let ((f30-0 (nav-enemy-rnd-float-range 0.9 1.1)))
+      ;; gauntlet: the run cycle plays run-pace times faster, which a babak that walks by its animation's own motion
+      ;; (use-align in its info) covers as ground: 1.0 for a plain one, the blue speed for a blue one
+      (let ((f30-0 (* (-> self run-pace) (nav-enemy-rnd-float-range 0.9 1.1))))
         (cond
           ((ja-group? babak-jump-land-ja)
            (ja-no-eval :num! (seek!))
@@ -229,9 +237,34 @@
   0
   (none))
 
+;; gauntlet: only a plain babak, the type itself, is charged. babak-with-cannon shares this method but is left as the game
+;; made it: never charged, its run-pace 1.0.
 (defmethod nav-enemy-method-48 ((this babak))
   (initialize-skeleton this *babak-sg* '())
-  (init-defaults! this *babak-nav-enemy-info*)
+  (set! (-> this charge) (gauntlet-eco none))
+  (set! (-> this run-pace) 1.0)
+  ;; a charged babak has an info of its own, a copy on its own heap, so the shared one the others read is never touched
+  (let ((info *babak-nav-enemy-info*))
+    (when (and *gauntlet-babak-charge-enabled*
+               (= (-> this type) babak)
+               (rand-vu-percent? *gauntlet-babak-charge-chance*))
+      (set! (-> this charge) (if (rand-vu-percent? 0.5) (gauntlet-eco blue) (gauntlet-eco red)))
+      (set! info (copy info 'process))
+      (case (-> this charge)
+        ;; blue is speed: the run cycle plays faster (run-pace), and the info says the same of its run speed and
+        ;; acceleration, which the rest of nav-enemy reads (an align babak does not move by them)
+        (((gauntlet-eco blue))
+         (set! (-> this run-pace) *gauntlet-babak-blue-speed*)
+         (set! (-> info run-travel-speed) (* (-> info run-travel-speed) *gauntlet-babak-blue-speed*))
+         (set! (-> info run-acceleration) (* (-> info run-acceleration) *gauntlet-babak-blue-speed*)))
+        ;; red is strength: it throws Jak as far as a red yakow does, and its touch costs a second hit
+        ;; (nav-enemy-touch-handler and touch-handler below)
+        (((gauntlet-eco red))
+         (set! (-> info attack-shove-back) GAUNTLET_ECO_RED_SHOVE_BACK)
+         (set! (-> info attack-shove-up) GAUNTLET_ECO_RED_SHOVE_UP)))
+      (gauntlet-eco-glow! this (-> this charge))
+      (format 0 "GAUNTLET CHARGE babak ~S ~S~%" (-> this name) (if (= (-> this charge) (gauntlet-eco blue)) "blue" "red")))
+    (init-defaults! this info))
   (set! (-> this neck up) (the-as uint 0))
   (set! (-> this neck nose) (the-as uint 1))
   (set! (-> this neck ear) (the-as uint 2))
@@ -247,3 +280,28 @@
     (else (go (method-of-object this nav-enemy-idle))))
   0
   (none))
+
+;; gauntlet: the info a charged babak copied lives on its own heap, so when the process moves (nav-enemy's relocate does
+;; the same for the neck joint-mod and the random generator) the pointer to it moves with it. The shared info is static.
+(defmethod relocate ((this babak) (offset int))
+  (if (!= (-> this charge) (gauntlet-eco none))
+    (set! (-> this nav-info) (the-as nav-enemy-info (+ (the-as int (-> this nav-info)) offset))))
+  (call-parent-method this offset))
+
+;; gauntlet: the aura of a charged babak, every frame it is posted. A babak waiting in its idle state is not posted by
+;; common-post, so it glows but does not spark until it wakes.
+(defmethod common-post ((this babak))
+  (gauntlet-eco-aura! this (-> this charge))
+  (call-parent-method this)
+  (none))
+
+(defun babak-follow-through ((this babak) (victim process) (landed object))
+  "Whether the hit a touch just tried landed on victim, handed back as it came; a red babak's that did land costs a second hit."
+  (if (and landed (= (-> this charge) (gauntlet-eco red))) (gauntlet-eco-second-hit! victim))
+  landed)
+
+(defmethod touch-handler ((this babak) (arg0 process) (arg1 event-message-block))
+  (babak-follow-through this arg0 (call-parent-method this arg0 arg1)))
+
+(defmethod nav-enemy-touch-handler ((this babak) (arg0 process) (arg1 event-message-block))
+  (babak-follow-through this arg0 (call-parent-method this arg0 arg1)))

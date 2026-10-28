@@ -1775,7 +1775,8 @@
 (goal-src "pc/features/speedruns-h.gc")
 (goal-src "pc/features/twitch-h.gc")
 (goal-src "pc/features/run-state-h.gc")
-(goal-src "pc/features/gauntlet-h.gc")
+;; the eco functions it declares take a process-drawable, so game-h (where that type is born) is built first
+(goal-src "pc/features/gauntlet-h.gc" "game-h")
 
 (goal-src-sequence
  ;; prefix
@@ -2059,7 +2060,20 @@
  "common-obs/basebutton.gc"
  "common-obs/tippy.gc"
  "anim/joint-exploder.gc"
- "common-obs/babak.gc"
+ )
+
+;; gauntlet: babaks are charged with eco on every level, so babak.gc reads the gauntlet-eco kind and the babak settings from
+;; gauntlet-h. The sequence has no way to name an extra dependency for one file, so babak.gc is taken out of it and
+;; the rest of it starts again from babak.
+(goal-src "engine/common-obs/babak.gc" "joint-exploder" "gauntlet-h")
+
+(goal-src-sequence
+ ;; prefix
+ "engine/"
+
+ :deps
+ ("$OUT/obj/babak.o")
+
  "common-obs/sharkey.gc"
  "common-obs/orb-cache.gc"
  "common-obs/plat.gc"

@@ -10,6 +10,9 @@
 ;; On Geyser Rock (level training) the bomb also drops by itself, on a fixed spot on the bridge, the first time Jak walks
 ;; within *gauntlet-bridge-trigger-radius* of it, and again only after he has been farther than *gauntlet-bridge-rearm-range* away.
 ;;
+;; The mod speaks in eco: the colour of a charge says what a hazard does, red strength and blue draw. See "the eco charge"
+;; below; the bomb is blue, some of the stampede's yakows are red, and babaks (babak.gc, on every level) are born red or blue.
+;;
 ;; The same request also sends a herd of yakows charging at Jak ("7 stampede"), and in Sandover (level village1) the herd
 ;; charges by itself, from the Forbidden Jungle side, the first time Jak comes within *gauntlet-stampede-trigger-radius*
 ;; of the spot beside the farmer where the player asked for it. See "the stampede" below.
@@ -31,6 +34,8 @@
 ;;     finale itself plays, and the blast is "explosion", the one the misty
 ;;     balloon lurker's mine makes. The finale's own blast sound, explod-bomb,
 ;;     lives in FINALBOS.SBK and would be silent here.
+;;
+;; The bomb pulls Jak in, which in the eco language is blue: its body glows blue and trails Jak's blue eco aura.
 ;;
 ;; The bomb is a brain (gauntlet-bomb, a bare process-drawable that falls,
 ;; counts down and goes off) with a manipy for a body, the game's own way to put
@@ -381,6 +386,53 @@
   (let ((art (art-group-get-by-name (-> *level* level-default) (-> skel art-group-name))))
     (and art (gauntlet-art-complete? art skel))))
 
+;; ---------------------------------------------------------------- the eco charge --
+
+;; The eco language (the kind and its declarations are in gauntlet-h.gc, where babak.gc can reach them). A charged hazard
+;; looks like it and sparks like it, with Jak's own: his red eco aura is particles 273 and 274 (a flash) and 275 (a spark)
+;; and his blue eco aura 255 and 256 (a flash), 257 (a spark) and 260 (a glint), all launched at his joints each frame
+;; (target-powerup-process in powerups.gc). Blue's lightning bolt, 259, is left out: Jak bends its angle by whether he is
+;; jumping, which is his own state. A hazard with no eco shows nothing.
+
+(defun gauntlet-eco-glow! ((pd process-drawable) (kind gauntlet-eco))
+  "Push the colors of pd's draw toward kind's eco, with a light of its own on top (the ogre boss's draw glows the same
+   way). Once, when pd is made, after its skeleton is."
+  (case kind
+    (((gauntlet-eco red))
+     (set-vector! (-> pd draw color-mult) 1.0 0.55 0.55 1.0)
+     (set-vector! (-> pd draw color-emissive) 0.4 0.02 0.0 0.0))
+    (((gauntlet-eco blue))
+     (set-vector! (-> pd draw color-mult) 0.55 0.75 1.0 1.0)
+     (set-vector! (-> pd draw color-emissive) 0.0 0.1 0.45 0.0)))
+  (none))
+
+(defun gauntlet-eco-aura! ((pd process-drawable) (kind gauntlet-eco))
+  "One frame of kind's eco aura: a flash at one of pd's joints, a spark at another, which on something that moves stream
+   out behind it as a trail. Not while pd is off screen. The first three joints are the root's and are left alone."
+  (when (and (!= kind (gauntlet-eco none)) (not (logtest? (-> pd draw status) (draw-status hidden no-anim))))
+    (let ((flash (rand-vu-int-range 3 (+ (-> pd node-list length) -1)))
+          (spark (rand-vu-int-range 3 (+ (-> pd node-list length) -1))))
+      (case kind
+        (((gauntlet-eco red))
+         (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 273 274))
+                           (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash)))
+         (launch-particles (-> *part-id-table* 275) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data spark))))
+        (((gauntlet-eco blue))
+         (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 255 256))
+                           (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash)))
+         (if (rand-vu-percent? 0.5)
+           (launch-particles (-> *part-id-table* 257) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash))))
+         (launch-particles (-> *part-id-table* 260) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data spark)))))))
+  (none))
+
+(defun gauntlet-eco-second-hit! ((jak process))
+  "The second hit of a red strike. An attack has no damage field (a plain one takes one hit, and the one that would take
+   his last kills him), so once the first has landed on a Jak with more than one hit left, the second is taken the way any
+   pickup takes health, a negative green eco. It can never be the one that kills him, only the first can."
+  (when (and *target* (< 1.0 (-> *target* fact health)))
+    (send-event jak 'get-pickup (pickup-type eco-green) (- (-> *FACT-bank* health-single-inc))))
+  (none))
+
 ;; ------------------------------------------------------------------ the bomb --
 
 (deftype gauntlet-bomb (process-drawable)
@@ -429,6 +481,12 @@
     (when body
       (send-event body 'anim-mode mode)
       (send-event body 'art-joint-anim anim 0)))
+  0)
+
+(defbehavior gauntlet-bomb-aura gauntlet-bomb ()
+  "One frame of the bomb's blue eco aura at its body's joints, for as long as the body is there."
+  (let ((body (gauntlet-bomb-body (-> self body))))
+    (if body (gauntlet-eco-aura! body (gauntlet-eco blue))))
   0)
 
 (defbehavior gauntlet-bomb-anim-done? gauntlet-bomb ()
@@ -519,7 +577,10 @@
   (let ((body (manipy-spawn (-> self root trans) #f *gauntlet-darkecobomb-sg* #f :to self)))
     (when body
       (set! (-> self body) (ppointer->handle body))
-      (send-event (ppointer->process body) 'rot-quat (-> self root quat))))
+      (send-event (ppointer->process body) 'rot-quat (-> self root quat))
+      ;; its draw exists by now (manipy-init ran to its first state), and keeps this glow for good
+      (let ((made (gauntlet-bomb-body (-> self body))))
+        (if made (gauntlet-eco-glow! made (gauntlet-eco blue))))))
   (go gauntlet-bomb-fall)
   (none))
 
@@ -532,6 +593,7 @@
       (let ((body (gauntlet-bomb-body (-> self body))))
         ;; no body, no bomb
         (if (not body) (go gauntlet-bomb-gone))
+        (gauntlet-bomb-aura)
         (let* ((fallen (gauntlet-seconds-since (-> self state-time)))
                (y (- (-> self fall-from) (* 0.5 (-> self gravity) fallen fallen))))
           (set! (-> self root trans y) (fmax y (-> self ground-y)))
@@ -562,6 +624,7 @@
   :trans
     (behavior ()
       (gauntlet-bomb-pull)
+      (gauntlet-bomb-aura)
       (let* ((elapsed (- (current-time) (-> self state-time)))
              (remaining (fmax 0.0 (/ (the float (- (-> self countdown) elapsed)) (the float (-> self countdown))))))
         ;; the finale's own warning: a beep and a flash each time the clock's cosine drops under the bar,
@@ -664,8 +727,7 @@
 ;;
 ;; Some yakows are charged with red eco, which in the player's language is strength: a red yakow is the same yakow, in the
 ;; same slot, with a heavier hit. The first *gauntlet-stampede-red-count* slots are red, so the lead row is red first and the
-;; danger sits where the player learns to look. A red yakow glows red and trails red eco sparks, which are Jak's own red eco
-;; aura (target-powerup-process in powerups.gc: particles 273, 274 and 275, launched at his joints) launched at the yakow's,
+;; danger sits where the player learns to look. A red yakow glows red and trails red eco sparks ("the eco charge", above),
 ;; and its touch costs two hits instead of one and throws Jak far.
 
 (defconstant GAUNTLET_STAMPEDE_COLUMNS 3) ;; yakows to a row
@@ -677,8 +739,6 @@
 (defconstant GAUNTLET_STAMPEDE_GROUND_SEEK (meters 20)) ;; and a yakow follows the ground up or down at most this fast
 (defconstant GAUNTLET_STAMPEDE_SHOVE_BACK (meters 3.5)) ;; how far a hit throws Jak, about; his own hit reaction runs about as far again as this (target-hit-move)
 (defconstant GAUNTLET_STAMPEDE_SHOVE_UP (meters 1.5)) ;; and how high
-(defconstant GAUNTLET_STAMPEDE_RED_SHOVE_BACK (meters 9)) ;; a red yakow throws him this far, two and a half times as far
-(defconstant GAUNTLET_STAMPEDE_RED_SHOVE_UP (meters 3)) ;; and twice as high
 (defconstant GAUNTLET_YAKOW_RADIUS (meters 1.4)) ;; the touch sphere, snug to the body so the lanes are as wide as they look
 (defconstant GAUNTLET_YAKOW_CENTER (meters 1.3)) ;; and how high above its feet it sits
 (defconstant GAUNTLET_YAKOW_RUN_PACE 1.5) ;; the village yakow's run animation speed (yakow-bank run-anim-speed, capped) at its run speed...
@@ -707,7 +767,7 @@
    (index     int)
    (pace      float)
    (phase     float)
-   (red       symbol))
+   (eco       gauntlet-eco))
   (:states
    gauntlet-yakow-run
    gauntlet-yakow-gone))
@@ -741,13 +801,12 @@
 (defbehavior gauntlet-yakow-trample gauntlet-yakow ((jak process) (touching touching-shapes-entry))
   "Jak touched this yakow: one plain 'attack, which his own invulnerability can refuse, never a kill. He is thrown away from
    the yakow, which with the herd coming at him is mostly along its heading, out of the lane he was standing in. A red yakow
-   throws him much farther, and costs him a second hit: an attack has no damage field (a plain one takes one hit, and the
-   one that would take his last kills him), so once it has landed on a Jak with more than one hit left, the second is taken
-   the way any pickup takes health, a negative green eco. It can never be the one that kills him, only the first can."
+   throws him much farther, and costs him a second hit once the first has landed (gauntlet-eco-second-hit!)."
   (when (not (gauntlet-stampede-recent-hit?))
-    (let ((knock (vector-! (new 'stack-no-clear 'vector) (target-pos 0) (-> self root trans)))
-          (back (if (-> self red) GAUNTLET_STAMPEDE_RED_SHOVE_BACK GAUNTLET_STAMPEDE_SHOVE_BACK))
-          (up (if (-> self red) GAUNTLET_STAMPEDE_RED_SHOVE_UP GAUNTLET_STAMPEDE_SHOVE_UP)))
+    (let* ((knock (vector-! (new 'stack-no-clear 'vector) (target-pos 0) (-> self root trans)))
+           (red? (= (-> self eco) (gauntlet-eco red)))
+           (back (if red? GAUNTLET_ECO_RED_SHOVE_BACK GAUNTLET_STAMPEDE_SHOVE_BACK))
+           (up (if red? GAUNTLET_ECO_RED_SHOVE_UP GAUNTLET_STAMPEDE_SHOVE_UP)))
       (set! (-> knock y) 0.0)
       ;; standing exactly on the yakow's center has no direction away from it, so use the way it runs
       (if (< (vector-xz-length knock) 40.96)
@@ -756,9 +815,8 @@
       (set! (-> knock y) up)
       (when (send-event jak 'attack touching (static-attack-info ((mode 'generic) (shove-back back) (shove-up up) (vector knock))))
         (set! *gauntlet-stampede-last-hit* (current-time))
-        (when (and (-> self red) *target* (< 1.0 (-> *target* fact health)))
-          (send-event jak 'get-pickup (pickup-type eco-green) (- (-> *FACT-bank* health-single-inc))))
-        (format 0 "GAUNTLET STAMPEDE: ~S yakow ~D trampled Jak~%" (if (-> self red) "red" "plain") (-> self index)))))
+        (if red? (gauntlet-eco-second-hit! jak))
+        (format 0 "GAUNTLET STAMPEDE: ~S yakow ~D trampled Jak~%" (if red? "red" "plain") (-> self index)))))
   0)
 
 (defbehavior gauntlet-yakow-event gauntlet-yakow ((proc process) (argc int) (message symbol) (block event-message-block))
@@ -797,15 +855,9 @@
   0)
 
 (defbehavior gauntlet-yakow-post gauntlet-yakow ()
-  "The usual post, and for a red yakow Jak's own red eco aura: each frame a flash at one of its joints and a spark at
-   another, which at the yakow's speed stream out behind it as a trail. Not while it is off screen."
+  "The usual post, and the aura of the yakow's eco, which at its speed streams out behind it as a trail."
   (transform-post)
-  (when (and (-> self red) (not (logtest? (-> self draw status) (draw-status hidden no-anim))))
-    (let ((flash (rand-vu-int-range 3 (+ (-> self node-list length) -1)))
-          (spark (rand-vu-int-range 3 (+ (-> self node-list length) -1))))
-      (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 273 274))
-                        (vector<-cspace! (new 'stack-no-clear 'vector) (-> self node-list data flash)))
-      (launch-particles (-> *part-id-table* 275) (vector<-cspace! (new 'stack-no-clear 'vector) (-> self node-list data spark)))))
+  (gauntlet-eco-aura! self (-> self eco))
   0)
 
 (defstate gauntlet-yakow-run (gauntlet-yakow)
@@ -841,9 +893,9 @@
   ((method-of-type process-drawable deactivate) this)
   (none))
 
-(defbehavior gauntlet-yakow-init-by-other gauntlet-yakow ((start vector) (heading vector) (run-length float) (index int) (speed float) (red symbol))
+(defbehavior gauntlet-yakow-init-by-other gauntlet-yakow ((start vector) (heading vector) (run-length float) (index int) (speed float) (eco gauntlet-eco))
   "Appear at start, which is where this slot of the herd begins, facing along heading (a unit vector on the ground plane)
-   and run-length meters of ground to cover, in game units, at speed. red says whether it is charged with red eco."
+   and run-length meters of ground to cover, in game units, at speed. eco says what it is charged with, if anything."
   (stack-size-set! (-> self main-thread) 512)
   ;; counted from the start, so the count and deactivate's uncounting agree whatever happens next
   (+! *gauntlet-stampede-alive* 1)
@@ -852,7 +904,7 @@
   (set! (-> self entity) #f)
   (set! (-> self index) index)
   (set! (-> self speed) speed)
-  (set! (-> self red) red)
+  (set! (-> self eco) eco)
   (set! (-> self remaining) run-length)
   ;; twice the time the distance takes, and five seconds more
   (set! (-> self timeout) (+ (the int (* 2.0 (/ run-length speed) (the float (seconds 1)))) (seconds 5)))
@@ -877,12 +929,9 @@
   (quaternion-vector-angle! (-> self root quat) (new 'static 'vector :y 1.0 :w 1.0) (vector-y-angle heading))
   (vector-identity! (-> self root scale))
   (initialize-skeleton self *gauntlet-yakow-sg* '())
-  ;; the red glow: its colors pushed toward red, and a red light of its own on top (the ogre boss's draw glows the same way)
-  (when red
-    (set-vector! (-> self draw color-mult) 1.0 0.55 0.55 1.0)
-    (set-vector! (-> self draw color-emissive) 0.4 0.02 0.0 0.0))
+  (gauntlet-eco-glow! self eco)
   (update-transforms! (-> self root))
-  (format 0 "GAUNTLET STAMPEDE yakow ~D start ~M ~M ~M ~S~%" index (-> start x) (-> start y) (-> start z) (if red "red" "plain"))
+  (format 0 "GAUNTLET STAMPEDE yakow ~D start ~M ~M ~M ~S~%" index (-> start x) (-> start y) (-> start z) (if (= eco (gauntlet-eco red)) "red" "plain"))
   (go gauntlet-yakow-run)
   (none))
 
@@ -936,7 +985,7 @@
                           (+ upstream GAUNTLET_STAMPEDE_EXIT)
                           i
                           speed
-                          (< i red-count)
+                          (if (< i red-count) (gauntlet-eco red) (gauntlet-eco none))
                           :to *entity-pool*))))))
   0)
 
@@ -2097,7 +2146,8 @@
   "Expand row once per setting: (row name unit global default lowest highest). The unit is how the file speaks and
    how the global holds it: seconds (file: seconds, global: ticks), meters (file: meters, global: game units, which
    also covers meters per second and per second squared), degrees (file: degrees, global: rotation units), count
-   (both a whole number), flag (#t or #f). The range is in file units and is ignored for a flag."
+   (both a whole number), ratio (both a plain float: a chance, a multiplier), flag (#t or #f). The range is in file
+   units and is ignored for a flag."
   `(begin
      (,row "bomb-countdown" seconds *gauntlet-bomb-countdown* GAUNTLET_BOMB_COUNTDOWN_DEFAULT 0.5 120.0)
      (,row "bomb-blast-radius" meters *gauntlet-bomb-blast-radius* GAUNTLET_BOMB_BLAST_RADIUS_DEFAULT 0.0 500.0)
@@ -2125,6 +2175,9 @@
      (,row "stampede-trigger-radius" meters *gauntlet-stampede-trigger-radius* GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT 0.0 200.0)
      (,row "stampede-rearm-range" meters *gauntlet-stampede-rearm-range* GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT 0.0 1000.0)
      (,row "stampede-red-count" count *gauntlet-stampede-red-count* GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT 0.0 30.0)
+     (,row "babak-charge-enabled" flag *gauntlet-babak-charge-enabled* GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT 0 0)
+     (,row "babak-charge-chance" ratio *gauntlet-babak-charge-chance* GAUNTLET_BABAK_CHARGE_CHANCE_DEFAULT 0.0 1.0)
+     (,row "babak-blue-speed" ratio *gauntlet-babak-blue-speed* GAUNTLET_BABAK_BLUE_SPEED_DEFAULT 1.0 4.0)
      (,row "klaww-enabled" flag *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT 0 0)
      (,row "klaww-throw-interval" seconds *gauntlet-klaww-throw-interval* GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT 0.5 60.0)
      (,row "klaww-range" meters *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT 10.0 500.0)
@@ -2163,6 +2216,7 @@
                     ((eq? unit 'seconds) '(the int (+ (* *gauntlet-setting-number* 300.0) 0.5)))
                     ((eq? unit 'meters) '(* *gauntlet-setting-number* METER_LENGTH))
                     ((eq? unit 'degrees) '(* *gauntlet-setting-number* (/ DEGREES_PER_ROT 360.0)))
+                    ((eq? unit 'ratio) '*gauntlet-setting-number*)
                     (#t '(the int (+ *gauntlet-setting-number* 0.5)))))
            (+! *gauntlet-settings-applied* 1))
          (gauntlet-setting-skip! ,name)))))
@@ -2333,6 +2387,7 @@
   (cond
     ((eq? unit 'flag) `(begin (gauntlet-json-key out ,name) (format out "~S" (if ,source "true" "false"))))
     ((eq? unit 'count) `(begin (gauntlet-json-key out ,name) (format out "~D" ,source)))
+    ((eq? unit 'ratio) `(begin (gauntlet-json-key out ,name) (gauntlet-json-fixed out ,source)))
     (#t
      `(begin
         (gauntlet-json-key out ,name)

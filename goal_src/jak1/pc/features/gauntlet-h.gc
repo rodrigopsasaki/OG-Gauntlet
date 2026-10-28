@@ -15,6 +15,30 @@
 ;; Klaww falls onto it from there. It is compiled in the beach's DGO, after this file, so the call needs declaring here too.
 (define-extern gauntlet-klaww-pelican-at-nest! (function process none))
 
+;; ---------------------------------------------------------- the eco charge --
+
+;; The mod speaks in eco, so that the colour of a charge tells the player what a hazard does. Red is strength: a red hazard
+;; hits for two and throws Jak far. Blue is draw: a blue hazard pulls Jak in, or runs at him faster. A charged hazard glows
+;; its colour and carries the aura of Jak's own eco of that colour. The users are the red yakows of the stampede, the bomb
+;; (blue, it pulls) and the babaks, which are in GAME.CGO and so charged on every level. babak.gc compiles and loads before
+;; gauntlet.gc, so the kind and the constants live here, ahead of both, and the three functions are declared here and
+;; defined in gauntlet.gc, the way gauntlet-klaww-pelican-at-nest! is: they are only called once a level is running.
+(defenum gauntlet-eco
+  :type uint32
+  (none 0)
+  (red 1)
+  (blue 2))
+
+(defconstant GAUNTLET_ECO_RED_SHOVE_BACK (meters 9)) ;; a red hit throws Jak this far, two and a half times a plain yakow's
+(defconstant GAUNTLET_ECO_RED_SHOVE_UP (meters 3)) ;; and twice as high
+
+;; Push the colors of a process-drawable's draw toward a kind's eco, once, when it is made.
+(define-extern gauntlet-eco-glow! (function process-drawable gauntlet-eco none))
+;; One frame of a kind's eco aura at a process-drawable's joints, to be called every frame it should show.
+(define-extern gauntlet-eco-aura! (function process-drawable gauntlet-eco none))
+;; The second hit of a red strike, after the first has landed on the process given.
+(define-extern gauntlet-eco-second-hit! (function process none))
+
 ;; ------------------------------------------------------------ the tunables --
 
 ;; Everything the gauntlet console can steer. The defaults are written once, as constants in game units (meters are
@@ -50,13 +74,17 @@
 (defconstant GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to the Sandover spot, sideways, sets the herd off
 (defconstant GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT (meters 60)) ;; and it will not charge again until he has been farther than this from it
 (defconstant GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT 3) ;; yakows charged with red eco, the first slots of the herd: the lead row. Red hits for two and throws far
+(defconstant GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT #t) ;; babaks may be born charged with eco, on every level
+(defconstant GAUNTLET_BABAK_CHARGE_CHANCE_DEFAULT 0.5) ;; the chance, from 0 to 1, that a babak is charged when it is born; a charged one is red or blue by the toss of a coin
+(defconstant GAUNTLET_BABAK_BLUE_SPEED_DEFAULT 2.0) ;; a blue babak runs this many times faster than a plain one; a red one hits as hard as a red yakow
 ;; Klaww stands in the pelican's nest at Sentinel Beach and lobs boulders at Jak. Three buttons on the beach shoot him; each hit is one of three.
 (defconstant GAUNTLET_KLAWW_ENABLED_DEFAULT #t) ;; Klaww and his buttons appear on the beach
 (defconstant GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT (seconds 3.0)) ;; from one boulder leaving his hand to the next, wind-up included (a throw takes as long as its animation, which is the floor)
 (defconstant GAUNTLET_KLAWW_RANGE_DEFAULT (meters 140)) ;; he throws while Jak is this close, sideways: the first button is 100 m from the nest, so Jak is still a target while he presses it
 (defconstant GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to where a boulder lands is hit; the landing marker draws this circle
 
-;; Times are in ticks (300 a second), lengths and speeds in game units, the spread in rotation units.
+;; Times are in ticks (300 a second), lengths and speeds in game units, the spread in rotation units, a chance or a
+;; multiplier a plain float.
 ;; Which of them apply to something already in the world is the console contract's business: a bomb in the air keeps
 ;; the countdown, drop height and gravity it was dropped with, a sage keeps the ranges he appeared with.
 (define *gauntlet-bomb-countdown* (the int GAUNTLET_BOMB_COUNTDOWN_DEFAULT))
@@ -85,6 +113,9 @@
 (define *gauntlet-stampede-trigger-radius* GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT)
 (define *gauntlet-stampede-rearm-range* GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT)
 (define *gauntlet-stampede-red-count* GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT) ;; the herd's first this-many slots are red, however big the herd
+(define *gauntlet-babak-charge-enabled* GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT) ;; off: babaks are the game's own, never charged
+(define *gauntlet-babak-charge-chance* GAUNTLET_BABAK_CHARGE_CHANCE_DEFAULT) ;; rolled once per babak, when it is born
+(define *gauntlet-babak-blue-speed* GAUNTLET_BABAK_BLUE_SPEED_DEFAULT) ;; a babak keeps the pace it was born with
 (define *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT) ;; off: no Klaww, no buttons, and whatever stands is taken away
 (define *gauntlet-klaww-throw-interval* (the int GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT))
 (define *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT)
