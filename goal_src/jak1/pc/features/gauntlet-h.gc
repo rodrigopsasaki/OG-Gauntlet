@@ -90,7 +90,7 @@
 ;; The cap keeps a crowd from costing more than the frame has: every clone is a whole nav enemy process, with its own collision,
 ;; nav mesh walk and animation, and the multiplier times the lurkers a level places can run far past what a frame can pay for.
 (defconstant GAUNTLET_HORDE_MAX_CLONES_DEFAULT 60) ;; clones alive at once, all groups together; a birth that would pass it gets only the clones that fit
-;; Klaww stands in the pelican's nest at Sentinel Beach and lobs boulders at Jak. Three buttons on the beach shoot him; each hit is one of three.
+;; Klaww stands in the pelican's nest at Sentinel Beach and lobs boulders at Jak. The buttons on the beach (a table in gauntlet.gc) shoot him; each button is one hit, and all of them bring him down.
 (defconstant GAUNTLET_KLAWW_ENABLED_DEFAULT #t) ;; Klaww and his buttons appear on the beach
 (defconstant GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT (seconds 3.0)) ;; from one boulder leaving his hand to the next, wind-up included (a throw takes as long as its animation, which is the floor)
 (defconstant GAUNTLET_KLAWW_RANGE_DEFAULT (meters 140)) ;; he throws while Jak is this close, sideways: the first button is 100 m from the nest, so Jak is still a target while he presses it

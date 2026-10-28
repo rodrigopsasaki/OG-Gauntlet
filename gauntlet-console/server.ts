@@ -390,7 +390,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "Klaww",
     "Klaww",
     "live",
-    "Klaww falls onto the pelican when it lands at its nest at Sentinel Beach and throws boulders at Jak; three buttons around the beach throw boulders back. Off takes him and the buttons away and forgets the fight. The Klaww falls button still needs this on.",
+    "Klaww falls onto the pelican when it lands at its nest at Sentinel Beach and throws boulders at Jak; the buttons around the beach throw boulders back, one hit each, and every button counts. Jak dying does not end the fight: Klaww comes back with the hits he had and the pressed buttons stay pressed. Off takes him and the buttons away and forgets the fight. The Klaww falls button still needs this on.",
   ),
   num(
     "klaww-throw-interval",
@@ -490,13 +490,15 @@ interface BridgeState {
 interface KlawwState {
   /** Where the fight is: waiting for the pelican, falling, landing, fighting, or defeated. */
   state: string;
-  /** Boulders that have reached him since this fight began. */
+  /** Boulders that have reached him since this fight began; a death does not take them away. */
   hits: number;
-  /** Hits it takes to bring him down. */
+  /** Hits it takes to bring him down: one per button. */
   max: number;
   /** In the world and not yet beaten. */
   alive: boolean;
+  /** Buttons whose boulder has reached him, which stay pressed through a death. */
   buttonsPressed: number;
+  /** Buttons on the beach. */
   buttons: number;
 }
 interface HordeState {
