@@ -373,8 +373,11 @@
   ;; textures in Lost Precursor City's tfrag tpage 661; its models are in GAME.fr3 (common_art_groups again).
   "generic-button-ag.go"
   ;; gauntlet: the ice cubes the beach's lurkerworms raise out of the sand. Their art groups ship in SNO.DGO (and stay there for
-  ;; Snowy Mountain), with their textures in tpage 842; their models are in GAME.fr3 (common_art_groups again).
+  ;; Snowy Mountain); their models, with their textures, are in GAME.fr3 (common_art_groups again). Their tpage 842 is NOT
+  ;; here: a tpage that boots in GAME.CGO is uploaded to VRAM for good, VRAM is 4 MB (the GS addresses it with 14 bits), and
+  ;; this one (288 KB, all of Snowy's characters) pushed the boot uploads past the end, which crashed gk before its window
+  ;; opened. The PC merc renderer draws a model from its fr3 textures (Merc2 binds lev->textures), not from VRAM, and the
+  ;; cube has no eyes or VRAM-read effects, so it does not need the page; generic-button-ag above lives the same way.
   "ice-cube-ag.go"
   "ice-cube-break-ag.go"
-  "tpage-842.go"
  ))
