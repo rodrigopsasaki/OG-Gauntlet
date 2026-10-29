@@ -124,6 +124,7 @@
   <span class="stat">Level <b id="level">-</b></span>
   <span class="stat">Jak <b id="jak">-</b></span>
   <span class="stat" id="bridge-stat" hidden>Bridge <b id="bridge">-</b></span>
+  <span class="stat" id="vent-stat" hidden>Vent <b id="vent">-</b></span>
   <span class="stat" id="klaww-stat" hidden>Klaww <b id="klaww">-</b></span>
   <span class="stat">Settings <b id="revision">-</b></span>
 </header>
@@ -134,6 +135,7 @@
       <div class="triggers">
         <button id="t-bomb" class="danger">Bomb on Jak</button>
         <button id="t-bomb-bridge" class="danger">Bomb on the bridge</button>
+        <button id="t-bomb-vent" class="danger">Bomb on the vent</button>
         <button id="t-stampede" class="danger">Stampede</button>
         <button id="t-klaww" class="danger">Klaww falls</button>
         <button id="t-trip">Trip</button>
@@ -148,7 +150,7 @@
       <p id="effects-note" class="note" hidden>
         Trip, freeze, warp, save spot and load spot will not run until "twitch effects" is turned on in the game's settings.
       </p>
-      <p id="bridge-note" class="status" hidden>The bridge bomb only works on Geyser Rock.</p>
+      <p id="bridge-note" class="status" hidden>The bridge and vent bombs only work on Geyser Rock.</p>
       <p id="trigger-status" class="status"></p>
     </section>
     <section id="bomb-card" hidden>
@@ -352,7 +354,7 @@ async function trigger(action, arg) {
   }
 }
 
-for (const action of ["bomb", "bomb-bridge", "stampede", "klaww", "trip", "freeze", "save-spot", "load-spot"]) {
+for (const action of ["bomb", "bomb-bridge", "bomb-vent", "stampede", "klaww", "trip", "freeze", "save-spot", "load-spot"]) {
   $(`t-${action}`).addEventListener("click", () => trigger(action));
 }
 $("t-warp").addEventListener("click", () => trigger("warp", $("warp-select").value));
@@ -375,6 +377,11 @@ function renderHeader(payload) {
   const bridge = state && state.bridge;
   $("bridge-stat").hidden = !bridge;
   if (bridge) $("bridge").textContent = `${bridge.armed ? "armed" : "not armed"}, ${fmt(bridge.distance)} m`;
+
+  // a game build older than the vent spot leaves the member out, and the readout stays hidden
+  const vent = state && state.vent;
+  $("vent-stat").hidden = !vent;
+  if (vent) $("vent").textContent = `${vent.armed ? "armed" : "not armed"}, ${fmt(vent.distance)} m`;
 
   const klaww = state && state.klaww;
   $("klaww-stat").hidden = !klaww;
@@ -414,6 +421,7 @@ function renderTriggers(payload) {
   $("effects-note").hidden = effectsOn || !state;
   const onGeyser = state ? state.level === "training" : false;
   $("t-bomb-bridge").disabled = !onGeyser;
+  $("t-bomb-vent").disabled = !onGeyser;
   $("bridge-note").hidden = onGeyser || !state;
   // the herd charges at Jak from ahead of where he faces, on any level, so it only needs a running game
   $("t-stampede").disabled = !payload.live;

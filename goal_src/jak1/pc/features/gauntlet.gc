@@ -7,8 +7,9 @@
 ;; changed since the last look is a new request; a name this file does not know
 ;; is logged and dropped. `jakc drop <name>` writes it.
 ;;
-;; On Geyser Rock (level training) the bomb also drops by itself, on a fixed spot on the bridge, the first time Jak walks
-;; within *gauntlet-bridge-trigger-radius* of it, and again only after he has been farther than *gauntlet-bridge-rearm-range* away.
+;; On Geyser Rock (level training) the bomb also drops by itself, on a fixed spot of a table (see "the drop spots": the bridge, and
+;; the blue eco vent before the precursor door), the first time Jak walks within *gauntlet-bridge-trigger-radius* of it, and
+;; again only after he has been farther than *gauntlet-bridge-rearm-range* away. Only one bomb is alive at a time.
 ;;
 ;; The mod speaks in eco: the colour of a charge says what a hazard does, red strength and blue draw. See "the eco charge"
 ;; below; the bomb is blue, some of the stampede's yakows are red, and babaks (babak.gc, on every level) are born red or blue.
@@ -71,7 +72,7 @@
 ;;     (unless a recent hit still has him invulnerable).
 
 (defconstant GAUNTLET_DROP_POLL_FRAMES 30) ;; how often the request file is looked at, about twice a second
-;; The tunables (countdown, radii, the pull, the bridge, the dummies' volleys) are globals with their defaults in
+;; The tunables (countdown, radii, the pull, the drop spots, the dummies' volleys) are globals with their defaults in
 ;; gauntlet-h.gc. The pull's design, for reading them against: Jak's top run speed is 10 m/s (target-speed of *walk-mods*,
 ;; surface-h.gc) and a running jump 10 to 16 m/s (*jump-mods*, *forward-jump-mods*), against gravity of 60 m/s^2
 ;; (GRAVITY_AMOUNT). A runner who starts under the bomb covers 40 m in the countdown against a 35 m blast, so the pull on
@@ -800,27 +801,29 @@
     (behavior ()
       (deactivate self)))
 
-(define *gauntlet-bomb* (the-as handle #f)) ;; the bomb last dropped, so the bridge knows whether one is still alive
+(define *gauntlet-bomb* (the-as handle #f)) ;; the bomb last dropped, so the drop spots know whether one is still alive
 
 (defun gauntlet-bomb-alive? ()
   "True while the last bomb dropped is still in the world, from the moment it appears to the end of its blast."
   (if (handle->process *gauntlet-bomb*) #t #f))
 
 (defun gauntlet-bomb-drop! ((where vector))
-  "Drop the bomb on where, if its art is there to draw."
-  (if (gauntlet-art-ready? *gauntlet-darkecobomb-sg*)
-    (let ((bomb (process-spawn gauntlet-bomb :init gauntlet-bomb-init-by-other where :to *entity-pool*)))
-      (if bomb (set! *gauntlet-bomb* (ppointer->handle bomb))))
-    (format 0 "GAUNTLET DROP: the bomb's art group is not loaded, nothing dropped~%"))
+  "Drop the bomb on where, if its art is there to draw. A request is never held back for a bomb that is still alive: the new
+   one comes down beside it, and from then on is the bomb the spots and the state file look at. Only the spots wait for the
+   last bomb to end, and they check for themselves."
+  (cond
+    ((not (gauntlet-art-ready? *gauntlet-darkecobomb-sg*))
+     (format 0 "GAUNTLET DROP: the bomb's art group is not loaded, nothing dropped~%"))
+    (else
+     (if (gauntlet-bomb-alive?)
+       (format 0 "GAUNTLET DROP: a bomb is already alive, this one comes down beside it~%"))
+     (let ((bomb (process-spawn gauntlet-bomb :init gauntlet-bomb-init-by-other where :to *entity-pool*)))
+       (if bomb
+         (set! *gauntlet-bomb* (ppointer->handle bomb))
+         (format 0 "GAUNTLET DROP: no process left for the bomb, nothing dropped~%")))))
   0)
 
-;; ---------------------------------------------------------------- the bridge --
-
-;; The bridge on Geyser Rock (level training): the bomb also drops there by itself, on a fixed spot, when Jak walks onto it.
-;; The tall pillar runners jump from is about 17 m away, so the pull drags that jump back toward the bridge.
-
-(define *gauntlet-bridge-spot* (new 'static 'vector :x (meters -1313.8) :y (meters 40.5) :z (meters 946.4) :w 1.0))
-(define *gauntlet-bridge-armed* #t) ;; false from the drop until Jak has been far from the bridge again
+;; ------------------------------------------------------------- the drop spots --
 
 (defun gauntlet-in-level? ((which symbol))
   "True when Jak is inside the level called which."
@@ -831,18 +834,71 @@
   "True when Jak is in Geyser Rock."
   (gauntlet-in-level? 'training))
 
-(defun gauntlet-bridge-poll! ()
-  "Per-frame: on Geyser Rock, drop one bomb on the bridge spot when Jak comes within *gauntlet-bridge-trigger-radius* of it
-   and no bomb is alive; do not again until he has been farther than *gauntlet-bridge-rearm-range* from it. With
-   *gauntlet-bridge-enabled* off it never drops, though it keeps track of Jak coming and going."
+;; The places on Geyser Rock (level training) where the bomb drops by itself, one table row each: (row index name enabled x y z),
+;; the spot in meters and enabled the switch that turns the spot off. Each spot is armed on its own: Jak walking within
+;; *gauntlet-bridge-trigger-radius* of it, sideways, drops the bomb on it, and it drops there again only once he has been
+;; farther than *gauntlet-bridge-rearm-range* from it. The spots share those two settings. Only one bomb is alive at a time,
+;; whichever spot asks. The only place that says how many spots there are is this table; GAUNTLET_DROP_SPOTS, below, is the count.
+;;
+;; Row 0 is the bridge: the tall pillar runners jump from is about 17 m away, so the pull drags that jump back toward the bridge.
+;; Row 1 is the blue eco vent before the precursor door, the only vent in the level (ecovent-245 of training-actors.json, with
+;; the camera that introduces it, training-cam index 4, standing on it; the door, tra-iris-door-1, is 69 m east-southeast).
+;; The lesson it teaches is the bomb's: Jak charges up with the blue eco, the circle goes up, and he runs out of it.
+(defmacro gauntlet-drop-spot-table (join row)
+  "Expand row once per spot, (row index name enabled x y z), under the form join (begin, to do something for each)."
+  `(,join
+     (,row 0 "bridge" *gauntlet-bridge-enabled* -1313.8 40.5 946.4)
+     (,row 1 "vent" *gauntlet-vent-enabled* -1307.98 29.55 854.21)))
+
+;; The rows of the table, written out: deftype needs a literal array size. A row added above needs this raised with it.
+(defconstant GAUNTLET_DROP_SPOTS 2)
+
+(deftype gauntlet-drop-world (structure)
+  ((armed symbol GAUNTLET_DROP_SPOTS))) ;; false from a spot's drop until Jak has been far from it again
+
+(define *gauntlet-drop-world* (new 'global 'gauntlet-drop-world))
+
+(dotimes (i GAUNTLET_DROP_SPOTS)
+  (set! (-> *gauntlet-drop-world* armed i) #t))
+
+(defmacro gauntlet-row-spot-at (index name enabled x y z)
+  `(if (= i ,index) (set-vector! out (meters ,x) (meters ,y) (meters ,z) 1.0)))
+
+(defun gauntlet-drop-spot-at ((i int) (out vector))
+  "Spot i of the table, written to out and handed back."
+  (gauntlet-drop-spot-table begin gauntlet-row-spot-at)
+  out)
+
+(defun gauntlet-spot-poll! ((index int) (name string) (enabled symbol))
+  "Per-frame, for one spot while Jak is on Geyser Rock: drop one bomb on it when Jak comes within
+   *gauntlet-bridge-trigger-radius* of it and no bomb is alive; do not again until he has been farther than
+   *gauntlet-bridge-rearm-range* from it. With its switch (enabled) off it never drops, though it keeps track of Jak coming
+   and going."
+  (let* ((spot (gauntlet-drop-spot-at index (new 'stack-no-clear 'vector)))
+         (distance (vector-vector-xz-distance (target-pos 0) spot)))
+    (cond
+      ((> distance *gauntlet-bridge-rearm-range*) (set! (-> *gauntlet-drop-world* armed index) #t))
+      ((and enabled (-> *gauntlet-drop-world* armed index) (< distance *gauntlet-bridge-trigger-radius*) (not (gauntlet-bomb-alive?)))
+       (set! (-> *gauntlet-drop-world* armed index) #f)
+       (format 0 "GAUNTLET SPOT: Jak is ~M m from the ~S spot, dropping the bomb on it~%" distance name)
+       (gauntlet-bomb-drop! spot))))
+  0)
+
+(defmacro gauntlet-row-spot-poll (index name enabled x y z)
+  `(gauntlet-spot-poll! ,index ,name ,enabled))
+
+(defun gauntlet-drop-spots-poll! ()
+  "Per-frame: every spot of the table is watched while Jak is on Geyser Rock, as gauntlet-spot-poll! says."
   (when (and *target* (gauntlet-in-training?))
-    (let ((distance (vector-vector-xz-distance (target-pos 0) *gauntlet-bridge-spot*)))
-      (cond
-        ((> distance *gauntlet-bridge-rearm-range*) (set! *gauntlet-bridge-armed* #t))
-        ((and *gauntlet-bridge-enabled* *gauntlet-bridge-armed* (< distance *gauntlet-bridge-trigger-radius*) (not (gauntlet-bomb-alive?)))
-         (set! *gauntlet-bridge-armed* #f)
-         (format 0 "GAUNTLET BRIDGE: Jak is ~M m from the bridge spot, dropping the bomb on it~%" distance)
-         (gauntlet-bomb-drop! *gauntlet-bridge-spot*)))))
+    (gauntlet-drop-spot-table begin gauntlet-row-spot-poll))
+  0)
+
+(defun gauntlet-drop-on-spot! ((index int) (kind string))
+  "The console's bomb on spot index: the spot itself, whatever the trigger radius or the arming say. Only on Geyser Rock; kind
+   is what was asked for, for the log."
+  (if (gauntlet-in-training?)
+    (gauntlet-bomb-drop! (gauntlet-drop-spot-at index (new 'stack-no-clear 'vector)))
+    (format 0 "GAUNTLET DROP: ~S asked for off Geyser Rock, ignored~%" kind))
   0)
 
 ;; -------------------------------------------------------------- the stampede --
@@ -3077,7 +3133,7 @@
 ;;                         truth: a key it does not name goes back to its default. Unknown keys and values that are not
 ;;                         numbers (or are outside the key's range) are skipped and logged, never fatal.
 ;;   gauntlet-state.json   the game writes, the console reads, every GAUNTLET_STATE_POLL_FRAMES frames: the settings in
-;;                         effect next to the defaults, and where Jak, the bomb and the bridge are.
+;;                         effect next to the defaults, and where Jak, the bomb and the drop spots are.
 ;; Every setting is one row of gauntlet-setting-table, which names it, says what unit the file speaks, which global holds
 ;; it, what its default is and what range it may take; applying, resetting and publishing it are all generated from that
 ;; row, so a setting cannot be added to one and forgotten in another.
@@ -3100,6 +3156,7 @@
      (,row "bomb-drop-height" meters *gauntlet-bomb-drop-height* GAUNTLET_BOMB_DROP_HEIGHT_DEFAULT 0.0 200.0)
      (,row "bomb-gravity" meters *gauntlet-bomb-gravity* GAUNTLET_BOMB_GRAVITY_DEFAULT 1.0 500.0)
      (,row "bridge-enabled" flag *gauntlet-bridge-enabled* GAUNTLET_BRIDGE_ENABLED_DEFAULT 0 0)
+     (,row "vent-enabled" flag *gauntlet-vent-enabled* GAUNTLET_VENT_ENABLED_DEFAULT 0 0)
      (,row "bridge-trigger-radius" meters *gauntlet-bridge-trigger-radius* GAUNTLET_BRIDGE_TRIGGER_RADIUS_DEFAULT 0.0 200.0)
      (,row "bridge-rearm-range" meters *gauntlet-bridge-rearm-range* GAUNTLET_BRIDGE_REARM_RANGE_DEFAULT 0.0 1000.0)
      (,row "dummies-enabled" flag *gauntlet-dummies-enabled* GAUNTLET_DUMMIES_ENABLED_DEFAULT 0 0)
@@ -3395,8 +3452,21 @@
      (/ (the float (max 0 (- (-> bomb countdown) (- (current-time) (-> bomb state-time))))) 300.0))
     (else 0.0)))
 
+(defmacro gauntlet-row-spot-state (index name enabled x y z)
+  `(begin
+     (gauntlet-json-key out ,name)
+     (cond
+       (in-training
+        (gauntlet-json-open out)
+        (gauntlet-json-key out "armed")
+        (format out "~S" (if (-> *gauntlet-drop-world* armed ,index) "true" "false"))
+        (gauntlet-json-key out "distance")
+        (gauntlet-json-fixed out (/ (vector-vector-xz-distance (target-pos 0) (gauntlet-drop-spot-at ,index (new 'stack-no-clear 'vector))) METER_LENGTH))
+        (gauntlet-json-close out))
+       (else (format out "null")))))
+
 (defun gauntlet-state-write-world! ((out string))
-  "Level, Jak, the bomb, the bridge, Klaww and the horde: the members of the state file that are not settings."
+  "Level, Jak, the bomb, the drop spots, Klaww and the horde: the members of the state file that are not settings."
   (let ((in-training (and *target* (gauntlet-in-training?))))
     (gauntlet-json-key out "level")
     (format out "\"~A\"" (if *target* (aif (level-get-target-inside *level*) (-> it name) 'none) 'none))
@@ -3430,16 +3500,8 @@
            (format out "null"))
          (gauntlet-json-close out))
         (else (format out "null"))))
-    (gauntlet-json-key out "bridge")
-    (cond
-      (in-training
-       (gauntlet-json-open out)
-       (gauntlet-json-key out "armed")
-       (format out "~S" (if *gauntlet-bridge-armed* "true" "false"))
-       (gauntlet-json-key out "distance")
-       (gauntlet-json-fixed out (/ (vector-vector-xz-distance (target-pos 0) *gauntlet-bridge-spot*) METER_LENGTH))
-       (gauntlet-json-close out))
-      (else (format out "null")))
+    ;; one member per drop spot of the table, named for it ("bridge", "vent"): armed and how far Jak is, null off Geyser Rock
+    (gauntlet-drop-spot-table begin gauntlet-row-spot-state)
     (gauntlet-json-key out "klaww")
     (cond
       ((and *target* (or (gauntlet-in-level? 'beach) *gauntlet-klaww-home*))
@@ -3528,11 +3590,9 @@
   (cond
     ((not *target*) (format 0 "GAUNTLET DROP: ~S asked for with no Jak in the world~%" kind))
     ((string= kind "bomb") (gauntlet-bomb-drop! (target-pos 0)))
-    ;; the console's bomb on the bridge: the spot itself, whatever the trigger radius or the arming say
-    ((string= kind "bomb-bridge")
-     (if (gauntlet-in-training?)
-       (gauntlet-bomb-drop! *gauntlet-bridge-spot*)
-       (format 0 "GAUNTLET DROP: bomb-bridge asked for off Geyser Rock, ignored~%")))
+    ;; the console's bomb on a drop spot (rows 0 and 1 of gauntlet-drop-spot-table): the spot itself, whatever the trigger radius or the arming say
+    ((string= kind "bomb-bridge") (gauntlet-drop-on-spot! 0 kind))
+    ((string= kind "bomb-vent") (gauntlet-drop-on-spot! 1 kind))
     ;; the herd, aimed at Jak's spot from where he faces
     ((string= kind "stampede") (gauntlet-stampede-ahead!))
     ;; Klaww falls: onto the pelican's nest on the beach, ahead of Jak anywhere else
@@ -3541,12 +3601,12 @@
   0)
 
 (defun gauntlet-drop-poll! ()
-  "Per-frame hook: the console's settings are looked at first, so what they say holds for this frame; the bridge, the
+  "Per-frame hook: the console's settings are looked at first, so what they say holds for this frame; the drop spots, the
    Sandover spot, the beach and the TNT barrels are watched every frame; every GAUNTLET_DROP_POLL_FRAMES frames look at the request counter, and drop once when it has changed since
    the last look; last, the state file, which then describes this frame."
   (+! *gauntlet-frame* 1)
   (gauntlet-settings-poll!)
-  (gauntlet-bridge-poll!)
+  (gauntlet-drop-spots-poll!)
   (gauntlet-stampede-poll!)
   (gauntlet-klaww-poll!)
   (gauntlet-tnt-poll!)
@@ -3561,6 +3621,12 @@
           (file-stream-read-word file)
           ;; the first word is the counter: an unchanged one means nothing new
           (when (not (string= *pc-temp-string* *gauntlet-drop-seen*))
+            ;; counters count up by one a request, so a jump of more than one is requests made within one look: only the
+            ;; last is in the file to be read, and the rest would go unremarked
+            (when (and *gauntlet-drop-primed* (gauntlet-number-word? *pc-temp-string*) (gauntlet-number-word? *gauntlet-drop-seen*))
+              (let ((skipped (+ (the int (- (string->float *pc-temp-string*) (string->float *gauntlet-drop-seen*))) -1)))
+                (if (< 0 skipped)
+                  (format 0 "GAUNTLET DROP: ~D earlier requests arrived within one look and are not dropped, only the last one is~%" skipped))))
             (format (clear *gauntlet-drop-seen*) "~S" *pc-temp-string*)
             (when *gauntlet-drop-primed*
               ;; the second word names what to drop

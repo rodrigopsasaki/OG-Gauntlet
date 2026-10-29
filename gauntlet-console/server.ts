@@ -31,7 +31,7 @@ const MAX_BODY_BYTES = 64 * 1024;
 
 type SettingGroup =
   | "Bomb"
-  | "Geyser bridge"
+  | "Geyser Rock"
   | "Dummies"
   | "Stampede"
   | "Charged lurkers"
@@ -151,28 +151,35 @@ const SETTINGS: readonly SettingSpec[] = [
   ),
   flag(
     "bridge-enabled",
-    "Geyser bridge",
+    "Geyser Rock",
     "Bridge bomb",
     "live",
     "Walking up to the Geyser bridge arms a bomb that drops on it.",
   ),
+  flag(
+    "vent-enabled",
+    "Geyser Rock",
+    "Vent bomb",
+    "live",
+    "Walking up to the blue eco vent before the precursor door arms a bomb that drops on it.",
+  ),
   num(
     "bridge-trigger-radius",
-    "Geyser bridge",
+    "Geyser Rock",
     "Trigger radius",
     "m",
     [1, 20, 0.5],
     "live",
-    "How close Jak has to get to the bridge spot to set it off.",
+    "How close Jak has to get to a drop spot (the bridge, the vent) to set its bomb off.",
   ),
   num(
     "bridge-rearm-range",
-    "Geyser bridge",
+    "Geyser Rock",
     "Rearm range",
     "m",
     [10, 200, 5],
     "live",
-    "How far Jak has to walk away before the bridge can fire again.",
+    "How far Jak has to walk away before a drop spot can fire again.",
   ),
   flag(
     "dummies-enabled",
@@ -491,7 +498,8 @@ interface BombState {
   /** null when there is no Jak to measure against. */
   jakDistance: number | null;
 }
-interface BridgeState {
+/** A spot where the bomb drops by itself on Geyser Rock: the bridge, the vent. */
+interface DropSpotState {
   armed: boolean;
   distance: number;
 }
@@ -527,7 +535,9 @@ interface GauntletState {
   level: string;
   jak: JakState | null;
   bomb: BombState | null;
-  bridge: BridgeState | null;
+  bridge: DropSpotState | null;
+  /** null off Geyser Rock, and for a game build that has no vent spot. */
+  vent: DropSpotState | null;
   /** null unless Jak is on the beach or a fight is on, and for a game build that does not publish him. */
   klaww: KlawwState | null;
   /** null only for a game build that does not publish the horde. */
@@ -581,6 +591,11 @@ function pickKnownSettings(value: unknown, path: string): SettingMap {
   return picked;
 }
 
+function parseDropSpot(value: unknown, path: string): DropSpotState {
+  const spot = needRecord(value, path);
+  return { armed: needBoolean(spot, "armed", path), distance: needNumber(spot, "distance", path) };
+}
+
 function parseGauntletState(raw: unknown): GauntletState {
   const root = needRecord(raw, "state");
   return {
@@ -610,13 +625,11 @@ function parseGauntletState(raw: unknown): GauntletState {
           bomb.jakDistance === null ? null : needNumber(bomb, "jakDistance", "state.bomb"),
       };
     }),
-    bridge: orNull(root.bridge, (value) => {
-      const bridge = needRecord(value, "state.bridge");
-      return {
-        armed: needBoolean(bridge, "armed", "state.bridge"),
-        distance: needNumber(bridge, "distance", "state.bridge"),
-      };
-    }),
+    bridge: orNull(root.bridge, (value) => parseDropSpot(value, "state.bridge")),
+    vent:
+      root.vent === undefined
+        ? null
+        : orNull(root.vent, (value) => parseDropSpot(value, "state.vent")),
     klaww:
       root.klaww === undefined
         ? null
@@ -829,7 +842,7 @@ async function resetSettings(): Promise<{ revision: number; settings: SettingMap
 // ---------------------------------------------------------------------------
 
 /** What the game's drop request channel (`gauntlet-drop-request.txt`) understands. */
-const DROP_WORDS = ["bomb", "bomb-bridge", "stampede", "klaww"] as const;
+const DROP_WORDS = ["bomb", "bomb-bridge", "bomb-vent", "stampede", "klaww"] as const;
 type DropWord = (typeof DROP_WORDS)[number];
 
 function isDropWord(value: unknown): value is DropWord {
@@ -921,6 +934,7 @@ function commandLine(action: Action, arg: unknown): string {
     }
     case "bomb":
     case "bomb-bridge":
+    case "bomb-vent":
     case "stampede":
     case "klaww":
       throw new HttpError(500, "drops do not use the command file");
