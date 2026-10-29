@@ -35,6 +35,7 @@ type SettingGroup =
   | "Dummies"
   | "Stampede"
   | "Charged lurkers"
+  | "Desperation"
   | "Beach worms"
   | "Horde"
   | "Klaww"
@@ -354,7 +355,23 @@ const SETTINGS: readonly SettingSpec[] = [
     "x",
     [1, 4, 0.1],
     "next babak",
-    "How many times faster a blue babak runs than a plain one. A babak keeps the pace it was born with.",
+    "How many times faster a blue babak runs than a plain one with Jak at full health. A babak keeps the base it was born with; the desperation below multiplies it live.",
+  ),
+  num(
+    "desperation-max",
+    "Desperation",
+    "Strength with one hit left",
+    "x",
+    [1, 5, 0.1],
+    "live",
+    "Every eco effect (a blue babak's speed, the bomb's pull, how far a red hit throws Jak) is this many times stronger when Jak has one hit left, 1x at full health, in a straight line between. At 2 a blue babak that runs 3x faster runs 6x faster at one hit. Read every frame, so healing calms them at once.",
+  ),
+  flag(
+    "cell-heal-enabled",
+    "Desperation",
+    "Power cells heal",
+    "live",
+    "Taking a power cell heals Jak up to 3 hits, never above. Off leaves his health as the game made it.",
   ),
   flag(
     "worm-cubes-enabled",
@@ -527,6 +544,14 @@ interface HordeState {
   /** The lurker multiplier in effect (the lurker-multiplier setting). */
   multiplier: number;
 }
+interface DesperationState {
+  /** The multiplier on every eco effect right now: 1 at full health, desperation-max at one hit. */
+  value: number;
+  /** Jak's health in hits; null with no Jak. */
+  health: number | null;
+  /** The most he can have; null with no Jak. */
+  healthMax: number | null;
+}
 interface GauntletState {
   frame: number;
   revision: number;
@@ -534,6 +559,8 @@ interface GauntletState {
   defaults: SettingMap;
   level: string;
   jak: JakState | null;
+  /** null only for a game build that does not publish the desperation. */
+  desperation: DesperationState | null;
   bomb: BombState | null;
   bridge: DropSpotState | null;
   /** null off Geyser Rock, and for a game build that has no vent spot. */
@@ -613,6 +640,23 @@ function parseGauntletState(raw: unknown): GauntletState {
         onGround: needBoolean(jak, "onGround", "state.jak"),
       };
     }),
+    desperation:
+      root.desperation === undefined
+        ? null
+        : orNull(root.desperation, (value) => {
+            const desperation = needRecord(value, "state.desperation");
+            return {
+              value: needNumber(desperation, "value", "state.desperation"),
+              health:
+                desperation.health === null
+                  ? null
+                  : needNumber(desperation, "health", "state.desperation"),
+              healthMax:
+                desperation.healthMax === null
+                  ? null
+                  : needNumber(desperation, "healthMax", "state.desperation"),
+            };
+          }),
     bomb: orNull(root.bomb, (value) => {
       const bomb = needRecord(value, "state.bomb");
       return {

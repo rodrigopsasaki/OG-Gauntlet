@@ -414,35 +414,80 @@
 ;; (target-powerup-process in powerups.gc). Blue's lightning bolt, 259, is left out: Jak bends its angle by whether he is
 ;; jumping, which is his own state. A hazard with no eco shows nothing.
 
+;; The desperation. The eco is stronger the weaker Jak is: it multiplies the strength of every eco effect, which is how far a
+;; blue babak's speed and the bomb's pull go and how far a red hit throws him (never their chance or their number, and the
+;; red second hit stays one extra hit). It is 1.0 with Jak at full health (his fact's health-max, 3 in the game) and
+;; *gauntlet-desperation-max* with one hit left, linear between, so with the default 2.0 three hits is 1.0, two is 1.5 and
+;; one is 2.0. A blue babak that runs three times faster at full health runs six times faster at one hit, because the
+;; multiplier itself is scaled. It is read live wherever an effect is applied, so a power cell calms the lurkers at once.
+;; It is also what makes a charge look stronger: the aura below is denser and the glow brighter by the same number.
+
+(defconstant GAUNTLET_ECO_GLOW_MAX 2.0) ;; the glow of a charge is at most this many times its usual light, however high the desperation
+(defconstant GAUNTLET_ECO_AURA_MAX_EXTRA 2.0) ;; and its aura launches at most this many more bursts a frame than its usual one
+
+(defun gauntlet-desperation ()
+  "How many times stronger the eco is for Jak's health now: 1.0 at his full health, *gauntlet-desperation-max* at one hit
+   (or none) left, linear between, and 1.0 when there is no Jak or a Jak with no more than one hit to lose."
+  (if (and *target* (< 1.0 (-> *target* fact health-max)))
+    (lerp-scale 1.0 *gauntlet-desperation-max* (-> *target* fact health) (-> *target* fact health-max) 1.0)
+    1.0))
+
+(define *gauntlet-desperation-health* -1.0) ;; Jak's health the last time the poll looked, -1 with no Jak, so a change is told once
+
+(defun gauntlet-desperation-poll! ()
+  "Per-frame: say when Jak's health has changed, and what the eco does to him now."
+  (let ((health (if *target* (-> *target* fact health) -1.0)))
+    (when (!= health *gauntlet-desperation-health*)
+      (set! *gauntlet-desperation-health* health)
+      (if *target*
+        (format 0 "GAUNTLET DESPERATION health ~F of ~F, effects x ~F~%" health (-> *target* fact health-max) (gauntlet-desperation)))))
+  0)
+
 (defun gauntlet-eco-glow! ((pd process-drawable) (kind gauntlet-eco))
   "Push the colors of pd's draw toward kind's eco, with a light of its own on top (the ogre boss's draw glows the same
-   way). Once, when pd is made, after its skeleton is."
-  (case kind
-    (((gauntlet-eco red))
-     (set-vector! (-> pd draw color-mult) 1.0 0.55 0.55 1.0)
-     (set-vector! (-> pd draw color-emissive) 0.4 0.02 0.0 0.0))
-    (((gauntlet-eco blue))
-     (set-vector! (-> pd draw color-mult) 0.55 0.75 1.0 1.0)
-     (set-vector! (-> pd draw color-emissive) 0.0 0.1 0.45 0.0)))
+   way), the light burning harder as the desperation rises. When pd is made, after its skeleton is, and again every frame
+   by the aura."
+  (let ((burn (fmin (gauntlet-desperation) GAUNTLET_ECO_GLOW_MAX)))
+    (case kind
+      (((gauntlet-eco red))
+       (set-vector! (-> pd draw color-mult) 1.0 0.55 0.55 1.0)
+       (set-vector! (-> pd draw color-emissive) (* 0.4 burn) (* 0.02 burn) 0.0 0.0))
+      (((gauntlet-eco blue))
+       (set-vector! (-> pd draw color-mult) 0.55 0.75 1.0 1.0)
+       (set-vector! (-> pd draw color-emissive) 0.0 (* 0.1 burn) (* 0.45 burn) 0.0))))
+  (none))
+
+(defun gauntlet-eco-burst! ((pd process-drawable) (kind gauntlet-eco))
+  "One burst of kind's eco aura: a flash at one of pd's joints, a spark at another. The first three joints are the root's
+   and are left alone."
+  (let ((flash (rand-vu-int-range 3 (+ (-> pd node-list length) -1)))
+        (spark (rand-vu-int-range 3 (+ (-> pd node-list length) -1))))
+    (case kind
+      (((gauntlet-eco red))
+       (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 273 274))
+                         (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash)))
+       (launch-particles (-> *part-id-table* 275) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data spark))))
+      (((gauntlet-eco blue))
+       (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 255 256))
+                         (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash)))
+       (if (rand-vu-percent? 0.5)
+         (launch-particles (-> *part-id-table* 257) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash))))
+       (launch-particles (-> *part-id-table* 260) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data spark))))))
   (none))
 
 (defun gauntlet-eco-aura! ((pd process-drawable) (kind gauntlet-eco))
-  "One frame of kind's eco aura: a flash at one of pd's joints, a spark at another, which on something that moves stream
-   out behind it as a trail. Not while pd is off screen. The first three joints are the root's and are left alone."
+  "One frame of kind's eco aura: a burst, which on something that moves streams out behind it as a trail, and as many more
+   as the desperation is over 1.0 (a fraction of a burst is the chance of one), at most GAUNTLET_ECO_AURA_MAX_EXTRA, so a
+   charge burns thicker the weaker Jak is. The glow is kept up with it. Not while pd is off screen."
   (when (and (!= kind (gauntlet-eco none)) (not (logtest? (-> pd draw status) (draw-status hidden no-anim))))
-    (let ((flash (rand-vu-int-range 3 (+ (-> pd node-list length) -1)))
-          (spark (rand-vu-int-range 3 (+ (-> pd node-list length) -1))))
-      (case kind
-        (((gauntlet-eco red))
-         (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 273 274))
-                           (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash)))
-         (launch-particles (-> *part-id-table* 275) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data spark))))
-        (((gauntlet-eco blue))
-         (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 255 256))
-                           (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash)))
-         (if (rand-vu-percent? 0.5)
-           (launch-particles (-> *part-id-table* 257) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash))))
-         (launch-particles (-> *part-id-table* 260) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data spark)))))))
+    (gauntlet-eco-glow! pd kind)
+    (gauntlet-eco-burst! pd kind)
+    (let* ((extra (fmin (+ (gauntlet-desperation) -1.0) GAUNTLET_ECO_AURA_MAX_EXTRA))
+           (whole (the int extra)))
+      (dotimes (i whole)
+        (gauntlet-eco-burst! pd kind))
+      (if (rand-vu-percent? (- extra (the float whole)))
+        (gauntlet-eco-burst! pd kind))))
   (none))
 
 (defun gauntlet-eco-second-hit! ((jak process))
@@ -451,6 +496,31 @@
    pickup takes health, a negative green eco. It can never be the one that kills him, only the first can."
   (when (and *target* (< 1.0 (-> *target* fact health)))
     (send-event jak 'get-pickup (pickup-type eco-green) (- (-> *FACT-bank* health-single-inc))))
+  (none))
+
+;; ------------------------------------------------------------- the power cell --
+
+;; A power cell heals Jak. The game leaves his health alone when he takes one (pickup-collectable! in engine/game/game-info.gc
+;; only counts it and closes the task), so there is nothing to fight: the hook that file calls as the cell is taken (the same
+;; shape as *entity-born-hook*) raises his health to 3 hits if it was lower. Never above 3, and never for a Jak who is already
+;; dying. In the game 3 is health-max-default and nothing raises health-max or health past it (green eco seeks to health-max,
+;; the pills too), so 4 is not reachable; the heal is clamped to 3 anyway, and to health-max if that were ever lower.
+
+(defconstant GAUNTLET_CELL_HEAL_TO 3.0) ;; the hits a power cell heals Jak up to
+
+(defun *fuel-cell-picked-hook* ()
+  "Jak has just taken a power cell: with *gauntlet-cell-heal-enabled* on, heal him to GAUNTLET_CELL_HEAL_TO hits, or leave
+   him as he is when he has that many or more, or none left."
+  (when (and *gauntlet-cell-heal-enabled* *target*)
+    (let* ((fact (-> *target* fact))
+           (before (-> fact health))
+           (after (fmax before (fmin GAUNTLET_CELL_HEAL_TO (-> fact health-max)))))
+      (cond
+        ((and (< 0.0 before) (< before after))
+         (set! (-> fact health) after)
+         (set-time! (-> fact health-pickup-time))
+         (format 0 "GAUNTLET CELL healed from ~F to ~F~%" before after))
+        (else (format 0 "GAUNTLET CELL no heal needed, health ~F~%" before)))))
   (none))
 
 ;; ------------------------------------------------------------------ the ring --
@@ -768,7 +838,8 @@
 (defbehavior gauntlet-bomb-pull gauntlet-bomb ()
   "One frame of the bomb's gravity well. Jak within *gauntlet-bomb-pull-radius* of the bomb, sideways, is stepped toward
    it, never up or down and never past it. Gripped he moves at *gauntlet-bomb-ground-pull*; in the air his pull speed
-   grows by *gauntlet-bomb-pull* every second and starts over from the ground speed when he lands. The step is the whirlpool's
+   grows by *gauntlet-bomb-pull* every second and starts over from the ground speed when he lands. Either way the step is
+   the desperation times that speed, taken now, so the bomb pulls a weak Jak harder and a healed one at once less. The step is the whirlpool's
    (levels/sunken/whirlpool.gc): the cache filled around him, integrate-and-collide! with the sideways velocity, his
    status put back so his own state logic does not see a move it did not make."
   (let ((jak *target*))
@@ -788,7 +859,7 @@
              (+! (-> self pull-speed) (* *gauntlet-bomb-pull* (seconds-per-frame))))
            ;; never carry him past the bomb: the speed is capped at what covers the distance in one frame
            (set! (-> toward y) 0.0)
-           (vector-xz-normalize! toward (fmin (-> self pull-speed) (/ distance (seconds-per-frame))))
+           (vector-xz-normalize! toward (fmin (* (-> self pull-speed) (gauntlet-desperation)) (/ distance (seconds-per-frame))))
            (fill-cache-for-shape! control (+ 8192.0 (vector-xz-length toward)) (-> control root-prim collide-with))
            (let ((status (-> control status)))
              (integrate-and-collide! control toward)
@@ -1105,12 +1176,14 @@
 (defbehavior gauntlet-yakow-trample gauntlet-yakow ((jak process) (touching touching-shapes-entry))
   "Jak touched this yakow: one plain 'attack, which his own invulnerability can refuse, never a kill. He is thrown away from
    the yakow, which with the herd coming at him is mostly along its heading, out of the lane he was standing in. A red yakow
-   throws him much farther, and costs him a second hit once the first has landed (gauntlet-eco-second-hit!)."
+   throws him much farther, the farther the weaker he is (the desperation), and costs him a second hit once the first has
+   landed (gauntlet-eco-second-hit!)."
   (when (not (gauntlet-stampede-recent-hit?))
     (let* ((knock (vector-! (new 'stack-no-clear 'vector) (target-pos 0) (-> self root trans)))
            (red? (= (-> self eco) (gauntlet-eco red)))
-           (back (if red? GAUNTLET_ECO_RED_SHOVE_BACK GAUNTLET_STAMPEDE_SHOVE_BACK))
-           (up (if red? GAUNTLET_ECO_RED_SHOVE_UP GAUNTLET_STAMPEDE_SHOVE_UP)))
+           (strength (gauntlet-desperation))
+           (back (if red? (* GAUNTLET_ECO_RED_SHOVE_BACK strength) GAUNTLET_STAMPEDE_SHOVE_BACK))
+           (up (if red? (* GAUNTLET_ECO_RED_SHOVE_UP strength) GAUNTLET_STAMPEDE_SHOVE_UP)))
       (set! (-> knock y) 0.0)
       ;; standing exactly on the yakow's center has no direction away from it, so use the way it runs
       (if (< (vector-xz-length knock) 40.96)
@@ -3279,6 +3352,8 @@
      (,row "babak-charge-enabled" flag *gauntlet-babak-charge-enabled* GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT 0 0)
      (,row "babak-charge-chance" ratio *gauntlet-babak-charge-chance* GAUNTLET_BABAK_CHARGE_CHANCE_DEFAULT 0.0 1.0)
      (,row "babak-blue-speed" ratio *gauntlet-babak-blue-speed* GAUNTLET_BABAK_BLUE_SPEED_DEFAULT 1.0 4.0)
+     (,row "desperation-max" ratio *gauntlet-desperation-max* GAUNTLET_DESPERATION_MAX_DEFAULT 1.0 5.0)
+     (,row "cell-heal-enabled" flag *gauntlet-cell-heal-enabled* GAUNTLET_CELL_HEAL_ENABLED_DEFAULT 0 0)
      (,row "worm-cubes-enabled" flag *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT 0 0)
      (,row "worm-cube-count" count *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT 0.0 8.0)
      (,row "lurker-multiplier" count *gauntlet-lurker-multiplier* GAUNTLET_LURKER_MULTIPLIER_DEFAULT 1.0 5.0)
@@ -3456,7 +3531,7 @@
 
 (define *gauntlet-frame* 0) ;; polls so far, which is what the state file's frame counts
 (define *gauntlet-state-countdown* 0)
-(define *gauntlet-state-text* (new 'global 'string 4096 "")) ;; the file is built here and written in one go, so a reader catches as little of it half-written as possible
+(define *gauntlet-state-text* (new 'global 'string 8192 "")) ;; the file is built here and written in one go, so a reader catches as little of it half-written as possible; the settings are in it twice (in effect, and their defaults), about sixty of them, so it needs room
 (define *gauntlet-json-first* #t) ;; true until the object being written has a member, so the next one needs no comma
 
 (defun gauntlet-json-key ((out string) (name string))
@@ -3581,6 +3656,16 @@
        (format out "~S" (if (logtest? (-> *target* control status) (cshape-moving-flags onground onsurf)) "true" "false"))
        (gauntlet-json-close out))
       (else (format out "null")))
+    ;; what the eco is doing to Jak now: the multiplier on every effect, and the health it comes from
+    (gauntlet-json-key out "desperation")
+    (gauntlet-json-open out)
+    (gauntlet-json-key out "value")
+    (gauntlet-json-fixed out (gauntlet-desperation))
+    (gauntlet-json-key out "health")
+    (if *target* (gauntlet-json-fixed out (-> *target* fact health)) (format out "null"))
+    (gauntlet-json-key out "healthMax")
+    (if *target* (gauntlet-json-fixed out (-> *target* fact health-max)) (format out "null"))
+    (gauntlet-json-close out)
     (gauntlet-json-key out "bomb")
     (let* ((bomb (gauntlet-bomb-process))
            (state-name (if bomb (gauntlet-bomb-state-name bomb) #f)))
@@ -3701,11 +3786,12 @@
   0)
 
 (defun gauntlet-drop-poll! ()
-  "Per-frame hook: the console's settings are looked at first, so what they say holds for this frame; the drop spots, the
+  "Per-frame hook: the console's settings are looked at first, so what they say holds for this frame; Jak's health, for the desperation; the drop spots, the
    Sandover spot, the beach and the TNT barrels are watched every frame; every GAUNTLET_DROP_POLL_FRAMES frames look at the request counter, and drop once when it has changed since
    the last look; last, the state file, which then describes this frame."
   (+! *gauntlet-frame* 1)
   (gauntlet-settings-poll!)
+  (gauntlet-desperation-poll!)
   (gauntlet-drop-spots-poll!)
   (gauntlet-stampede-poll!)
   (gauntlet-klaww-poll!)

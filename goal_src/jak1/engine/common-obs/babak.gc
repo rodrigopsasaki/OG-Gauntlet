@@ -9,9 +9,12 @@
 ;; gauntlet: a babak may be born charged with eco, on every level (babak.gc is in GAME.CGO). Blue runs at Jak faster, red
 ;; hits twice as hard and throws him far, the same as the stampede's red yakows. Which one is rolled once, in
 ;; nav-enemy-method-48, and kept here. See "the eco charge" in pc/features/gauntlet-h.gc.
+;; The eco is stronger the weaker Jak is (gauntlet-desperation), so a charged babak re-reads its strength every frame
+;; (babak-burn!): blue-pace is the speed it was born with at Jak's full health, run-pace the speed it runs at now.
 (deftype babak (nav-enemy)
-  ((charge   gauntlet-eco)
-   (run-pace float))
+  ((charge    gauntlet-eco)
+   (blue-pace float)
+   (run-pace  float))
   (:states
    babak-run-to-cannon))
 
@@ -43,24 +46,25 @@
   :code
     (behavior ()
       ;; gauntlet: the run cycle plays run-pace times faster, which a babak that walks by its animation's own motion
-      ;; (use-align in its info) covers as ground: 1.0 for a plain one, the blue speed for a blue one
-      (let ((f30-0 (* (-> self run-pace) (nav-enemy-rnd-float-range 0.9 1.1))))
+      ;; (use-align in its info) covers as ground: 1.0 for a plain one, the blue speed for a blue one, times the desperation.
+      ;; run-pace is read on every frame of the cycle, so a Jak who heals mid-chase calms the babak at once
+      (let ((jitter (nav-enemy-rnd-float-range 0.9 1.1)))
         (cond
           ((ja-group? babak-jump-land-ja)
            (ja-no-eval :num! (seek!))
            (ja-channel-push! 1 (seconds 0.17))
-           (ja-no-eval :group! (-> self draw art-group data (-> self nav-info run-anim)) :num! (seek! max f30-0) :frame-num 0.0)
+           (ja-no-eval :group! (-> self draw art-group data (-> self nav-info run-anim)) :num! (seek! max (* (-> self run-pace) jitter)) :frame-num 0.0)
            (until (ja-done? 0)
              (ja-blend-eval)
              (suspend)
-             (ja :num! (seek! max f30-0))))
+             (ja :num! (seek! max (* (-> self run-pace) jitter)))))
           (else
            (ja-channel-push! 1 (seconds 0.2))
            (ja :group! (-> self draw art-group data (-> self nav-info run-anim)))
            (ja :num-func num-func-identity :frame-num 0.0)))
         (loop
           (suspend)
-          (ja :num! (loop! f30-0))))))
+          (ja :num! (loop! (* (-> self run-pace) jitter)))))))
 
 (defstate nav-enemy-stare (babak)
   :virtual #t
@@ -237,12 +241,29 @@
   0
   (none))
 
+;; gauntlet: one frame of the eco's strength in a charged babak. A blue one runs blue-pace times the desperation faster than a
+;; plain one (the multiplier itself is scaled), and the info says the same of its run speed and acceleration, which the
+;; rest of nav-enemy reads (an align babak does not move by them); a red one throws Jak the red distance times the
+;; desperation. Only a charged babak has an info of its own to write in (see nav-enemy-method-48), the shared one is never touched.
+(defun babak-burn! ((this babak))
+  (let ((strength (gauntlet-desperation)))
+    (case (-> this charge)
+      (((gauntlet-eco blue))
+       (set! (-> this run-pace) (* (-> this blue-pace) strength))
+       (set! (-> this nav-info run-travel-speed) (* (-> *babak-nav-enemy-info* run-travel-speed) (-> this run-pace)))
+       (set! (-> this nav-info run-acceleration) (* (-> *babak-nav-enemy-info* run-acceleration) (-> this run-pace))))
+      (((gauntlet-eco red))
+       (set! (-> this nav-info attack-shove-back) (* GAUNTLET_ECO_RED_SHOVE_BACK strength))
+       (set! (-> this nav-info attack-shove-up) (* GAUNTLET_ECO_RED_SHOVE_UP strength)))))
+  0)
+
 ;; gauntlet: only a plain babak, the type itself, is charged. babak-with-cannon shares this method but is left as the game
 ;; made it: never charged, its run-pace 1.0.
 (defmethod nav-enemy-method-48 ((this babak))
   (initialize-skeleton this *babak-sg* '())
   (set! (-> this charge) (gauntlet-eco none))
   (set! (-> this run-pace) 1.0)
+  (set! (-> this blue-pace) 1.0)
   ;; a charged babak has an info of its own, a copy on its own heap, so the shared one the others read is never touched
   (let ((info *babak-nav-enemy-info*))
     (when (and *gauntlet-babak-charge-enabled*
@@ -252,19 +273,17 @@
       (set! info (copy info 'process))
       (case (-> this charge)
         ;; blue is speed: the run cycle plays faster (run-pace), and the info says the same of its run speed and
-        ;; acceleration, which the rest of nav-enemy reads (an align babak does not move by them)
+        ;; acceleration, which the rest of nav-enemy reads (an align babak does not move by them). The speed it is
+        ;; born with is kept as its base, and babak-burn! scales it by the desperation every frame
         (((gauntlet-eco blue))
-         (set! (-> this run-pace) *gauntlet-babak-blue-speed*)
-         (set! (-> info run-travel-speed) (* (-> info run-travel-speed) *gauntlet-babak-blue-speed*))
-         (set! (-> info run-acceleration) (* (-> info run-acceleration) *gauntlet-babak-blue-speed*)))
-        ;; red is strength: it throws Jak as far as a red yakow does, and its touch costs a second hit
-        ;; (nav-enemy-touch-handler and touch-handler below)
-        (((gauntlet-eco red))
-         (set! (-> info attack-shove-back) GAUNTLET_ECO_RED_SHOVE_BACK)
-         (set! (-> info attack-shove-up) GAUNTLET_ECO_RED_SHOVE_UP)))
+         (set! (-> this blue-pace) *gauntlet-babak-blue-speed*)
+         (set! (-> this run-pace) *gauntlet-babak-blue-speed*)))
+      ;; red is strength: it throws Jak as far as a red yakow does, and its touch costs a second hit
+      ;; (nav-enemy-touch-handler and touch-handler below); babak-burn! sets the throw
       (gauntlet-eco-glow! this (-> this charge))
       (format 0 "GAUNTLET CHARGE babak ~S ~S~%" (-> this name) (if (= (-> this charge) (gauntlet-eco blue)) "blue" "red")))
-    (init-defaults! this info))
+    (init-defaults! this info)
+    (babak-burn! this))
   (set! (-> this neck up) (the-as uint 0))
   (set! (-> this neck nose) (the-as uint 1))
   (set! (-> this neck ear) (the-as uint 2))
@@ -288,9 +307,10 @@
     (set! (-> this nav-info) (the-as nav-enemy-info (+ (the-as int (-> this nav-info)) offset))))
   (call-parent-method this offset))
 
-;; gauntlet: the aura of a charged babak, every frame it is posted. A babak waiting in its idle state is not posted by
-;; common-post, so it glows but does not spark until it wakes.
+;; gauntlet: the strength and the aura of a charged babak, every frame it is posted. A babak waiting in its idle state is
+;; not posted by common-post, so it glows but does not spark until it wakes.
 (defmethod common-post ((this babak))
+  (babak-burn! this)
   (gauntlet-eco-aura! this (-> this charge))
   (call-parent-method this)
   (none))
@@ -301,7 +321,9 @@
   landed)
 
 (defmethod touch-handler ((this babak) (arg0 process) (arg1 event-message-block))
+  (babak-burn! this)
   (babak-follow-through this arg0 (call-parent-method this arg0 arg1)))
 
 (defmethod nav-enemy-touch-handler ((this babak) (arg0 process) (arg1 event-message-block))
+  (babak-burn! this)
   (babak-follow-through this arg0 (call-parent-method this arg0 arg1)))

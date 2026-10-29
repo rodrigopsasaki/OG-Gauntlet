@@ -123,6 +123,7 @@
   <span id="live" class="pill"><span class="dot"></span><span id="live-text">connecting</span></span>
   <span class="stat">Level <b id="level">-</b></span>
   <span class="stat">Jak <b id="jak">-</b></span>
+  <span class="stat" id="desperation-stat" hidden>Eco strength <b id="desperation">-</b></span>
   <span class="stat" id="bridge-stat" hidden>Bridge <b id="bridge">-</b></span>
   <span class="stat" id="vent-stat" hidden>Vent <b id="vent">-</b></span>
   <span class="stat" id="klaww-stat" hidden>Klaww <b id="klaww">-</b></span>
@@ -309,7 +310,8 @@ function buildSettings(schema) {
     const header = el("h3", {}, el("span", {}, group),
       el("button", { class: "small", onclick: () => resetKeys(specs.map((spec) => spec.key)) }, "Reset group"));
     // the horde has a live readout above its sliders: the crowd the settings below are shaping
-    const readout = group === "Horde" ? [el("div", { id: "horde-status", class: "group-status", hidden: "" })] : [];
+    const readout = group === "Horde" ? [el("div", { id: "horde-status", class: "group-status", hidden: "" })]
+      : group === "Desperation" ? [el("div", { id: "desperation-status", class: "group-status", hidden: "" })] : [];
     host.append(el("div", { class: "group" }, header, ...readout, ...specs.map(buildRow)));
   }
 }
@@ -373,6 +375,16 @@ function renderHeader(payload) {
   $("level").textContent = state ? (state.level === "none" ? "no Jak" : state.level) : "-";
   const jak = state && state.jak;
   $("jak").textContent = jak ? `${Math.round(jak.x)}, ${Math.round(jak.y)}, ${Math.round(jak.z)}${jak.onGround ? "" : " (air)"}` : "-";
+
+  // a game build older than the desperation leaves the member out, and both readouts stay hidden
+  const desperation = state && state.desperation;
+  $("desperation-stat").hidden = !desperation;
+  $("desperation-status").hidden = !desperation;
+  if (desperation) {
+    const hits = desperation.health === null ? "no Jak" : `${fmt(desperation.health)} of ${fmt(desperation.healthMax)} hits`;
+    $("desperation").textContent = `x${fmt(desperation.value)}`;
+    $("desperation-status").textContent = `Eco is x${fmt(desperation.value)} as strong now (${hits})`;
+  }
 
   const bridge = state && state.bridge;
   $("bridge-stat").hidden = !bridge;
