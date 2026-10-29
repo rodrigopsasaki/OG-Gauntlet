@@ -50,10 +50,11 @@
 ;;
 ;; The bomb pulls Jak in, which in the eco language is blue: its body glows blue and trails Jak's blue eco aura.
 ;;
-;; It also draws its blast on the ground, in the one language the mod has for an area that will hurt (see gauntlet-ring): from
-;; the moment it appears, a steady ring at the blast radius around where it will land, and a ring that closes in from it as the
-;; countdown runs down and meets the center as it goes off. The blast radius is far wider than a boulder's, so the ground is
-;; probed once, when the bomb appears, and the rings follow it.
+;; It also draws its blast on the ground, in the one language the mod has for an area that will hurt (see gauntlet-ring), whose
+;; rule is: get out before the inner ring reaches you. From the moment the bomb appears, a red wall stands at the blast radius
+;; around where it will land, pulsing quicker as the countdown runs down. When the countdown starts a ring grows from the middle
+;; and reaches the wall as the bomb goes off, and the ground it has swept glows: that ground is already the blast's. The blast
+;; radius is far wider than a boulder's, so the ground is probed once, when the bomb appears, and the circles follow it.
 ;;
 ;; The bomb is a brain (gauntlet-bomb, a bare process-drawable that falls,
 ;; counts down and goes off) with a manipy for a body, the game's own way to put
@@ -455,33 +456,42 @@
 ;; ------------------------------------------------------------------ the ring --
 
 (defconstant GAUNTLET_RING_LIFT (meters 0.3)) ;; a ring floats this far over the ground so it is not buried
-(defconstant GAUNTLET_RING_SPACING (meters 2.5)) ;; along the arc, between spots of a steady ring: close enough to read as a line at any radius
-(defconstant GAUNTLET_RING_CLOSING_SPACING (meters 5)) ;; and of a closing ring, which is the lighter of the two
+(defconstant GAUNTLET_RING_EDGE_SPACING (meters 1)) ;; along the arc, between the spots of the wall at the edge: close enough that they run together into one line
+(defconstant GAUNTLET_RING_CLOCK_SPACING (meters 1.5)) ;; and of the ring that grows from the middle, which is the lighter of the two
 (defconstant GAUNTLET_RING_MIN_SPOTS 6) ;; a ring this small is still a ring, not a spot
-(defconstant GAUNTLET_RING_MAX_SPOTS 96) ;; the most spots one ring takes, however big a radius the console sets: the particle table's cost. gauntlet-rim holds this many
-(defconstant GAUNTLET_PART_RING_MARKER 3532) ;; the particle a spot launches (it was Klaww's marker first)
+(defconstant GAUNTLET_RING_MAX_SPOTS 112) ;; the most spots one ring takes, however big a radius the console sets: the particle table's cost. A bigger circle spaces its spots wider, it never costs more
+(defconstant GAUNTLET_RIM_SPACING (meters 2.5)) ;; along the arc, between the ground probes of a rim
+(defconstant GAUNTLET_RIM_SAMPLES 96) ;; the most probes a rim keeps. gauntlet-rim holds this many, and a circle with more spots reads between them
+(defconstant GAUNTLET_RING_PULSE_HZ 1.5) ;; the wall pulses this many times a second before the clock has started...
+(defconstant GAUNTLET_RING_PULSE_EXTRA 6.0) ;; ...and by the time the clock has run out it has pulsed this many times more, quicker the nearer the end gets
+(defconstant GAUNTLET_RING_MAX_EMBERS 16) ;; the most embers launched in one frame over the swept ground
+(defconstant GAUNTLET_RING_EMBER_AREA 50.0) ;; square meters of swept ground one ember a frame is spread over, so a small blast is not a bonfire
+(defconstant GAUNTLET_PART_RING_EDGE_DIM 3551) ;; the particles a ring launches: the wall between pulses...
+(defconstant GAUNTLET_PART_RING_EDGE_BRIGHT 3552) ;; ...and on a pulse,
+(defconstant GAUNTLET_PART_RING_CLOCK 3553) ;; the ring that grows from the middle,
+(defconstant GAUNTLET_PART_RING_EMBER 3554) ;; and the glow of the ground it has swept
 
 ;; A ring over ground that is not flat. The ground is probed for once, where the ring will stand, and what the probes found
 ;; is kept here: how much higher or lower the ground is at each of count spots around the rim than at the center, all at
-;; the radius the probes were made at. A ring of any smaller radius takes its heights from these, in proportion.
+;; the radius the probes were made at. A circle of any smaller radius takes its heights from these, in proportion.
 (deftype gauntlet-rim (structure)
   ((count  int32)
    (radius float)
-   (rise   float 96))) ;; GAUNTLET_RING_MAX_SPOTS of them
+   (rise   float 96))) ;; GAUNTLET_RIM_SAMPLES of them
 
 ;; the rim of a ring on flat ground: no spots, so every ring that is given it stands at the height of its center
 (define *gauntlet-flat-rim* (new 'global 'gauntlet-rim))
 (set! (-> *gauntlet-flat-rim* count) 0)
 
-(defun gauntlet-ring-spots ((radius float) (spacing float))
+(defun gauntlet-ring-spots ((radius float) (spacing float) (most int))
   "How many spots a circle of radius takes to have one every spacing along its arc, at least GAUNTLET_RING_MIN_SPOTS and at
-   most GAUNTLET_RING_MAX_SPOTS."
-  (max GAUNTLET_RING_MIN_SPOTS (min GAUNTLET_RING_MAX_SPOTS (the int (/ (* TWO_PI radius) spacing)))))
+   most most."
+  (max GAUNTLET_RING_MIN_SPOTS (min most (the int (/ (* TWO_PI radius) spacing)))))
 
 (defun gauntlet-ring-rise ((rim gauntlet-rim) (radius float) (angle float))
   "How far above the ground at the center the ground is at angle (in rotation units) on a ring of radius: between the two
-   probes of rim on either side of that angle, and in proportion to radius over the radius they were made at, so the ring
-   that closes in settles onto the center's own ground. Nothing for a flat rim. A ring wider than the probes were made at
+   probes of rim on either side of that angle, and in proportion to radius over the radius they were made at, so the
+   circles inside settle onto the center's own ground. Nothing for a flat rim. A circle wider than the probes were made at
    keeps the heights of the rim."
   (cond
     ((zero? (-> rim count)) 0.0)
@@ -495,20 +505,129 @@
             (inward (if (< 0.0 (-> rim radius)) (fmin 1.0 (/ radius (-> rim radius))) 0.0)))
        (* inward (lerp (-> rim rise low) (-> rim rise high) (- at (the float low))))))))
 
-;; Every circle drawn on the ground in this mod means the same thing: get out before the inner ring arrives. The steady ring
-;; is the edge of what will hurt, the ring that closes in on it from the middle is the clock, and it meets the center at the
-;; moment of impact. A new hazard with an area shows its area this way, with this function, and never some other way.
-(defun gauntlet-ring ((center vector) (radius float) (spots int) (phase float) (rim gauntlet-rim))
-  "Launch the marker particle on spots evenly around a circle of radius on the ground at center, turned by phase (in
-   rotation units). rim says how the ground rises and falls around center, or *gauntlet-flat-rim* when it is flat."
+;; Every circle drawn on the ground in this mod means the same thing: get out before the inner ring reaches you. The red wall
+;; at the edge, standing still, is where the hurt ends; it pulses, quicker the less time is left. The inner ring grows from the
+;; middle and reaches the wall at the moment of impact: it is the clock. Whatever it has swept already glows, and is the blast's:
+;; being behind the inner ring is not being safe, it is the one place to get out of. A new hazard with an area shows its area
+;; this way, with gauntlet-ring, and never some other way.
+
+;; The wall between pulses is dim, and a pulse lights it up, so the line never goes out: it only breathes. Launched on every
+;; spot of a circle every frame, so each lives two or three frames, long enough that no frame shows a gap, short enough that
+;; nothing trails. Red, the colour of strength. Big enough that spots 2 m apart run together.
+(defpart 3551
+  :init-specs
+  ((:texture (hotdot effects))
+   (:num 1.0)
+   (:scale-x (meters 2.6))
+   (:scale-y :copy scale-x)
+   (:r 255.0)
+   (:g 12.0)
+   (:b 4.0)
+   (:a 30.0)
+   (:timer (seconds 0.04))
+   (:flags (bit2 bit3 bit14))))
+
+(defpart 3552
+  :init-specs
+  ((:texture (hotdot effects))
+   (:num 1.0)
+   (:scale-x (meters 3.2))
+   (:scale-y :copy scale-x)
+   (:r 255.0)
+   (:g 70.0)
+   (:b 24.0)
+   (:a 112.0)
+   (:timer (seconds 0.04))
+   (:flags (bit2 bit3 bit14))))
+
+;; The clock: hotter than the wall, orange going on yellow, so the ring that is coming and the wall it is coming to are not one thing.
+(defpart 3553
+  :init-specs
+  ((:texture (hotdot effects))
+   (:num 1.0)
+   (:scale-x (meters 2.2))
+   (:scale-y :copy scale-x)
+   (:r 255.0)
+   (:g 170.0)
+   (:b 50.0)
+   (:a 96.0)
+   (:timer (seconds 0.04))
+   (:flags (bit2 bit3 bit14))))
+
+;; The swept ground: a few embers a frame, each rising a little and fading over a quarter of a second.
+(defpart 3554
+  :init-specs
+  ((:texture (hotdot effects))
+   (:num 1.0)
+   (:scale-x (meters 1.0) (meters 0.8))
+   (:scale-y :copy scale-x)
+   (:r 255.0)
+   (:g 40.0 70.0)
+   (:b 4.0 12.0)
+   (:a 60.0)
+   (:vel-y (meters 0.002))
+   (:fade-a -0.8)
+   (:timer (seconds 0.25))
+   (:flags (bit2 bit3 bit14))))
+
+(defun gauntlet-fraction ((value float))
+  "The part of a non-negative value after the point."
+  (- value (the float (the int value))))
+
+(defun gauntlet-ring-circle ((center vector) (radius float) (spots int) (part int) (rim gauntlet-rim))
+  "Launch the particle part on each of spots, evenly around a circle of radius on the ground at center. rim says how the
+   ground rises and falls around center, or *gauntlet-flat-rim* when it is flat."
   (let ((at (new 'stack-no-clear 'vector)))
     (dotimes (i spots)
-      (let ((angle (+ phase (* (/ DEGREES_PER_ROT (the float spots)) (the float i)))))
+      (let ((angle (* (/ DEGREES_PER_ROT (the float spots)) (the float i))))
         (set! (-> at x) (+ (-> center x) (* radius (sin angle))))
         (set! (-> at y) (+ (-> center y) (gauntlet-ring-rise rim radius angle) GAUNTLET_RING_LIFT))
         (set! (-> at z) (+ (-> center z) (* radius (cos angle))))
         (set! (-> at w) 1.0)
-        (launch-particles (-> *part-id-table* GAUNTLET_PART_RING_MARKER) at))))
+        (launch-particles (-> *part-id-table* part) at))))
+  0)
+
+(defun gauntlet-ring-fill ((center vector) (swept float) (rim gauntlet-rim))
+  "Launch a few embers on the ground inside swept of center: a sunflower, the points of one frame at the golden angle from
+   one another and at radii whose squares are evenly spaced, so they cover the disc evenly and never in clumps. Each frame
+   the whole pattern is turned and shifted by amounts that never come round, so over the life of an ember the disc is
+   covered without a spoke or a ring showing. The ground under each is the rim's, in proportion."
+  (let* ((meters-swept (/ swept METER_LENGTH))
+         (embers (min GAUNTLET_RING_MAX_EMBERS
+                      (max 2 (the int (/ (* (* PI meters-swept) meters-swept) GAUNTLET_RING_EMBER_AREA)))))
+         (tick (the float (logand (current-time) #xfff)))
+         (shift (gauntlet-fraction (* tick 0.1236068)))
+         (turn (gauntlet-fraction (* tick 0.0472136)))
+         (at (new 'stack-no-clear 'vector)))
+    (dotimes (i embers)
+      (let* ((from-middle (* swept (sqrtf (/ (+ (the float i) shift) (the float embers)))))
+             (angle (* DEGREES_PER_ROT (gauntlet-fraction (+ (* (the float i) 0.381966) turn)))))
+        (set! (-> at x) (+ (-> center x) (* from-middle (sin angle))))
+        (set! (-> at y) (+ (-> center y) (gauntlet-ring-rise rim from-middle angle) GAUNTLET_RING_LIFT))
+        (set! (-> at z) (+ (-> center z) (* from-middle (cos angle))))
+        (set! (-> at w) 1.0)
+        (launch-particles (-> *part-id-table* GAUNTLET_PART_RING_EMBER) at))))
+  0)
+
+(defun gauntlet-ring ((center vector) (radius float) (clock float) (elapsed float) (rim gauntlet-rim))
+  "Draw an area that will hurt, on the ground at center, for one frame: a wall of red at radius that does not turn and pulses,
+   a ring that has grown from the middle to radius times clock, and embers over the ground that ring has swept. clock is the
+   part of the time that has run, 0.0 while it has not started and 1.0 at the moment of impact, so the ring reaches the wall
+   exactly then. elapsed is the seconds since the drawing began, which the pulse runs by: it beats GAUNTLET_RING_PULSE_HZ times
+   a second, and over the whole run of the clock GAUNTLET_RING_PULSE_EXTRA times more, in proportion to the square of the clock
+   so that the rate climbs as the clock does. rim says how the ground rises and falls around center, or *gauntlet-flat-rim*
+   when it is flat."
+  (let* ((run (fmax 0.0 (fmin 1.0 clock)))
+         (pulse (+ (* GAUNTLET_RING_PULSE_HZ elapsed) (* (* GAUNTLET_RING_PULSE_EXTRA run) run)))
+         (swept (* radius run)))
+    (gauntlet-ring-circle center radius (gauntlet-ring-spots radius GAUNTLET_RING_EDGE_SPACING GAUNTLET_RING_MAX_SPOTS)
+                          (if (< (gauntlet-fraction pulse) 0.5) GAUNTLET_PART_RING_EDGE_BRIGHT GAUNTLET_PART_RING_EDGE_DIM)
+                          rim)
+    ;; the clock has not started, or the area is a point: nothing has been swept
+    (when (< (meters 1) swept)
+      (gauntlet-ring-circle center swept (gauntlet-ring-spots swept GAUNTLET_RING_CLOCK_SPACING GAUNTLET_RING_MAX_SPOTS)
+                            GAUNTLET_PART_RING_CLOCK rim)
+      (gauntlet-ring-fill center swept rim)))
   0)
 
 ;; ------------------------------------------------------------------ the bomb --
@@ -522,7 +641,7 @@
    (pulling symbol)
    (countdown int)
    (gravity float)
-   (start-time time-frame) ;; when it appeared: the rings turn by it, through the fall and the countdown alike
+   (start-time time-frame) ;; when it appeared: the wall pulses by it, through the fall and the countdown alike
    (rim gauntlet-rim :inline)) ;; how the ground rises and falls around where it lands, probed once
   (:states
    gauntlet-bomb-fall
@@ -590,10 +709,10 @@
 
 (defbehavior gauntlet-bomb-probe-rim gauntlet-bomb ()
   "Find the ground around where the bomb lands, once: the height of the ground at each spot of a ring at *gauntlet-bomb-blast-radius*
-   from the landing, against the height under the bomb, kept in its rim for the rings to be drawn from every frame after. A
+   from the landing, against the height under the bomb, kept in its rim for the circles to be drawn from every frame after. A
    spot with no ground to be found under it takes the height of the ground under the bomb."
   (let* ((radius *gauntlet-bomb-blast-radius*)
-         (spots (gauntlet-ring-spots radius GAUNTLET_RING_SPACING))
+         (spots (gauntlet-ring-spots radius GAUNTLET_RIM_SPACING GAUNTLET_RIM_SAMPLES))
          (low (-> self ground-y))
          (high (-> self ground-y))
          (probe (new 'stack-no-clear 'vector))
@@ -616,23 +735,19 @@
     (format 0 "GAUNTLET BOMB ring ~D spots, radius ~M m, ground from ~M m to ~M m~%" spots radius low high))
   0)
 
-(defbehavior gauntlet-bomb-mark-blast gauntlet-bomb ((remaining float))
-  "Draw what the blast will take, from the moment the bomb starts to fall until it goes off, the way a boulder's landing is
-   drawn: a steady ring at *gauntlet-bomb-blast-radius* on the ground where it lands, and a second ring that closes in on
-   it and meets the center when the countdown reaches zero. remaining is the part of the countdown still to run, 1.0 for
-   the whole of it (through the fall, when the clock has not started) down to 0.0. Both rings follow the ground the way
-   the probes found it."
-  (let ((elapsed (the float (- (current-time) (-> self start-time))))
-        (center (new 'stack-no-clear 'vector))
-        (radius *gauntlet-bomb-blast-radius*))
-    ;; the bomb is high in the air while it falls, and the rings are on the ground it will land on
+(defbehavior gauntlet-bomb-mark-blast gauntlet-bomb ((clock float))
+  "Draw what the blast will take, from the moment the bomb starts to fall until it goes off, in the mod's one language for an
+   area that will hurt (gauntlet-ring): a red wall at *gauntlet-bomb-blast-radius* on the ground where it lands, a ring that
+   grows from the middle and reaches the wall when the countdown reaches zero, and the ground it has swept glowing. clock is
+   the part of the countdown that has run: 0.0 through the fall, when the clock has not started, up to 1.0 at the blast. All
+   of it follows the ground the way the probes found it."
+  (let ((center (new 'stack-no-clear 'vector)))
+    ;; the bomb is high in the air while it falls, and the circles are on the ground it will land on
     (set! (-> center x) (-> self root trans x))
     (set! (-> center y) (-> self ground-y))
     (set! (-> center z) (-> self root trans z))
     (set! (-> center w) 1.0)
-    (gauntlet-ring center radius (gauntlet-ring-spots radius GAUNTLET_RING_SPACING) (* 40.0 elapsed) (-> self rim))
-    (let ((closing (* radius remaining)))
-      (gauntlet-ring center closing (gauntlet-ring-spots closing GAUNTLET_RING_CLOSING_SPACING) (* -80.0 elapsed) (-> self rim))))
+    (gauntlet-ring center *gauntlet-bomb-blast-radius* clock (gauntlet-seconds-since (-> self start-time)) (-> self rim)))
   0)
 
 ;; ------------------------------------------------------------------ the pull --
@@ -696,7 +811,7 @@
     (gauntlet-ground-below where ground)
     (set! (-> self ground-y) (-> ground y)))
   (set! (-> self root trans quad) (-> where quad))
-  ;; where it lands is known now, and so is the ground around it: found once, for the rings of the fall and the countdown
+  ;; where it lands is known now, and so is the ground around it: found once, for the circles of the fall and the countdown
   (gauntlet-bomb-probe-rim)
   (+! (-> self root trans y) *gauntlet-bomb-drop-height*)
   (set! (-> self fall-from) (-> self root trans y))
@@ -724,8 +839,8 @@
         ;; no body, no bomb
         (if (not body) (go gauntlet-bomb-gone))
         (gauntlet-bomb-aura)
-        ;; the clock has not started: the closing ring waits at the full radius
-        (gauntlet-bomb-mark-blast 1.0)
+        ;; the clock has not started: only the wall stands
+        (gauntlet-bomb-mark-blast 0.0)
         (let* ((fallen (gauntlet-seconds-since (-> self state-time)))
                (y (- (-> self fall-from) (* 0.5 (-> self gravity) fallen fallen))))
           (set! (-> self root trans y) (fmax y (-> self ground-y)))
@@ -759,8 +874,8 @@
       (gauntlet-bomb-aura)
       (let* ((elapsed (- (current-time) (-> self state-time)))
              (remaining (fmax 0.0 (/ (the float (- (-> self countdown) elapsed)) (the float (-> self countdown))))))
-        ;; the closing ring is the clock itself: it reaches the center on the frame the blast goes off
-        (gauntlet-bomb-mark-blast remaining)
+        ;; the growing ring is the clock itself: it reaches the wall on the frame the blast goes off
+        (gauntlet-bomb-mark-blast (- 1.0 remaining))
         ;; the finale's own warning: a beep and a flash each time the clock's cosine drops under the bar,
         ;; and the bar drops with every beep, so they come faster as the end nears
         (when (< (cos (* 16384.0 (- 1.0 remaining))) (-> self next-tick))
@@ -1488,21 +1603,7 @@
 (defpart 3529
   :init-specs ((:fade-r 0.0) (:fade-g 0.0) (:fade-b 0.0)))
 
-;; Where a boulder will land: one of these launched on each spot of a ring, every frame. Orange so it reads as danger
-;; against the sand, short-lived so a ring that moves or closes in leaves no trail.
-(defpart 3532
-  :init-specs
-  ((:texture (hotdot effects))
-   (:num 1.0)
-   (:scale-x (meters 0.9))
-   (:scale-y :copy scale-x)
-   (:r 255.0)
-   (:g 90.0)
-   (:b 16.0)
-   (:a 120.0)
-   (:timer (seconds 0.08))
-   (:flags (bit2 bit3 bit14))))
-
+;; The glow in the middle of where a boulder, or Klaww, will land, launched every frame it is in the air.
 (defpart 3533
   :init-specs
   ((:texture (starflash effects))
@@ -1706,13 +1807,13 @@
 ;; ---------------------------------------------------------------- a boulder --
 
 (defbehavior gauntlet-boulder-mark-landing gauntlet-boulder ()
-  "Draw where it will land, from the moment it leaves his hand: a steady ring at the radius that will hurt, a second ring that
-   closes in on it as the boulder falls and meets it at the instant of the landing, and a glow in the middle. The player
-   learns the pattern: step out of the ring before the inner one arrives."
+  "Draw where it will land, from the moment it leaves his hand, in the mod's one language for an area that will hurt
+   (gauntlet-ring): a red wall at the radius that will hurt, a ring that grows from the middle as the boulder falls and
+   reaches the wall at the instant of the landing, and a glow in the middle. The player learns the pattern: get out before
+   the inner ring reaches you."
   (let* ((elapsed (the float (- (current-time) (-> self start-time))))
          (progress (fmin 1.0 (/ elapsed (-> self flight)))))
-    (gauntlet-ring (-> self land) (-> self radius) 16 (* 40.0 elapsed) *gauntlet-flat-rim*)
-    (gauntlet-ring (-> self land) (* (-> self radius) (- 1.0 progress)) 8 (* -80.0 elapsed) *gauntlet-flat-rim*)
+    (gauntlet-ring (-> self land) (-> self radius) progress (/ elapsed (the float (seconds 1))) *gauntlet-flat-rim*)
     (launch-particles (-> *part-id-table* GAUNTLET_PART_KLAWW_CENTER) (-> self land)))
   0)
 
@@ -1926,9 +2027,8 @@
       (let* ((fallen (gauntlet-seconds-since (-> self state-time)))
              (above (- GAUNTLET_KLAWW_FALL_HEIGHT (* 0.5 GAUNTLET_KLAWW_FALL_GRAVITY fallen fallen))))
         (set! (-> self root trans y) (+ (-> self landing y) (fmax 0.0 above)))
-        ;; where he will land, drawn the way a boulder's landing is: a steady ring and one that closes in as he nears the ground
-        (gauntlet-ring (-> self landing) GAUNTLET_KLAWW_LAND_RADIUS 16 (* 40.0 fallen) *gauntlet-flat-rim*)
-        (gauntlet-ring (-> self landing) (* GAUNTLET_KLAWW_LAND_RADIUS (/ (fmax 0.0 above) GAUNTLET_KLAWW_FALL_HEIGHT)) 8 (* -80.0 fallen) *gauntlet-flat-rim*)
+        ;; where he will land, drawn the way a boulder's landing is: a wall, and a ring that grows to meet it as he nears the ground
+        (gauntlet-ring (-> self landing) GAUNTLET_KLAWW_LAND_RADIUS (- 1.0 (/ (fmax 0.0 above) GAUNTLET_KLAWW_FALL_HEIGHT)) fallen *gauntlet-flat-rim*)
         (launch-particles (-> *part-id-table* GAUNTLET_PART_KLAWW_CENTER) (-> self landing))
         (if (>= 0.0 above) (go gauntlet-klaww-land))))
   :code
