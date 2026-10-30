@@ -1885,19 +1885,42 @@
       (if (gauntlet-klaww-button-spent? i) (+! count 1)))
     count))
 
-;; His rage. The fewer hits he has left the faster he throws, in the way the desperation makes the eco stronger the fewer hits
-;; Jak has left: one named number, 1.0 with no hit taken, *gauntlet-klaww-rage-max* with one hit left, linear between (with the
-;; default 2.0 and five buttons, 0 to 4 hits taken is 1.0, 1.25, 1.5, 1.75, 2.0). It divides the rest between his throws and
-;; nothing else: the wind-up is the warning a boulder gives and stays as long as it is, however angry he is. It is read from the
-;; hits, which the spent buttons are, every time he asks whether it is time to throw, so a heal slows him back down at once.
+;; His fury. The fewer hits he has left the angrier he is: one fraction, 0.0 with no hit taken and 1.0 with one hit left, linear between
+;; (hits taken over the most he can take before the last, so with five buttons 0 to 4 hits taken is 0, 0.25, 0.5, 0.75, 1), read from
+;; the hits, which the spent buttons are, every time it is asked, so a heal calms him at once. Two things grow with it, both between
+;; 1.0 and a console maximum by the same line:
+;;   his rage, *gauntlet-klaww-rage-max*: how many times as often he throws. It divides the target gap between one release and the next,
+;;                and the throw animations play fast enough to make that gap real (gauntlet-klaww-throw-rate), wind-up and follow-through
+;;                alike, so a faster Klaww winds up faster too: the boulder's warning is shorter, which is what being angrier costs the player;
+;;   the radius, *gauntlet-klaww-radius-max*: how many times as wide his boulders blast, frozen for each boulder as it leaves his hand.
+(defun gauntlet-klaww-fury ()
+  "How angry he is for the hits he has taken: 0.0 with none, 1.0 with one hit left (and with none left)."
+  (fmin 1.0 (/ (the float (gauntlet-klaww-hit-count)) (the float (+ GAUNTLET_KLAWW_MAX_HITS -1)))))
+
 (defun gauntlet-klaww-rage ()
-  "How many times faster he throws for the hits he has taken: 1.0 with none, *gauntlet-klaww-rage-max* with one hit left."
-  (lerp-scale 1.0 *gauntlet-klaww-rage-max* (the float (gauntlet-klaww-hit-count)) 0.0 (the float (+ GAUNTLET_KLAWW_MAX_HITS -1))))
+  "How many times as often he throws for his fury: 1.0 with none, *gauntlet-klaww-rage-max* with one hit left."
+  (+ 1.0 (* (+ *gauntlet-klaww-rage-max* -1.0) (gauntlet-klaww-fury))))
+
+(defun gauntlet-klaww-radius-multiplier ()
+  "How many times as wide a boulder blasts for his fury: 1.0 with none, *gauntlet-klaww-radius-max* with one hit left."
+  (+ 1.0 (* (+ *gauntlet-klaww-radius-max* -1.0) (gauntlet-klaww-fury))))
+
+(defun gauntlet-klaww-boulder-radius ()
+  "The radius, in game units, a boulder thrown now will blast: the console's radius widened by his fury."
+  (* *gauntlet-klaww-boulder-radius* (gauntlet-klaww-radius-multiplier)))
 
 (defun gauntlet-klaww-throw-gap ()
-  "The time from one boulder leaving his hand to the next boulder's wind-up counted in, in ticks, as it is now: the
-   console's interval shortened by the rage."
+  "The target time from one boulder leaving his hand to the next, in ticks, as it is now: the console's interval shortened by the rage."
   (the int (/ (the float *gauntlet-klaww-throw-interval*) (gauntlet-klaww-rage))))
+
+(defconstant GAUNTLET_KLAWW_MAX_THROW_RATE 4.0) ;; the throw animations never play more than this many times faster, however short the gap asked for
+
+(defun gauntlet-klaww-throw-rate ()
+  "How many times faster than they naturally are the throw animations play, so that a throw from the start of its wind-up to the end
+   of its follow-through takes the target gap: the natural cycle over the gap, never slower than natural (a longer gap is rested,
+   not played slowly) and never more than GAUNTLET_KLAWW_MAX_THROW_RATE."
+  (fmin GAUNTLET_KLAWW_MAX_THROW_RATE
+        (fmax 1.0 (/ (the float GAUNTLET_KLAWW_THROW_CYCLE) (the float (max 1 (gauntlet-klaww-throw-gap)))))))
 
 (deftype gauntlet-klaww (process-drawable)
   ((windup     time-frame)
@@ -1980,6 +2003,58 @@
     (launch-particles (-> *part-id-table* GAUNTLET_PART_KLAWW_CENTER) (-> self land)))
   0)
 
+;; What a boulder does to the world where it lands, besides Jak: everything breakable and killable within its radius is hit, the way the
+;; misty cannon's shot hits what its blast overlaps (levels/misty/mistycannon.gc, mistycannon-missile-explode): an 'attack of mode
+;; 'explode, which a crate of any defense takes as its break (even an iron or steel one, which a plain attack does not break) and a nav
+;; enemy takes as its death (nav-enemy's attack-handler, and the bonelurker's own, which dies to an explode before it looks at anything
+;; else). Only crates and nav enemies are reached: those are the handlers read for it. Every other process, Jak, Klaww, the buttons,
+;; the bomb, the yakows, the barrels and every pickup are not enemies or crates, and the muse, which is a nav enemy, is not hit, or a
+;; boulder would catch her. An enemy and a crate are found by walking the entity pool, which holds them all (the horde's clones too),
+;; and kept by the distance of the process's own position from where the boulder landed.
+(define *gauntlet-blast-center* (new 'global 'vector)) ;; where the blast in hand is, for the walk to read
+(define *gauntlet-blast-radius* 0.0)
+(define *gauntlet-blast-from* (the-as process #f)) ;; who is the blast: the boulder, named as the sender of each 'attack
+(define *gauntlet-blast-crates* 0) ;; crates this pass has hit
+(define *gauntlet-blast-enemies* 0) ;; and enemies
+
+(defun gauntlet-blast-send! ((to process))
+  "Send to the process an 'attack of mode 'explode from the blast in hand, with an attack id of its own."
+  (let ((msg (new 'stack-no-clear 'event-message-block)))
+    (set! (-> msg from) *gauntlet-blast-from*)
+    (set! (-> msg num-params) 4)
+    (set! (-> msg message) 'attack)
+    (set! (-> msg param 0) (the-as uint #f))
+    (set! (-> msg param 1) (the-as uint 'explode))
+    (let ((id (+ *global-attack-id* 1)))
+      (set! *global-attack-id* id)
+      (set! (-> msg param 2) (the-as uint id)))
+    (set! (-> msg param 3) (the-as uint 0))
+    (send-event-function to msg))
+  0)
+
+(defun gauntlet-blast-tally! ((proc process))
+  "One process of the entity pool in the walk: hit, and counted, if it is a crate or a nav enemy (not the muse) within the blast's radius."
+  (let* ((pd (as-type proc process-drawable))
+         (crate? (type-type? (-> proc type) crate))
+         (enemy? (and (type-type? (-> proc type) nav-enemy) (!= (-> proc type symbol) 'muse))))
+    (when (and pd
+               (or crate? enemy?)
+               (>= *gauntlet-blast-radius* (vector-vector-distance (-> pd root trans) *gauntlet-blast-center*)))
+      (if crate? (+! *gauntlet-blast-crates* 1) (+! *gauntlet-blast-enemies* 1))
+      (gauntlet-blast-send! proc)))
+  (none))
+
+(defun gauntlet-blast! ((from process) (center vector) (radius float) (index int))
+  "Hit every crate and every enemy within radius of center, as the boulder from does, and say how many."
+  (set! (-> *gauntlet-blast-center* quad) (-> center quad))
+  (set! *gauntlet-blast-radius* radius)
+  (set! *gauntlet-blast-from* from)
+  (set! *gauntlet-blast-crates* 0)
+  (set! *gauntlet-blast-enemies* 0)
+  (iterate-process-tree *entity-pool* (lambda ((proc process)) (gauntlet-blast-tally! proc) (none)) *null-kernel-context*)
+  (format 0 "GAUNTLET KLAWW boulder ~D hit ~D crates and ~D enemies~%" index *gauntlet-blast-crates* *gauntlet-blast-enemies*)
+  0)
+
 (defbehavior gauntlet-boulder-hurt-jak gauntlet-boulder ()
   "It has landed. If Jak is within its radius of the spot, one plain 'attack: his own invulnerability can refuse it, and it
    is never a kill by itself (a Jak with one hit left dies the way any hit would take him). It throws him off away from the
@@ -2045,6 +2120,7 @@
       (process-spawn part-tracker :init part-tracker-init (get-part-group GAUNTLET_PART_GROUP_KLAWW_IMPACT) 300 #f #f #f (-> self land) :to *entity-pool*)
       (when (and *target* (< (vector-vector-distance (-> self land) (target-pos 0)) (meters 80)))
         (activate! *camera-smush-control* 819.2 37 600 1.0 0.995))
+      (gauntlet-blast! self (-> self land) (-> self radius) (-> self index))
       (gauntlet-boulder-hurt-jak)
       (ja-channel-set! 0)
       (suspend-for (seconds 0.5))
@@ -2094,7 +2170,7 @@
   (set! (-> self index) index)
   (set! (-> self klaww) klaww)
   (set! (-> self returned) (if (handle->process klaww) #t #f))
-  (set! (-> self radius) *gauntlet-klaww-boulder-radius*)
+  (set! (-> self radius) (gauntlet-klaww-boulder-radius))
   (set! (-> self land quad) (-> dest quad))
   (set! (-> self root) (new 'process 'trsqv))
   (set! (-> self root trans quad) (-> src quad))
@@ -2139,8 +2215,9 @@
 (defbehavior gauntlet-klaww-ready? gauntlet-klaww ()
   "True when it is time for the next throw: he is on, Jak is within range and in a state worth throwing at (not dying, not
    in a cutscene), and the interval, shortened by his rage, has passed since the last boulder left his hand. The wind-up
-   is part of the interval: the next wind-up starts early by as long as the last one took. When the gap is shorter than the
-   wind-up he is ready the moment his last throw has finished, so the gap can only shrink to a throw's own length."
+   is part of the interval: the next wind-up starts early by as long as the last one took (as it actually took, at the rate it
+   was played). A throw's animations are played fast enough to fill the gap (gauntlet-klaww-throw-rate), so by the time the
+   last one is over the next is due the same frame, and release to release is the gap."
   (and *gauntlet-klaww-enabled*
        *target*
        (not (logtest? (-> *target* state-flags) (state-flags dying grabbed)))
@@ -2152,8 +2229,9 @@
    wind-up took is remembered, so the interval can count it."
   (set! (-> self windup) (- (current-time) (-> self state-time)))
   (+! *gauntlet-klaww-throws* 1)
-  (format 0 "GAUNTLET KLAWW release ~D: ~F s after the last, wind-up ~F s~%"
-          *gauntlet-klaww-throws* (gauntlet-seconds-since (-> self last-throw)) (/ (the float (-> self windup)) (the float (seconds 1))))
+  (format 0 "GAUNTLET KLAWW release ~D: ~F s after the last, wind-up ~F s, throwing every ~F s, animations x ~F, boulder radius ~M m~%"
+          *gauntlet-klaww-throws* (gauntlet-seconds-since (-> self last-throw)) (/ (the float (-> self windup)) (the float (seconds 1)))
+          (/ (the float (gauntlet-klaww-throw-gap)) (the float (seconds 1))) (gauntlet-klaww-throw-rate) (gauntlet-klaww-boulder-radius))
   (set-time! (-> self last-throw))
   (when *target*
     (let ((aim (new 'stack-no-clear 'vector))
@@ -2262,6 +2340,10 @@
 
 ;; The three animations the ogre's own attack uses, in its order: attack2-start raises the arm (the wind-up, and the warning
 ;; to a player watching him), the boulder leaves his claw as attack2-loop begins, and attack2-last brings the arm back.
+;; Played at their own speed they take 158 frames from the start of the wind-up to the end of the follow-through (56 and 102, 5.2667 s:
+;; GAUNTLET_KLAWW_THROW_CYCLE), which was why his rage never changed anything: the gap between boulders could not go under it. Each is
+;; now played at gauntlet-klaww-throw-rate, read every frame (the ogre's own fight plays them at a rate the same way), which is
+;; the cycle over the target gap, so the whole throw takes the gap and the next wind-up starts the moment this one is over.
 (defstate gauntlet-klaww-throw (gauntlet-klaww)
   :event gauntlet-klaww-event
   :enter
@@ -2273,19 +2355,19 @@
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.1))
-      (ja-no-eval :group! ogreboss-attack2-start-ja :num! (seek!) :frame-num 0.0)
+      (ja-no-eval :group! ogreboss-attack2-start-ja :num! (seek! max (gauntlet-klaww-throw-rate)) :frame-num 0.0)
       (until (ja-done? 0)
         (suspend)
-        (ja :num! (seek!)))
+        (ja :num! (seek! max (gauntlet-klaww-throw-rate))))
       (gauntlet-klaww-release)
-      (ja-no-eval :group! ogreboss-attack2-loop-ja :num! (seek!) :frame-num 0.0)
+      (ja-no-eval :group! ogreboss-attack2-loop-ja :num! (seek! max (gauntlet-klaww-throw-rate)) :frame-num 0.0)
       (until (ja-done? 0)
         (suspend)
-        (ja :num! (seek!)))
-      (ja-no-eval :group! ogreboss-attack2-last-ja :num! (seek!) :frame-num 0.0)
+        (ja :num! (seek! max (gauntlet-klaww-throw-rate))))
+      (ja-no-eval :group! ogreboss-attack2-last-ja :num! (seek! max (gauntlet-klaww-throw-rate)) :frame-num 0.0)
       (until (ja-done? 0)
         (suspend)
-        (ja :num! (seek!)))
+        (ja :num! (seek! max (gauntlet-klaww-throw-rate))))
       (go gauntlet-klaww-idle))
   :post ja-post)
 
@@ -2808,8 +2890,9 @@
     (when (!= rage *gauntlet-klaww-rage-told*)
       (set! *gauntlet-klaww-rage-told* rage)
       (if (< 0.0 rage)
-        (format 0 "GAUNTLET KLAWW rage x ~F (hits ~D of ~D), throwing every ~F s~%"
-                rage (gauntlet-klaww-hit-count) GAUNTLET_KLAWW_MAX_HITS (/ (the float (gauntlet-klaww-throw-gap)) (the float (seconds 1)))))))
+        (format 0 "GAUNTLET KLAWW rage x ~F (hits ~D of ~D), throwing every ~F s, boulders blast ~M m~%"
+                rage (gauntlet-klaww-hit-count) GAUNTLET_KLAWW_MAX_HITS (/ (the float (gauntlet-klaww-throw-gap)) (the float (seconds 1)))
+                (gauntlet-klaww-boulder-radius)))))
   0)
 
 (defun gauntlet-klaww-poll! ()
@@ -3874,6 +3957,7 @@
      (,row "klaww-enabled" flag *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT 0 0)
      (,row "klaww-throw-interval" seconds *gauntlet-klaww-throw-interval* GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT 0.5 60.0)
      (,row "klaww-rage-max" ratio *gauntlet-klaww-rage-max* GAUNTLET_KLAWW_RAGE_MAX_DEFAULT 1.0 5.0)
+     (,row "klaww-radius-max" ratio *gauntlet-klaww-radius-max* GAUNTLET_KLAWW_RADIUS_MAX_DEFAULT 1.0 5.0)
      (,row "klaww-range" meters *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT 10.0 500.0)
      (,row "klaww-boulder-radius" meters *gauntlet-klaww-boulder-radius* GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT 0.5 30.0)
      (,row "tnt-enabled" flag *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT 0 0)))
@@ -4228,6 +4312,8 @@
        (gauntlet-json-fixed out (gauntlet-klaww-rage))
        (gauntlet-json-key out "throwEvery")
        (gauntlet-json-fixed out (/ (the float (gauntlet-klaww-throw-gap)) (the float (seconds 1))))
+       ;; how wide a boulder thrown now would blast, in meters: the console's radius widened by his fury
+       (gauntlet-json-meters out "radius" (gauntlet-klaww-boulder-radius))
        (gauntlet-json-close out))
       (else (format out "null")))
     ;; always there, on every level: the census is taken now, so the numbers are this frame's
