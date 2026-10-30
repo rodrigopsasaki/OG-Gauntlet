@@ -43,7 +43,7 @@
 
 ;; The mod speaks in eco, so that the colour of a charge tells the player what a hazard does. Red is strength: a red hazard
 ;; hits for two and throws Jak far. Blue is draw: a blue hazard pulls Jak in, or runs at him faster. Yellow and green are not
-;; hazards: they are what the scout fly boxes of Sentinel Beach ask for (yellow eco, green is health). A charged hazard glows
+;; hazards: they are what the scout fly boxes ask for (yellow eco; green is the zoomer's, on Precursor Basin). A charged hazard glows
 ;; its colour and carries the aura of Jak's own eco of that colour. The users are the red yakows of the stampede, the bomb
 ;; (blue, it pulls) and the babaks, which are in GAME.CGO and so charged on every level. babak.gc compiles and loads before
 ;; gauntlet.gc, so the kind and the constants live here, ahead of both, and the three functions are declared here and
