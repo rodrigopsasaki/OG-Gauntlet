@@ -84,7 +84,8 @@
   (indestructible 16)
   (fop17 17) ;; engine doesn't check it, set on babak near jungleb exit and in robot room.
   (eco-blocked 18)
-  (respawn 19))
+  (respawn 19)
+  (one-off 20)) ;; gauntlet: an eco pickup that is gone for good once collected, instead of coming back when Jak's eco of its kind runs out (collectables.gc, die)
 
 ;; Each individual enemy and pickup process will allocate a fact-info on its process heap.
 ;; The constructor will read the res-lump stored in the entity to pick reasonable defaults.

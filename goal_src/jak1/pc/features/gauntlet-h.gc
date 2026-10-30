@@ -139,6 +139,7 @@
 ;; The scout fly boxes of Sentinel Beach each want an eco to open (a table in gauntlet.gc), and lurkers carry it (pc/features/gauntlet.gc, "the scout fly boxes").
 (defconstant GAUNTLET_FLYBOX_ENABLED_DEFAULT #t) ;; the boxes of the table want their eco; the lurkers that carry it glow and spill it
 (defconstant GAUNTLET_FLYBOX_BOUNCE_DEFAULT (meters 2.5)) ;; a box that refuses Jak throws him this far back (and 1.5 m up), with no damage
+(defconstant GAUNTLET_CARRIER_RETURN_DEFAULT (seconds 20)) ;; a carrier that died comes back, charged again, this long after, while its box is still closed; 0 is never. The eco it spilled is picked up once and gone, so this is how a wasted colour comes back
 ;; The skull TNT barrels of Mountain Pass stand where a table in gauntlet.gc puts them, on any level.
 (defconstant GAUNTLET_TNT_ENABLED_DEFAULT #t) ;; the barrels stand at their spots
 
@@ -196,4 +197,5 @@
 (define *gauntlet-klaww-boulder-radius* GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT) ;; a boulder in the air keeps the radius it was thrown with
 (define *gauntlet-flybox-enabled* GAUNTLET_FLYBOX_ENABLED_DEFAULT) ;; live for the rule (off: every box opens as the game made it); the look and the carriers are made at birth
 (define *gauntlet-flybox-bounce* GAUNTLET_FLYBOX_BOUNCE_DEFAULT) ;; read as each refusal happens
+(define *gauntlet-carrier-return* (the int GAUNTLET_CARRIER_RETURN_DEFAULT)) ;; read as each carrier dies
 (define *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT) ;; off: no barrels, and whatever stands is put away

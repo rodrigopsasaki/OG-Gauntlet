@@ -3799,8 +3799,17 @@
 ;; stand nearest to it, named in the second table. A carrier glows its colour and trails the aura of Jak's eco of it, and when it
 ;; dies it spills a pickup of that eco where it fell. A carrier only looks and spills: the babak's blue pace and red shove live in
 ;; fields of its type and a copy of its enemy info (babak.gc), which a crab and a puppy do not have and would need each their own
-;; surgery. The eco Jak picks up times out, which is why the carriers are the ones near their box. A carrier that is killed is
-;; killed for good until the level loads again (its entity stays dead), like every lurker; its clones of "the horde" are plain.
+;; surgery. The eco Jak picks up times out, which is why the carriers are the ones near their box.
+;;
+;; The spill is one-off: the pickup is made with fact-options one-off, which the eco's die state (collectables.gc) reads, so that it is
+;; gone for good once picked up. Without it the game brings an eco pickup born again at the spot it fell as soon as Jak's own eco of
+;; that kind has run out (so that a placed vent or cluster can never strand a player), and a spill would have come back each time
+;; its charge ended. The stranding that would otherwise be left (a wasted spill, and a carrier that stays dead until the level loads,
+;; like every lurker) is answered by bringing the carrier back instead: *gauntlet-carrier-return* after it died, while its box is still
+;; closed, a charged clone of it is born at the spot it was placed at, with a puff of its colour, and it spills again when it dies. A
+;; clone and not the entity's own return, because the entity system would bring the original back with a fresh horde of company and
+;; only when Jak is near, and the delay would be the entity's to keep; a clone is gauntlet-horde-clone!, which the mod already trusts,
+;; and is the watcher's own to time. Once the box is open nothing returns.
 ;;
 ;; Both tables are keyed by level and entity name, so another level is a few rows. The colour of a box is by the eco around it: a
 ;; box near a vent or a cluster of an eco wears it, the rest are spread so that all four are on the beach. Sentinel Beach has
@@ -3979,10 +3988,11 @@
 ;; entity's name only while the entity's level is the one running.
 (deftype gauntlet-eco-watch (process)
   ((ent         entity-actor)
-   (subject     handle) ;; the box or the lurker
+   (subject     handle) ;; the box or the lurker; null while a dead carrier waits to come back
    (eco         gauntlet-eco)
    (carrier     symbol) ;; true for a lurker, false for a box
-   (level-name  symbol))
+   (level-name  symbol)
+   (back-at     time-frame)) ;; for a carrier that died: when it comes back; 0 while it is here
   (:states
    gauntlet-eco-watch-run))
 
@@ -4020,7 +4030,52 @@
     (+! (-> where y) GAUNTLET_FLYBOX_LIFT)
     (dotimes (i GAUNTLET_FLYBOX_SPILL_BURSTS)
       (gauntlet-eco-scatter! where (-> self eco)))
-    (birth-pickup-at-point where (gauntlet-eco-pickup (-> self eco)) (-> *FACT-bank* eco-single-inc) #t *entity-pool* (the-as fact-info #f)))
+    ;; the fact-info only carries the option: birth-pickup-at-point copies it into the pickup's own, which the eco's die state reads
+    (birth-pickup-at-point where (gauntlet-eco-pickup (-> self eco)) (-> *FACT-bank* eco-single-inc) #t *entity-pool*
+                           (new 'static 'fact-info :options (fact-options one-off))))
+  0)
+
+(defbehavior gauntlet-eco-watch-box-closed? gauntlet-eco-watch ()
+  "True when the box this carrier carries the eco of is still closed: it has not been broken, which is what a box's entity records
+   (user-int8 0, set by crates.gc on the break). A box the level does not know counts as open, so nothing returns for it."
+  (let* ((box (gauntlet-carrier-box (-> self level-name) (gauntlet-eco-watch-name)))
+         (ent (if box (entity-by-name box))))
+    (and ent (zero? (-> ent extra perm user-int8 0)))))
+
+(defbehavior gauntlet-eco-watch-await-return! gauntlet-eco-watch ()
+  "The carrier has just died and spilled. If its box is still closed and the setting allows, it is owed back
+   *gauntlet-carrier-return* from now, and the watcher waits for that; else the watcher is done."
+  (cond
+    ((and (< 0 *gauntlet-carrier-return*) (gauntlet-eco-watch-box-closed?))
+     (set! (-> self subject) (the-as handle #f))
+     (set! (-> self back-at) (+ (current-time) *gauntlet-carrier-return*))
+     (format 0 "GAUNTLET CARRIER: ~S comes back in ~F s~%" (gauntlet-eco-watch-name) (/ (the float *gauntlet-carrier-return*) 300.0)))
+    (else
+     (format 0 "GAUNTLET CARRIER: ~S does not come back~A~%" (gauntlet-eco-watch-name) (if (< 0 *gauntlet-carrier-return*) ", its box is open" ", the setting is 0"))
+     (deactivate self)))
+  0)
+
+(defbehavior gauntlet-eco-watch-return! gauntlet-eco-watch ()
+  "Time is up for the dead carrier and its box is still closed: a clone of it is born at the spot it was placed at, charged again
+   (the glow, and from here the watcher's aura), with a puff of its colour. When no process is free it tries again in a second."
+  (let ((home (new 'stack-no-clear 'vector)))
+    (set! (-> home quad) (-> self ent extra trans quad))
+    (set! (-> home w) 1.0)
+    (let* ((twin (gauntlet-horde-clone! (-> self ent) home))
+           (born (handle->process twin))
+           (pd (if born (as-type born process-drawable))))
+      (cond
+        (pd
+         (gauntlet-eco-glow! pd (-> self eco))
+         (+! (-> home y) GAUNTLET_FLYBOX_LIFT)
+         (dotimes (i GAUNTLET_FLYBOX_SPILL_BURSTS)
+           (gauntlet-eco-scatter! home (-> self eco)))
+         (set! (-> self subject) twin)
+         (set! (-> self back-at) 0)
+         (format 0 "GAUNTLET CARRIER: ~S is back, carrying ~A eco~%" (gauntlet-eco-watch-name) (gauntlet-eco-name (-> self eco))))
+        (else
+         (set! (-> self back-at) (+ (current-time) (seconds 1)))
+         (format 0 "GAUNTLET CARRIER: ~S could not come back, no process was free, trying again~%" (gauntlet-eco-watch-name))))))
   0)
 
 (defstate gauntlet-eco-watch-run (gauntlet-eco-watch)
@@ -4035,6 +4090,12 @@
             ((not *gauntlet-flybox-enabled*)
              (gauntlet-eco-watch-calm! pd)
              (if (not pd) (deactivate self)))
+            ((nonzero? (-> self back-at))
+             (cond
+               ((not (gauntlet-eco-watch-box-closed?))
+                (format 0 "GAUNTLET CARRIER: ~S does not come back, its box is open~%" (gauntlet-eco-watch-name))
+                (deactivate self))
+               ((>= (current-time) (-> self back-at)) (gauntlet-eco-watch-return!))))
             ((not pd)
              (format 0 "GAUNTLET ~A: ~S is gone, nothing spilled~%" (if (-> self carrier) "CARRIER" "FLYBOX") (gauntlet-eco-watch-name))
              (deactivate self))
@@ -4042,7 +4103,7 @@
                   (-> pd next-state)
                   (= (-> pd next-state name) 'nav-enemy-die))
              (gauntlet-eco-watch-spill! pd)
-             (deactivate self))
+             (gauntlet-eco-watch-await-return!))
             (else (gauntlet-eco-watch-show! pd))))
         (suspend))))
 
@@ -4052,6 +4113,7 @@
   (set! (-> self subject) subject)
   (set! (-> self eco) eco)
   (set! (-> self carrier) carrier)
+  (set! (-> self back-at) 0)
   (set! (-> self level-name) (-> ent extra level name))
   (go gauntlet-eco-watch-run)
   (none))
@@ -4428,6 +4490,7 @@
      (,row "klaww-boulder-radius" meters *gauntlet-klaww-boulder-radius* GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT 0.5 30.0)
      (,row "flybox-enabled" flag *gauntlet-flybox-enabled* GAUNTLET_FLYBOX_ENABLED_DEFAULT 0 0)
      (,row "flybox-bounce" meters *gauntlet-flybox-bounce* GAUNTLET_FLYBOX_BOUNCE_DEFAULT 0.0 20.0)
+     (,row "flybox-carrier-return" seconds *gauntlet-carrier-return* GAUNTLET_CARRIER_RETURN_DEFAULT 0.0 600.0)
      (,row "tnt-enabled" flag *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT 0 0)))
 
 ;; ---- the settings file
