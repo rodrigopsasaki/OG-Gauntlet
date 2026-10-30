@@ -104,6 +104,7 @@
 ;; Klaww stands in the pelican's nest at Sentinel Beach and lobs boulders at Jak. The buttons on the beach (a table in gauntlet.gc) shoot him; each button is one hit, and all of them bring him down.
 (defconstant GAUNTLET_KLAWW_ENABLED_DEFAULT #t) ;; Klaww and his buttons appear on the beach
 (defconstant GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT (seconds 3.0)) ;; from one boulder leaving his hand to the next, wind-up included (a throw takes as long as its animation, which is the floor)
+(defconstant GAUNTLET_KLAWW_RAGE_MAX_DEFAULT 2.0) ;; he rests this many times less between throws with one hit left (1.0 with none taken, linear between): the wind-up itself is never shortened
 (defconstant GAUNTLET_KLAWW_RANGE_DEFAULT (meters 140)) ;; he throws while Jak is this close, sideways: the first button is 100 m from the nest, so Jak is still a target while he presses it
 (defconstant GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to where a boulder lands is hit; the landing marker draws this circle
 ;; The skull TNT barrels of Mountain Pass stand where a table in gauntlet.gc puts them, on any level.
@@ -152,6 +153,7 @@
 (define *gauntlet-horde-max-clones* GAUNTLET_HORDE_MAX_CLONES_DEFAULT) ;; read as each lurker is born, and live: clones already standing are never taken away for it
 (define *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT) ;; off: no Klaww, no buttons, and whatever stands is taken away
 (define *gauntlet-klaww-throw-interval* (the int GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT))
+(define *gauntlet-klaww-rage-max* GAUNTLET_KLAWW_RAGE_MAX_DEFAULT) ;; live: read every frame he is deciding whether to throw
 (define *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT)
 (define *gauntlet-klaww-boulder-radius* GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT) ;; a boulder in the air keeps the radius it was thrown with
 (define *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT) ;; off: no barrels, and whatever stands is put away

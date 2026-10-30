@@ -399,7 +399,8 @@ function renderHeader(payload) {
   $("klaww-stat").hidden = !klaww;
   if (klaww) {
     // waiting for the pelican, falling, landing, fighting or defeated
-    $("klaww").textContent = `${klaww.state}, ${klaww.hits} of ${klaww.max} hits, ${klaww.buttonsPressed} of ${klaww.buttons} buttons`;
+    const rage = klaww.rage === null || klaww.throwEvery === null ? "" : `, rage x${fmt(klaww.rage, 2)} (throws every ${fmt(klaww.throwEvery)} s)`;
+    $("klaww").textContent = `${klaww.state}, ${klaww.hits} of ${klaww.max} hits, ${klaww.buttonsPressed} of ${klaww.buttons} buttons${rage}`;
   }
 
   // a game build older than the horde readout leaves the member out, and the line stays hidden

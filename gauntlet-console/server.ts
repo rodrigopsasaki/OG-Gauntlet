@@ -427,6 +427,15 @@ const SETTINGS: readonly SettingSpec[] = [
     "Time from one boulder leaving his hand to the next, wind-up included. A throw takes as long as its animation, so very low values change little.",
   ),
   num(
+    "klaww-rage-max",
+    "Klaww",
+    "Rage with one hit left",
+    "x",
+    [1, 5, 0.1],
+    "live",
+    "He rests this many times less between throws when he has one hit left, 1x with none taken, in a straight line between (at 2 and five buttons: 1, 1.25, 1.5, 1.75, 2). The wind-up is never shortened, so a boulder stays readable; only the wait after it shrinks, down to the length of a throw. Healing him (the cannon) slows him back down at once.",
+  ),
+  num(
     "klaww-range",
     "Klaww",
     "Throwing range",
@@ -533,6 +542,10 @@ interface KlawwState {
   buttonsPressed: number;
   /** Buttons on the beach. */
   buttons: number;
+  /** How many times faster than the interval he throws now: 1 with no hits taken, klaww-rage-max with one left. null for a game build older than the rage. */
+  rage: number | null;
+  /** The rest between his throws with that rage, in seconds. null for a game build older than the rage. */
+  throwEvery: number | null;
 }
 interface HordeState {
   /** Watchers alive: one per lurker that was born with clones still standing. */
@@ -686,6 +699,9 @@ function parseGauntletState(raw: unknown): GauntletState {
               alive: needBoolean(klaww, "alive", "state.klaww"),
               buttonsPressed: needNumber(klaww, "buttonsPressed", "state.klaww"),
               buttons: needNumber(klaww, "buttons", "state.klaww"),
+              rage: klaww.rage === undefined ? null : needNumber(klaww, "rage", "state.klaww"),
+              throwEvery:
+                klaww.throwEvery === undefined ? null : needNumber(klaww, "throwEvery", "state.klaww"),
             };
           }),
     horde:

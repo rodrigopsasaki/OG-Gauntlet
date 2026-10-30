@@ -1479,6 +1479,8 @@
 ;; every process in *entity-pool*, Klaww and the buttons among them, and they are born again from the globals (the spent
 ;; buttons down, the pelican's story or the console's landing spot to bring Klaww back, the hits as they were). The fight is
 ;; only reset when Jak leaves the level it is in, when klaww-enabled goes off, or when "klaww" is asked for again.
+;;
+;; The fewer hits he has left the faster he throws (his rage, below).
 
 (defconstant GAUNTLET_KLAWW_FALL_HEIGHT (meters 60)) ;; he starts this far above the ground he will land on: high enough to be seen coming
 (defconstant GAUNTLET_KLAWW_FALL_GRAVITY (meters 40)) ;; per second per second, so the drop takes 1.7 s: a plunge, not a float
@@ -1809,6 +1811,20 @@
       (if (gauntlet-klaww-button-spent? i) (+! count 1)))
     count))
 
+;; His rage. The fewer hits he has left the faster he throws, in the way the desperation makes the eco stronger the fewer hits
+;; Jak has left: one named number, 1.0 with no hit taken, *gauntlet-klaww-rage-max* with one hit left, linear between (with the
+;; default 2.0 and five buttons, 0 to 4 hits taken is 1.0, 1.25, 1.5, 1.75, 2.0). It divides the rest between his throws and
+;; nothing else: the wind-up is the warning a boulder gives and stays as long as it is, however angry he is. It is read from the
+;; hits, which the spent buttons are, every time he asks whether it is time to throw, so a heal slows him back down at once.
+(defun gauntlet-klaww-rage ()
+  "How many times faster he throws for the hits he has taken: 1.0 with none, *gauntlet-klaww-rage-max* with one hit left."
+  (lerp-scale 1.0 *gauntlet-klaww-rage-max* (the float (gauntlet-klaww-hit-count)) 0.0 (the float (+ GAUNTLET_KLAWW_MAX_HITS -1))))
+
+(defun gauntlet-klaww-throw-gap ()
+  "The time from one boulder leaving his hand to the next boulder's wind-up counted in, in ticks, as it is now: the
+   console's interval shortened by the rage."
+  (the int (/ (the float *gauntlet-klaww-throw-interval*) (gauntlet-klaww-rage))))
+
 (deftype gauntlet-klaww (process-drawable)
   ((windup     time-frame)
    (last-throw time-frame)
@@ -2048,20 +2064,23 @@
 
 (defbehavior gauntlet-klaww-ready? gauntlet-klaww ()
   "True when it is time for the next throw: he is on, Jak is within range and in a state worth throwing at (not dying, not
-   in a cutscene), and the interval has passed since the last boulder left his hand. The wind-up is part of the interval:
-   the next wind-up starts early by as long as the last one took."
+   in a cutscene), and the interval, shortened by his rage, has passed since the last boulder left his hand. The wind-up
+   is part of the interval: the next wind-up starts early by as long as the last one took. When the gap is shorter than the
+   wind-up he is ready the moment his last throw has finished, so the gap can only shrink to a throw's own length."
   (and *gauntlet-klaww-enabled*
        *target*
        (not (logtest? (-> *target* state-flags) (state-flags dying grabbed)))
        (>= *gauntlet-klaww-range* (vector-vector-xz-distance (-> self root trans) (target-pos 0)))
-       (time-elapsed? (-> self last-throw) (max 0 (- *gauntlet-klaww-throw-interval* (-> self windup))))))
+       (time-elapsed? (-> self last-throw) (max 0 (- (gauntlet-klaww-throw-gap) (-> self windup))))))
 
 (defbehavior gauntlet-klaww-release gauntlet-klaww ()
   "The boulder leaves his claw, aimed at the ground under where Jak stands right now: that is the whole aim. How long the
    wind-up took is remembered, so the interval can count it."
   (set! (-> self windup) (- (current-time) (-> self state-time)))
-  (set-time! (-> self last-throw))
   (+! *gauntlet-klaww-throws* 1)
+  (format 0 "GAUNTLET KLAWW release ~D: ~F s after the last, wind-up ~F s~%"
+          *gauntlet-klaww-throws* (gauntlet-seconds-since (-> self last-throw)) (/ (the float (-> self windup)) (the float (seconds 1))))
+  (set-time! (-> self last-throw))
   (when *target*
     (let ((aim (new 'stack-no-clear 'vector))
           (claw (new 'stack-no-clear 'vector)))
@@ -2650,12 +2669,26 @@
                                     :name 'gauntlet-klaww-bar))))
   0)
 
+(define *gauntlet-klaww-rage-told* -1.0) ;; his rage the last time the poll looked, -1 with no fight on, so a change is told once
+
+(defun gauntlet-klaww-rage-poll! ()
+  "Per-frame: say when his rage has changed while he is in the world and not beaten, and how often he throws now. A fight
+   that is off (or a Klaww a death has put away) forgets it, so the one that comes back says it again."
+  (let ((rage (if (gauntlet-klaww-alive?) (gauntlet-klaww-rage) -1.0)))
+    (when (!= rage *gauntlet-klaww-rage-told*)
+      (set! *gauntlet-klaww-rage-told* rage)
+      (if (< 0.0 rage)
+        (format 0 "GAUNTLET KLAWW rage x ~F (hits ~D of ~D), throwing every ~F s~%"
+                rage (gauntlet-klaww-hit-count) GAUNTLET_KLAWW_MAX_HITS (/ (the float (gauntlet-klaww-throw-gap)) (the float (seconds 1)))))))
+  0)
+
 (defun gauntlet-klaww-poll! ()
   "Per-frame: a fight ends when Jak leaves the level it is in (or the setting goes off), and is forgotten; and nothing else
    ends it, Jak's death included. When the game puts Klaww and the buttons away with a death, the fight is kept, and they
    come back from it: on the beach the pelican's arrival sends Klaww again and, once he has landed, the buttons; the
    console's Klaww is sent back where he was. With no Jak (loading) nothing changes."
   (gauntlet-klaww-bar-ensure!)
+  (gauntlet-klaww-rage-poll!)
   (cond
     ((not *target*))
     ((not *gauntlet-klaww-enabled*) (gauntlet-klaww-reset! "turned off"))
@@ -3360,6 +3393,7 @@
      (,row "horde-max-clones" count *gauntlet-horde-max-clones* GAUNTLET_HORDE_MAX_CLONES_DEFAULT 0.0 300.0)
      (,row "klaww-enabled" flag *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT 0 0)
      (,row "klaww-throw-interval" seconds *gauntlet-klaww-throw-interval* GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT 0.5 60.0)
+     (,row "klaww-rage-max" ratio *gauntlet-klaww-rage-max* GAUNTLET_KLAWW_RAGE_MAX_DEFAULT 1.0 5.0)
      (,row "klaww-range" meters *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT 10.0 500.0)
      (,row "klaww-boulder-radius" meters *gauntlet-klaww-boulder-radius* GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT 0.5 30.0)
      (,row "tnt-enabled" flag *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT 0 0)))
@@ -3703,6 +3737,11 @@
        (format out "~D" (gauntlet-klaww-hit-count))
        (gauntlet-json-key out "buttons")
        (format out "~D" GAUNTLET_KLAWW_BUTTONS)
+       ;; his rage now, and how often that makes him throw, in seconds
+       (gauntlet-json-key out "rage")
+       (gauntlet-json-fixed out (gauntlet-klaww-rage))
+       (gauntlet-json-key out "throwEvery")
+       (gauntlet-json-fixed out (/ (the float (gauntlet-klaww-throw-gap)) (the float (seconds 1))))
        (gauntlet-json-close out))
       (else (format out "null")))
     ;; always there, on every level: the census is taken now, so the numbers are this frame's
