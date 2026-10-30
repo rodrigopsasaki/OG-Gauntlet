@@ -443,22 +443,13 @@ const SETTINGS: readonly SettingSpec[] = [
     "Daxter says one of three lines when she is lost (an ambush, a bad feeling) and one of two when she is caught (we made it), never the same one twice running and at most one in 6 s. If another voice line is playing his is skipped, not delayed. The roars, the shake and the flash at a loss are not part of this.",
   ),
   num(
-    "misty-muse-icon-yaw",
-    "Misty muse",
-    "Icon facing",
-    "deg",
-    [0, 360, 5],
-    "live",
-    "Which way the muse's icon faces around the vertical, before it sways a little. 200 is meant to show her face. If she is seen from behind add 180, and so on until she looks at you.",
-  ),
-  num(
     "misty-muse-icon-scale",
     "Misty muse",
     "Icon size",
     "x",
     [0.5, 3, 0.1],
     "live",
-    "How many times the icon's usual size she is drawn (about a tenth of the screen's height, on the left, under the hearts). The frame around her follows.",
+    "How many times the portrait of her face's usual size it is drawn (about a tenth of the screen's height, on the left, under the hearts). The frame around it follows.",
   ),
   flag(
     "worm-cubes-enabled",
