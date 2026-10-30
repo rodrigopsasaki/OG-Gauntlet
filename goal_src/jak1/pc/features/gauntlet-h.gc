@@ -15,6 +15,11 @@
 ;; Klaww falls onto it from there. It is compiled in the beach's DGO, after this file, so the call needs declaring here too.
 (define-extern gauntlet-klaww-pelican-at-nest! (function process none))
 
+;; The cannon's shots (levels/misty/mistycannon.gc, which is also in BEA.DGO: the cannon on top of the sentinel at Sentinel Beach)
+;; call this as each one goes off, with where and how wide the blast is. A blast on Klaww heals him one hit. It is compiled in
+;; the beach's and Misty's DGOs, after this file, so the call needs declaring here too.
+(define-extern gauntlet-klaww-cannon-blast! (function vector float none))
+
 ;; The farm's yakows (levels/village1/yakow.gc, in VI1.DGO, after this file and after gauntlet.gc) call this when Jak attacks
 ;; one, so a punched cow can bring the herd down on him. It is given the yakow that was hit.
 (define-extern gauntlet-stampede-yakow-hit! (function process-drawable int))

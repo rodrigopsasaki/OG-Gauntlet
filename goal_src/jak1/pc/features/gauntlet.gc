@@ -1480,7 +1480,8 @@
 ;; buttons down, the pelican's story or the console's landing spot to bring Klaww back, the hits as they were). The fight is
 ;; only reset when Jak leaves the level it is in, when klaww-enabled goes off, or when "klaww" is asked for again.
 ;;
-;; The fewer hits he has left the faster he throws (his rage, below).
+;; The fewer hits he has left the faster he throws (his rage, below), and a shot from the beach's lurker cannon heals him one
+;; hit and gives one of the spent buttons back (the cannon's easter egg, below).
 
 (defconstant GAUNTLET_KLAWW_FALL_HEIGHT (meters 60)) ;; he starts this far above the ground he will land on: high enough to be seen coming
 (defconstant GAUNTLET_KLAWW_FALL_GRAVITY (meters 40)) ;; per second per second, so the drop takes 1.7 s: a plunge, not a float
@@ -1499,6 +1500,8 @@
 (defconstant GAUNTLET_KLAWW_FLINCH (seconds 0.4)) ;; how long a hit boulder's flinch takes: the ogre's own takes 0.15 s, stretched so it reads across the beach
 (defconstant GAUNTLET_KLAWW_PROBE_RAISE (meters 3)) ;; the ground under a hand-picked spot is searched for from this far above it, so a rise in the ground does not bury the search
 (defconstant GAUNTLET_KLAWW_CHEST (meters 8.75)) ;; the chest's height in his bind pose, for a chest to aim at before his skeleton has been drawn
+(defconstant GAUNTLET_KLAWW_BODY_HEIGHT (meters 9.5)) ;; the column a cannon blast counts his body as: his head, 13.6 m in the bind pose, at GAUNTLET_KLAWW_SCALE
+(defconstant GAUNTLET_KLAWW_BODY_RADIUS (meters 3)) ;; and this wide, a little under his arms (6.8 m to a side in the bind pose, at scale), more than his trunk
 (defconstant GAUNTLET_PART_GROUP_KLAWW_TRAIL 1002) ;; ids this file adds to the particle tables, after the bomb's
 (defconstant GAUNTLET_PART_GROUP_KLAWW_IMPACT 1003)
 (defconstant GAUNTLET_PART_KLAWW_CENTER 3533)
@@ -2419,6 +2422,62 @@
   "The name of the level Jak is inside, or none between levels."
   (let ((lev (level-get-target-inside *level*)))
     (if lev (-> lev name) 'none)))
+
+;; The cannon's easter egg. The lurker cannon on top of the sentinel at Sentinel Beach (mistycannon, levels/misty/mistycannon.gc,
+;; the same object as Misty Island's, which the beach's BEA.DGO carries) lobs sacks (mistycannon-missile). One that lands
+;; blows up with a blast radius of 5 m, or 10 m when Jak fired it himself from the periscope, and the blast sends 'attack
+;; with mode 'explode to whatever its sphere overlaps: that is how it blows up the pelican (pelican-wait-at-nest) and what
+;; gives up the power cell. Klaww has no collision shape (his root is a bare trsqv, so that boulders, Jak and the camera have
+;; nothing to bump into), so a blast never overlaps him and the event cannot reach him. The shot calls this instead as it goes
+;; off (once per shot, so one shot heals at most once), and a blast whose sphere touches his body heals him one hit: green
+;; eco, the colour of health, and one of the buttons he has lost to is back up, random among the ones that are down, to be
+;; pressed again. Heals come out of the same bitmask hits go into, so the health bar, the rage and the persistence through a
+;; death follow without anything else knowing.
+
+(defun gauntlet-klaww-heal-pick ()
+  "A random button that is spent, as its index, or -1 when none is."
+  (let ((skip (rand-vu-int-count (gauntlet-klaww-hit-count))) ;; which of the spent buttons, counting from the first
+        (found -1))
+    (dotimes (i GAUNTLET_KLAWW_BUTTONS)
+      (when (and (< found 0) (gauntlet-klaww-button-spent? i))
+        (if (zero? skip) (set! found i) (+! skip -1))))
+    found))
+
+(defun gauntlet-klaww-blast-reaches? ((klaww gauntlet-klaww) (blast vector) (radius float))
+  "True when a blast of radius around blast touches his body: the nearest point of the column from his feet up
+   GAUNTLET_KLAWW_BODY_HEIGHT is no farther from the middle of the blast than radius plus GAUNTLET_KLAWW_BODY_RADIUS."
+  (let ((nearest (new 'stack-no-clear 'vector)))
+    (set! (-> nearest quad) (-> klaww root trans quad))
+    (+! (-> nearest y) (fmax 0.0 (fmin GAUNTLET_KLAWW_BODY_HEIGHT (- (-> blast y) (-> nearest y)))))
+    (>= (+ radius GAUNTLET_KLAWW_BODY_RADIUS) (vector-vector-distance nearest blast))))
+
+(defun gauntlet-klaww-heal! ((klaww gauntlet-klaww))
+  "One cannon shot has hit him. With a hit taken, one of the spent buttons is picked at random and given back: its bit is
+   cleared, which is the heal (the bar, the rage and the buttons that stand after a death all read it), and if its button
+   is standing it is told to come back up, the way the engine's own button is (basebutton-down-idle, 'untrigger), with a
+   puff of green eco at his chest. With none taken he is at full health already, and that is all it does."
+  (let ((button (gauntlet-klaww-heal-pick)))
+    (cond
+      ((< button 0) (format 0 "GAUNTLET KLAWW cannon shot hit him at full health~%"))
+      (else
+       (logclear! *gauntlet-klaww-spent* (ash 1 button))
+       (let ((standing (handle->process (-> *gauntlet-klaww-world* buttons button))))
+         (if standing (send-event standing 'untrigger)))
+       (let ((chest (gauntlet-klaww-chest klaww (new 'stack-no-clear 'vector))))
+         (process-spawn part-tracker :init part-tracker-init group-green-collect 300 #f #f #f chest :to *entity-pool*)
+         (process-spawn part-tracker :init part-tracker-init group-eco-green-collect 300 #f #f #f chest :to *entity-pool*))
+       (sound-play "g-eco-pickup" :position #f)
+       (format 0 "GAUNTLET KLAWW cannon shot healed him, button ~D is back (hits ~D of ~D)~%"
+               button (gauntlet-klaww-hit-count) GAUNTLET_KLAWW_MAX_HITS))))
+  0)
+
+(defun gauntlet-klaww-cannon-blast! ((blast vector) (radius float))
+  "A cannon shot has gone off at blast with a blast radius of radius. Heals him if he is standing (landed, not beaten) and
+   it touches his body. Called from mistycannon-missile-explode, on every level the cannon is loaded in."
+  (let ((klaww (gauntlet-klaww-process)))
+    (when (and klaww (not *gauntlet-klaww-defeated*) (gauntlet-klaww-landed?) (gauntlet-klaww-blast-reaches? klaww blast radius))
+      (gauntlet-klaww-heal! klaww)))
+  (none))
 
 (defun gauntlet-klaww-keep-button! ((index int) (x float) (y float) (z float))
   "Make sure button index is standing at its row of the table, in meters x y z (as game units here), on whatever ground is

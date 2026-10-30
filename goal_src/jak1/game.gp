@@ -778,7 +778,7 @@
 
 (goal-src-sequence
   "levels/misty/"
-  :deps ("$OUT/obj/evilbro.o")
+  :deps ("$OUT/obj/evilbro.o" "$OUT/obj/gauntlet-h.o") ;; the second declares what mistycannon.gc tells Klaww when a shot goes off
   "mistycannon.gc"
   "babak-with-cannon.gc"
   "misty-obs.gc"
