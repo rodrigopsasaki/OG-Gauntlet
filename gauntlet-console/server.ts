@@ -40,6 +40,7 @@ type SettingGroup =
   | "Beach worms"
   | "Horde"
   | "Klaww"
+  | "Scout flies"
   | "TNT barrels";
 type SettingValue = number | boolean;
 type SettingMap = Record<string, SettingValue>;
@@ -506,6 +507,22 @@ const SETTINGS: readonly SettingSpec[] = [
     [1, 15, 0.5],
     "next boulder",
     "At full health, Jak is hit if he is this close to where a boulder lands, and crates break and enemies die inside it too. The ring on the ground is this wide; the radius below widens it as he is hurt.",
+  ),
+  flag(
+    "flybox-enabled",
+    "Scout flies",
+    "Boxes want an eco",
+    "live",
+    "On Sentinel Beach each scout fly box wears an eco colour and opens only when Jak breaks it while carrying that eco (yellow also takes a yellow eco shot; green wants Jak at full health and no eco). A wrong or empty try bounces him off the box with a burst of its colour, no damage. The lurkers near a box carry its eco: they glow its colour and spill it where they die. Off opens every box as the game made it at once, and the lurkers stop glowing and spilling.",
+  ),
+  num(
+    "flybox-bounce",
+    "Scout flies",
+    "Bounce off a refusing box",
+    "m",
+    [0, 20, 0.5],
+    "next refusal",
+    "How far a box that refuses throws Jak back (and 1.5 m up), with no damage. 0 only bounces him up.",
   ),
   flag(
     "tnt-enabled",
