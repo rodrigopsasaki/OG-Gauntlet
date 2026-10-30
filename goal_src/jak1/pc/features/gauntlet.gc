@@ -1242,11 +1242,19 @@
     (behavior ()
       (deactivate self)))
 
-(define *gauntlet-bomb* (the-as handle #f)) ;; the bomb last dropped, so the drop spots know whether one is still alive
+;; The bomb last dropped, so the drop spots know whether one is still alive. A handle is 64 bits (the process's address and its pid) and a
+;; global symbol holds 32: `(define *x* (the-as handle ...))` keeps the address and loses the pid, so handle->process, which checks the pid,
+;; saw a different process every time and the bomb was never alive (the 2026-10-30 play: Gol's line, which waits for an alive bomb, never
+;; came, and neither did the spots' wait for the last bomb). A handle lives in a structure's field, as every handle of the game does.
+(deftype gauntlet-bomb-ref (structure)
+  ((bomb handle)))
+
+(define *gauntlet-bomb* (new 'global 'gauntlet-bomb-ref))
+(set! (-> *gauntlet-bomb* bomb) (the-as handle #f))
 
 (defun gauntlet-bomb-alive? ()
   "True while the last bomb dropped is still in the world, from the moment it appears to the end of its blast."
-  (if (handle->process *gauntlet-bomb*) #t #f))
+  (if (handle->process (-> *gauntlet-bomb* bomb)) #t #f))
 
 (defun gauntlet-bomb-drop! ((where vector))
   "Drop the bomb on where, if its art is there to draw. A request is never held back for a bomb that is still alive: the new
@@ -1260,7 +1268,7 @@
        (format 0 "GAUNTLET DROP: a bomb is already alive, this one comes down beside it~%"))
      (let ((bomb (process-spawn gauntlet-bomb :init gauntlet-bomb-init-by-other where :to *entity-pool*)))
        (if bomb
-         (set! *gauntlet-bomb* (ppointer->handle bomb))
+         (set! (-> *gauntlet-bomb* bomb) (ppointer->handle bomb))
          (format 0 "GAUNTLET DROP: no process left for the bomb, nothing dropped~%")))))
   0)
 
@@ -1348,22 +1356,28 @@
     reach))
 
 (defun gauntlet-vent-gol-line! ()
-  "Gol, the Blue Sage's mad twin, calls FIRE! (GOL-AM04, his line from the Citadel's robot fight) as the first bomb falls on the vent: the
-   lesson of the bomb, said to a player who has just taken the vent's blue eco and will not otherwise know what the circle on the ground
-   means. Once per game session (*gauntlet-vent-gol-told*), as gauntlet-klaww-mayor-line! does the mayor's: an engine ambient hint, no
-   position (the radio), and when another hint is playing (*hint-semaphore*) the spawn is refused, the line is lost and that is logged."
-  (when (not *gauntlet-vent-gol-told*)
-    (set! *gauntlet-vent-gol-told* #t)
-    (if (ambient-hint-spawn "GOL-AM04" (the-as vector #f) *entity-pool* 'ambient)
-      (format 0 "GAUNTLET SPOT: Gol says FIRE! for the first bomb on the vent~%")
-      (format 0 "GAUNTLET SPOT: Gol's line for the vent skipped, a hint is already playing~%")))
+  "Gol, the Blue Sage's mad twin, calls FIRE! (GOL-AM04, his line from the Citadel's robot fight, a stream of VAGWAD like the mayor's CHI-AM01
+   and Daxter's lines, which already play this way) as the first bomb falls on the vent: the lesson of the bomb, said to a player who has
+   just taken the vent's blue eco and will not otherwise know what the circle on the ground means. Once per game session
+   (*gauntlet-vent-gol-told*), as gauntlet-klaww-mayor-line! does the mayor's: an engine ambient hint, no position (the radio), and when
+   another hint is playing (*hint-semaphore*) the spawn is refused, the line is lost and that is logged. Every call says what it did."
+  (cond
+    (*gauntlet-vent-gol-told*
+     (format 0 "GAUNTLET SPOT: Gol has already said his line this session, quiet for this bomb on the vent~%"))
+    (else
+     (set! *gauntlet-vent-gol-told* #t)
+     (if (ambient-hint-spawn "GOL-AM04" (the-as vector #f) *entity-pool* 'ambient)
+       (format 0 "GAUNTLET SPOT: Gol says FIRE! for the first bomb on the vent~%")
+       (format 0 "GAUNTLET SPOT: Gol's line for the vent skipped, a hint is already playing~%"))))
   0)
 
 (defun gauntlet-spot-bomb! ((index int) (spot vector))
-  "Drop the bomb on spot index of the table. If one came down, and the spot is the vent, Gol says his line."
+  "Drop the bomb on spot index of the table. If one came down, and the spot is the vent, Gol says his line; if none came down, that is logged."
   (gauntlet-bomb-drop! spot)
-  (if (and (= index GAUNTLET_VENT_SPOT) (gauntlet-bomb-alive?))
-    (gauntlet-vent-gol-line!))
+  (when (= index GAUNTLET_VENT_SPOT)
+    (if (gauntlet-bomb-alive?)
+      (gauntlet-vent-gol-line!)
+      (format 0 "GAUNTLET SPOT: no bomb is alive after the drop on the vent, Gol has nothing to speak over~%")))
   0)
 
 (defun gauntlet-spot-pass-end! ((index int) (name string) (enabled symbol) (where string))
@@ -5439,7 +5453,7 @@
 
 (defun gauntlet-bomb-process ()
   "The bomb last dropped, if it is still in the world."
-  (let ((proc (handle->process *gauntlet-bomb*)))
+  (let ((proc (handle->process (-> *gauntlet-bomb* bomb))))
     (the-as gauntlet-bomb (if (and proc (type-type? (-> proc type) gauntlet-bomb)) proc))))
 
 (defun gauntlet-bomb-state-name ((bomb gauntlet-bomb))
