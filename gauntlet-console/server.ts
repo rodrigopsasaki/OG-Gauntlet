@@ -554,7 +554,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "Scout flies",
     "Boxes want an eco",
     "live",
-    "On every level each scout fly box wears an eco colour and opens only when Jak breaks it while carrying that eco (yellow also takes a yellow eco shot; green wants Jak at full health and no eco; Geyser Rock's boxes are all blue). A wrong or empty try bounces him off the box with a burst of its colour, no damage. A box's eco is free in the level near it, or the lurkers near it carry it: they glow its colour and spill it where they die. Off opens every box as the game made it at once, and the lurkers stop glowing and spilling.",
+    "Each scout fly box that has a source of an eco near it wears that eco's colour and opens only when Jak breaks it while carrying that eco (yellow also takes a yellow eco shot). A wrong or empty try bounces him off the box with a burst of its colour, no damage. The mod makes no eco of its own: a box's eco is what the game placed in the level near it, or the lurkers near it carry it (they glow its colour and spill it where they die). Geyser Rock's boxes are all blue, from the game's own blue eco. Green is the zoomer's eco and only Precursor Basin has it, from the basin's green vent. A box with no eco it can get is an ordinary scout fly box and opens as the game made it. Off opens every box as the game made it at once, and the lurkers stop glowing and spilling.",
   ),
   num(
     "flybox-bounce",
