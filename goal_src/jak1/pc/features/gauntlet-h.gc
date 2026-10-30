@@ -103,6 +103,7 @@
 (defconstant GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to the Sandover spot, sideways, sets the herd off
 (defconstant GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT (meters 60)) ;; and it will not charge again until he has been farther than this from it
 (defconstant GAUNTLET_YAKOW_STAMPEDE_ENABLED_DEFAULT #t) ;; hitting a farm yakow sends the herd, from behind the yakow, through it, at Jak
+(defconstant GAUNTLET_STAMPEDE_LAUNCH_UP_DEFAULT (meters 30)) ;; a yakow's hit throws Jak this high, far into the sky: the top of his arc, above where he stood (see gauntlet-yakow-trample)
 (defconstant GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT 3) ;; yakows charged with red eco, the first slots of the herd: the lead row. Red hits for two and throws far
 (defconstant GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT #t) ;; babaks may be born charged with eco, on every level
 (defconstant GAUNTLET_BABAK_CHARGE_CHANCE_DEFAULT 0.5) ;; the chance, from 0 to 1, that a babak is charged when it is born; a charged one is red or blue by the toss of a coin
@@ -166,6 +167,7 @@
 (define *gauntlet-stampede-trigger-radius* GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT)
 (define *gauntlet-stampede-rearm-range* GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT)
 (define *gauntlet-yakow-stampede-enabled* GAUNTLET_YAKOW_STAMPEDE_ENABLED_DEFAULT) ;; off: hitting a farm yakow does nothing extra
+(define *gauntlet-stampede-launch-up* GAUNTLET_STAMPEDE_LAUNCH_UP_DEFAULT) ;; live: read as each yakow's hit is sent
 (define *gauntlet-stampede-red-count* GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT) ;; the herd's first this-many slots are red, however big the herd
 (define *gauntlet-babak-charge-enabled* GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT) ;; off: babaks are the game's own, never charged
 (define *gauntlet-babak-charge-chance* GAUNTLET_BABAK_CHARGE_CHANCE_DEFAULT) ;; rolled once per babak, when it is born

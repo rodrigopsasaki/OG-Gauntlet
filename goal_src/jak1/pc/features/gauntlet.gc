@@ -1183,8 +1183,8 @@
 (defconstant GAUNTLET_STAMPEDE_EXIT (meters 30)) ;; and vanishes this far past it
 (defconstant GAUNTLET_STAMPEDE_PROBE_RAISE (meters 6)) ;; the ground under a yakow is searched for from this far above it, so a rise in the ground does not bury it
 (defconstant GAUNTLET_STAMPEDE_GROUND_SEEK (meters 20)) ;; and a yakow follows the ground up or down at most this fast
-(defconstant GAUNTLET_STAMPEDE_SHOVE_BACK (meters 3.5)) ;; how far a hit throws Jak, about; his own hit reaction runs about as far again as this (target-hit-move)
-(defconstant GAUNTLET_STAMPEDE_SHOVE_UP (meters 1.5)) ;; and how high
+(defconstant GAUNTLET_STAMPEDE_SHOVE_BACK (meters 3.5)) ;; how far a hit throws Jak along the ground, about; his own hit reaction runs about as far again as this (target-hit-move). How high is *gauntlet-stampede-launch-up*
+(defconstant GAUNTLET_STAMPEDE_RED_LAUNCH_BONUS 0.5) ;; a red yakow's launch is this fraction higher again than a plain one's, times the desperation (45 m at full health, 60 m at one hit left, at the default launch)
 (defconstant GAUNTLET_YAKOW_RADIUS (meters 1.4)) ;; the touch sphere, snug to the body so the lanes are as wide as they look
 (defconstant GAUNTLET_YAKOW_CENTER (meters 1.3)) ;; and how high above its feet it sits
 (defconstant GAUNTLET_YAKOW_RUN_PACE 1.5) ;; the village yakow's run animation speed (yakow-bank run-anim-speed, capped) at its run speed...
@@ -1245,16 +1245,33 @@
   (not (time-elapsed? *gauntlet-stampede-last-hit* (-> *TARGET-bank* hit-invulnerable-timeout))))
 
 (defbehavior gauntlet-yakow-trample gauntlet-yakow ((jak process) (touching touching-shapes-entry))
-  "Jak touched this yakow: one plain 'attack, which his own invulnerability can refuse, never a kill. He is thrown away from
-   the yakow, which with the herd coming at him is mostly along its heading, out of the lane he was standing in. A red yakow
-   throws him much farther, the farther the weaker he is (the desperation), and costs him a second hit once the first has
-   landed (gauntlet-eco-second-hit!)."
+  "Jak touched this yakow: one plain 'attack, which his own invulnerability can refuse, never a kill. He is thrown into the
+   sky, *gauntlet-stampede-launch-up* high (30 m by default), and a little away from the yakow, which with the herd coming
+   at him is mostly along its heading, out of the lane he was standing in. A red yakow throws him higher the weaker he is
+   (the desperation), GAUNTLET_STAMPEDE_RED_LAUNCH_BONUS of the launch more at full health and up to twice that at one hit,
+   and farther along the ground too, and costs him a second hit once the first has landed (gauntlet-eco-second-hit!).
+
+   How the height comes about, from the game's own hit (target-hit-move, target-death.gc): the hit state sets Jak's velocity
+   along gravity to 2048 + sqrt(491520 * shove-up) units a second, and 491520 is twice gravity (60 m/s^2 = 245760), so that is
+   the launch speed of a throw that rises exactly shove-up above his feet: sqrt(2 g h) plus half a meter's worth of speed,
+   about 30.5 m for a shove-up of 30 m, 60 m/s off the ground, a 2 s flight. Nothing clamps it. The speed limits of the smack
+   surface (*smack-mods*, transv-max 10 m/s) and the hit state's exit act on the part of his velocity across gravity only, so
+   the climb is his; gravity-max limits his fall, never his rise. And the throw is bounded on the ground, not in time: the push
+   along the ground ends once he has been carried shove-back from where he stood (attack-info dist, which defaults to
+   shove-back), after which the smack surface's turn-to-strength drains what is left of his sideways speed. So a longer flight
+   does not carry him farther: he goes UP and comes back down about as far from where he stood as a low throw would have put him.
+
+   The way down is the game's own landing, and two things on it are worth knowing. Landing on level ground costs him
+   nothing: the fall check (target-hit-ground) measures from the last place he stood on a surface, and he comes down at the
+   same height. But a landing on something that hears 'bonk (a platform, an enemy) from an arc above fall-far (30 m) is the
+   hard landing that fires *target-bonk-hook*, which drops the Misty muse he carries. That is meant: a stampede that throws
+   him this high is a fall, and on Misty a fall loses her."
   (when (not (gauntlet-stampede-recent-hit?))
     (let* ((knock (vector-! (new 'stack-no-clear 'vector) (target-pos 0) (-> self root trans)))
            (red? (= (-> self eco) (gauntlet-eco red)))
            (strength (gauntlet-desperation))
            (back (if red? (* GAUNTLET_ECO_RED_SHOVE_BACK strength) GAUNTLET_STAMPEDE_SHOVE_BACK))
-           (up (if red? (* GAUNTLET_ECO_RED_SHOVE_UP strength) GAUNTLET_STAMPEDE_SHOVE_UP)))
+           (up (if red? (* *gauntlet-stampede-launch-up* (+ 1.0 (* GAUNTLET_STAMPEDE_RED_LAUNCH_BONUS strength))) *gauntlet-stampede-launch-up*)))
       (set! (-> knock y) 0.0)
       ;; standing exactly on the yakow's center has no direction away from it, so use the way it runs
       (if (< (vector-xz-length knock) 40.96)
@@ -1264,7 +1281,7 @@
       (when (send-event jak 'attack touching (static-attack-info ((mode 'generic) (shove-back back) (shove-up up) (vector knock))))
         (set! *gauntlet-stampede-last-hit* (current-time))
         (if red? (gauntlet-eco-second-hit! jak))
-        (format 0 "GAUNTLET STAMPEDE: ~S yakow ~D trampled Jak~%" (if red? "red" "plain") (-> self index)))))
+        (format 0 "GAUNTLET STAMPEDE: ~S yakow ~D trampled Jak, launched ~M m up~%" (if red? "red" "plain") (-> self index) up))))
   0)
 
 (defbehavior gauntlet-yakow-event gauntlet-yakow ((proc process) (argc int) (message symbol) (block event-message-block))
@@ -3961,6 +3978,7 @@
      (,row "stampede-speed" meters *gauntlet-stampede-speed* GAUNTLET_STAMPEDE_SPEED_DEFAULT 4.0 30.0)
      (,row "stampede-trigger-radius" meters *gauntlet-stampede-trigger-radius* GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT 0.0 200.0)
      (,row "stampede-rearm-range" meters *gauntlet-stampede-rearm-range* GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT 0.0 1000.0)
+     (,row "stampede-launch-up" meters *gauntlet-stampede-launch-up* GAUNTLET_STAMPEDE_LAUNCH_UP_DEFAULT 0.0 100.0)
      (,row "stampede-red-count" count *gauntlet-stampede-red-count* GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT 0.0 30.0)
      (,row "yakow-stampede-enabled" flag *gauntlet-yakow-stampede-enabled* GAUNTLET_YAKOW_STAMPEDE_ENABLED_DEFAULT 0 0)
      (,row "babak-charge-enabled" flag *gauntlet-babak-charge-enabled* GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT 0 0)
