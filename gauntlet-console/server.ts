@@ -459,7 +459,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "s",
     [1, 20, 0.5],
     "live",
-    "Time from one boulder leaving his hand to the next, wind-up included. A throw takes as long as its animation, so very low values change little.",
+    "The time from one boulder leaving his hand to the next with no hit taken. The default is the length of his throw animations as the game made them (5.27 s); below it he plays them faster, wind-up and follow-through alike (at most 4x), so this really is the gap. The rage below shortens it as he is hurt.",
   ),
   num(
     "klaww-rage-max",
@@ -468,7 +468,16 @@ const SETTINGS: readonly SettingSpec[] = [
     "x",
     [1, 5, 0.1],
     "live",
-    "He rests this many times less between throws when he has one hit left, 1x with none taken, in a straight line between (at 2 and five buttons: 1, 1.25, 1.5, 1.75, 2). The wind-up is never shortened, so a boulder stays readable; only the wait after it shrinks, down to the length of a throw. Healing him (the cannon) slows him back down at once.",
+    "He throws this many times as often when he has one hit left, 1x with none taken, in a straight line between (at 2.5 and five buttons: 1, 1.375, 1.75, 2.125, 2.5, so the last gap is 2.1 s). His throw plays faster to make it, so the wind-up, which is the boulder's warning, is shorter too. Healing him (the cannon) slows him back down at once.",
+  ),
+  num(
+    "klaww-radius-max",
+    "Klaww",
+    "Boulder radius with one hit left",
+    "x",
+    [1, 5, 0.1],
+    "next boulder",
+    "His boulders blast this many times as wide when he has one hit left, 1x with none taken, in the same straight line as the rage (at 2 and a 5 m radius: 5, 6.25, 7.5, 8.75, 10 m). Fixed for each boulder as it leaves his hand; its ring on the ground and its hit on Jak are this wide, and so is what it breaks and kills.",
   ),
   num(
     "klaww-range",
@@ -486,7 +495,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "m",
     [1, 15, 0.5],
     "next boulder",
-    "Jak is hit if he is this close to where a boulder lands. The orange ring on the ground is this wide.",
+    "At full health, Jak is hit if he is this close to where a boulder lands, and crates break and enemies die inside it too. The ring on the ground is this wide; the radius below widens it as he is hurt.",
   ),
   flag(
     "tnt-enabled",
@@ -581,6 +590,8 @@ interface KlawwState {
   rage: number | null;
   /** The rest between his throws with that rage, in seconds. null for a game build older than the rage. */
   throwEvery: number | null;
+  /** How wide a boulder thrown now would blast, in meters: the boulder radius widened by his fury. null for a game build older than the radius. */
+  radius: number | null;
 }
 interface HordeState {
   /** Watchers alive: one per lurker that was born with clones still standing. */
@@ -739,6 +750,7 @@ function parseGauntletState(raw: unknown): GauntletState {
               rage: klaww.rage === undefined ? null : needNumber(klaww, "rage", "state.klaww"),
               throwEvery:
                 klaww.throwEvery === undefined ? null : needNumber(klaww, "throwEvery", "state.klaww"),
+              radius: klaww.radius === undefined ? null : needNumber(klaww, "radius", "state.klaww"),
             };
           }),
     horde:
