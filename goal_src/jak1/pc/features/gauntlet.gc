@@ -657,6 +657,35 @@
     (sound-play "babak-roar" :position #f))
   0)
 
+;; defined further down, with the drop spots, which come after the muse's first user
+(define-extern gauntlet-in-level? (function symbol basic))
+
+(defconstant GAUNTLET_MAYHEM_MUSIC_PRIORITY 40.0) ;; the flava's priority; the level's own music zones ask with the default 10 (ambient.gc), so this wins over them
+
+(define *gauntlet-mayhem-music* #f) ;; the icon's process has asked for the battle flavour and not yet taken it back
+
+(defun gauntlet-mayhem-music-off! ()
+  "Take back the battle flavour if the icon's process asked for it. The setting belongs to the process that made it, which is the one calling."
+  (when *gauntlet-mayhem-music*
+    (set! *gauntlet-mayhem-music* #f)
+    (remove-setting! 'sound-flava)
+    (format 0 "GAUNTLET MAYHEM music battle off~%"))
+  0)
+
+(defun gauntlet-mayhem-music-poll! ()
+  "Per-frame, from the icon's process (set-setting! belongs to the process that calls it, and a connection dies with it, so this is the
+   one process that lives as long as Misty does): while the muse is loose and Jak is on the island, Misty's battle music, the flavour of
+   its tune the game keeps for the fight with the lurkers (gsound.gc, flava-table-add misty). The flavour is the level music's own,
+   so it only changes how Misty's tune plays, and a flavour the player chose in the progress menu still wins (the game's own rule)."
+  (let ((want (and *gauntlet-misty-mayhem-music* (gauntlet-muse-loose?) (gauntlet-in-level? 'misty))))
+    (cond
+      ((and want (not *gauntlet-mayhem-music*))
+       (set! *gauntlet-mayhem-music* #t)
+       (set-setting! 'sound-flava #f GAUNTLET_MAYHEM_MUSIC_PRIORITY (music-flava misty-battle))
+       (format 0 "GAUNTLET MAYHEM music battle on~%"))
+      ((and (not want) *gauntlet-mayhem-music*) (gauntlet-mayhem-music-off!))))
+  0)
+
 (defun gauntlet-muse-flip! ((carried symbol))
   "Make carried the muse's state and say so, once: an eco burst at Jak (blue and a green eco chime when she is his, red and the
    warning when he has lost her) beside the icon's flash, and the beat of the change (gauntlet-mayhem-onset!, gauntlet-mayhem-relief!). A flip
@@ -4756,14 +4785,19 @@
              *target*
              (gauntlet-misty-active?)
              (not (handle->process (-> *gauntlet-muse-world* icon))))
+    (set! *gauntlet-mayhem-music* #f) ;; a process that is gone took its settings with it
     (set! (-> *gauntlet-muse-world* icon)
           (ppointer->handle
             (process-spawn-function process
                                     (lambda :behavior process ()
                                       (loop
-                                        (if (and *gauntlet-misty-muse-enabled* (gauntlet-misty-active?))
-                                          (gauntlet-muse-icon-frame!)
-                                          (deactivate self))
+                                        (cond
+                                          ((and *gauntlet-misty-muse-enabled* (gauntlet-misty-active?))
+                                           (gauntlet-muse-icon-frame!)
+                                           (gauntlet-mayhem-music-poll!))
+                                          (else
+                                           (gauntlet-mayhem-music-off!)
+                                           (deactivate self)))
                                         (suspend)))
                                     :to *active-pool*
                                     :name 'gauntlet-muse-icon))))
@@ -4854,6 +4888,7 @@
      (,row "misty-mayhem-extra" count *gauntlet-misty-mayhem-extra* GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT 0.0 4.0)
      (,row "misty-mayhem-speed" ratio *gauntlet-misty-mayhem-speed* GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT 1.0 4.0)
      (,row "misty-mayhem-charge-chance" ratio *gauntlet-misty-mayhem-charge-chance* GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT 0.0 1.0)
+     (,row "misty-mayhem-music" flag *gauntlet-misty-mayhem-music* GAUNTLET_MISTY_MAYHEM_MUSIC_DEFAULT 0 0)
      (,row "misty-mayhem-voice" flag *gauntlet-misty-mayhem-voice* GAUNTLET_MISTY_MAYHEM_VOICE_DEFAULT 0 0)
      (,row "misty-mayhem-atmosphere" ratio *gauntlet-misty-mayhem-atmosphere* GAUNTLET_MISTY_MAYHEM_ATMOSPHERE_DEFAULT 0.0 1.0)
      (,row "misty-muse-icon-yaw" degrees *gauntlet-misty-muse-icon-yaw* GAUNTLET_MUSE_ICON_YAW_DEFAULT 0.0 360.0)

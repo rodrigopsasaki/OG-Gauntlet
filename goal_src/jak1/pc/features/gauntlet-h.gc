@@ -120,6 +120,7 @@
 (defconstant GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT 1.5) ;; Misty's babaks and bonelurkers run this many times faster while she is loose
 (defconstant GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT 1.0) ;; the chance a Misty babak is born charged while she is loose, instead of babak-charge-chance
 (defconstant GAUNTLET_MISTY_MAYHEM_ATMOSPHERE_DEFAULT 1.0) ;; how far the world is tinted dark-eco violet while she is loose, from 0 (not at all) to 1 (as far as it goes)
+(defconstant GAUNTLET_MISTY_MAYHEM_MUSIC_DEFAULT #t) ;; Misty's battle music (its sound-flava misty-battle) plays while she is loose
 (defconstant GAUNTLET_MISTY_MAYHEM_VOICE_DEFAULT #t) ;; Daxter says a line when she is lost and another when she is caught again, at most one in a few seconds
 (defconstant GAUNTLET_MUSE_GRACE (seconds 1.5)) ;; a muse Jak has just dropped cannot be caught for this long, or she would be caught where she lands
 (defconstant GAUNTLET_MUSE_ICON_YAW_DEFAULT (degrees 200)) ;; which way her icon faces, around the vertical, before it sways; her front is her art's +z and the hud's own creature icons are turned 210, so 200 shows it. Turn it when the icon is seen from behind
@@ -190,6 +191,7 @@
 (define *gauntlet-misty-mayhem-speed* GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT) ;; live: read every frame a Misty lurker moves; composes with the desperation by multiplication
 (define *gauntlet-misty-mayhem-charge-chance* GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT) ;; read as each babak is born
 (define *gauntlet-misty-mayhem-atmosphere* GAUNTLET_MISTY_MAYHEM_ATMOSPHERE_DEFAULT) ;; live: read every frame the mood is tinted
+(define *gauntlet-misty-mayhem-music* GAUNTLET_MISTY_MAYHEM_MUSIC_DEFAULT) ;; live: read every frame
 (define *gauntlet-misty-mayhem-voice* GAUNTLET_MISTY_MAYHEM_VOICE_DEFAULT) ;; live: read as each line would be said
 (define *gauntlet-misty-muse-icon-yaw* GAUNTLET_MUSE_ICON_YAW_DEFAULT) ;; live: read every frame the icon is drawn
 (define *gauntlet-misty-muse-icon-scale* GAUNTLET_MUSE_ICON_SCALE_DEFAULT) ;; live: read every frame the icon is drawn
