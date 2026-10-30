@@ -524,6 +524,15 @@ const SETTINGS: readonly SettingSpec[] = [
     "next refusal",
     "How far a box that refuses throws Jak back (and 1.5 m up), with no damage. 0 only bounces him up.",
   ),
+  num(
+    "flybox-carrier-return",
+    "Scout flies",
+    "Carrier comes back after",
+    "s",
+    [0, 120, 1],
+    "next death",
+    "The eco a carrier lurker spills is picked up once and gone. A carrier that dies comes back this long after, charged again with a puff of its colour at the spot it was placed at, for as long as its box is closed, so a wasted colour is never lost for good. 0 means it stays dead until the level reloads.",
+  ),
   flag(
     "tnt-enabled",
     "TNT barrels",
