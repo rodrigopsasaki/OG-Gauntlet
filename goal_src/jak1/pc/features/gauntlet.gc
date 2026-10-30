@@ -1867,6 +1867,7 @@
 (define *gauntlet-klaww-defeated* #f) ;; true from the last hit until Jak leaves the level
 (define *gauntlet-klaww-cell-given* #f) ;; true once the cell has been handed back, so that it is never handed back twice
 (define *gauntlet-klaww-story* #f) ;; how he arrived: 'pelican (crushing it, and back when it reports in again) or 'console (back where he landed), or #f
+(define *gauntlet-klaww-mayor-told* #f) ;; true once the mayor has reacted to this fight's landing (or tried to), so a Klaww born again from these globals after a death does not make him say it twice
 (define *gauntlet-klaww-art-told* #f) ;; a missing art group is told about once, not every frame
 (define *gauntlet-klaww-home* #f) ;; the level the fight is in (a symbol), or #f before Klaww has been dropped: leaving it ends the fight
 ;; where his feet last landed, for the console's Klaww to come back to
@@ -2299,6 +2300,22 @@
        (format 0 "GAUNTLET KLAWW lands with no pelican to crush~%"))))
   0)
 
+(defun gauntlet-klaww-mayor-line! ()
+  "The mayor, down in the village, sees what has landed: THIS IS A CATASTROPHE, A CATASTROPHE I SAY (CHI-AM01, his own line). It is said once
+   per fight, not once per landing: a death puts Klaww away and he is born again from the globals, falling and landing again
+   through the same states, and the mayor has already had his say. The flag clears with the fight (gauntlet-klaww-reset!).
+   It goes out as an engine ambient hint, the mode the mayor's own lines use (mayor.gc): the voice streams as spool-CHI-AM01
+   with its subtitles, without lowering the music the way a camera or stinger hint does. Not positional (no vector), because
+   the mayor is nowhere near Klaww; it is the radio. The engine keeps one hint at a time (*hint-semaphore*): when another is
+   playing the spawn is refused with nothing else done, the line is lost, and that is logged. Not retried, so it never lands
+   late on top of a fight."
+  (when (not *gauntlet-klaww-mayor-told*)
+    (set! *gauntlet-klaww-mayor-told* #t)
+    (if (ambient-hint-spawn "CHI-AM01" (the-as vector #f) *entity-pool* 'ambient)
+      (format 0 "GAUNTLET KLAWW mayor line~%")
+      (format 0 "GAUNTLET KLAWW mayor line skipped, a hint is already playing~%")))
+  0)
+
 (defstate gauntlet-klaww-land (gauntlet-klaww)
   :event gauntlet-klaww-event
   :code
@@ -2317,6 +2334,10 @@
         (gauntlet-klaww-face-jak)
         (suspend)
         (ja :num! (seek!)))
+      ;; the mayor answers once the roar is over, not at the impact: the blast, the quake and the roar already fill the first
+      ;; seconds and would drown his voice, while here the first throw is still a whole interval away, so he is heard in the
+      ;; quiet before the boulders start
+      (gauntlet-klaww-mayor-line!)
       ;; the first throw waits one interval from the end of the roar
       (set-time! (-> self last-throw))
       (go gauntlet-klaww-idle))
@@ -2736,6 +2757,7 @@
     (set! *gauntlet-klaww-cell-given* #f)
     (set! *gauntlet-klaww-story* #f)
     (set! *gauntlet-klaww-home* #f)
+    (set! *gauntlet-klaww-mayor-told* #f)
     (format 0 "GAUNTLET KLAWW reset: ~S~%" why))
   (set! *gauntlet-klaww-art-told* #f)
   0)
