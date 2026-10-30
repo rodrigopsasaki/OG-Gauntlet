@@ -157,7 +157,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "Geyser Rock",
     "Bridge bomb",
     "live",
-    "Walking up to the Geyser bridge arms a bomb that drops on it.",
+    "Crossing the Geyser bridge, anywhere along its width, drops a bomb on its middle.",
   ),
   flag(
     "vent-enabled",
@@ -173,7 +173,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "m",
     [1, 20, 0.5],
     "live",
-    "How close Jak has to get to a drop spot (the bridge, the vent) to set its bomb off.",
+    "How close Jak has to get to a drop spot's trigger (a gate across the bridge, the point of the vent) to set its bomb off.",
   ),
   num(
     "bridge-rearm-range",
@@ -595,7 +595,7 @@ interface BombState {
   /** null when there is no Jak to measure against. */
   jakDistance: number | null;
 }
-/** A spot where the bomb drops by itself on Geyser Rock: the bridge, the vent. */
+/** A spot where the bomb drops by itself on Geyser Rock: the bridge, the vent. distance is to its trigger (a gate across the bridge, the vent's point). */
 interface DropSpotState {
   armed: boolean;
   distance: number;
