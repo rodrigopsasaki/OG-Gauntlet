@@ -4161,7 +4161,7 @@
   (none))
 
 (defun gauntlet-muse-drop! ((why symbol))
-  "Jak has lost the muse he carries, why being 'hit, 'bonk or 'death. She pops out loose where he stands, unless he died: a death
+  "Jak has lost the muse he carries, why being 'hit, 'death or the name of a bonk (see *target-bonk-hook*, e.g. 'bonk-wall-roll). She pops out loose where he stands, unless he died: a death
    puts every process of the entity pool away, so the poll below makes her at her home once it has. Dropped once for a hit,
    however many frames of invulnerability follow, because the second finds her loose already."
   (when (and *gauntlet-misty-muse-enabled* *gauntlet-muse-carried* (gauntlet-misty-active?))
@@ -4171,11 +4171,13 @@
     (if (!= why 'death) (gauntlet-muse-spawn! #t)))
   (none))
 
-;; gauntlet: engine/target/target-handler.gc calls this when Jak lands hard on something that hears 'bonk, which is what a bonk is:
-;; he came down on a platform or an enemy with a velocity change over 4 m/s along gravity (the collision handler's own test), the
-;; thing under him is told 'bonk and, from a fall beyond fall-far, he bounces off it
-(defun *target-bonk-hook* ()
-  (gauntlet-muse-drop! 'bonk)
+;; gauntlet: the engine calls this with the bonk's name whenever Jak bonks: a knock-back moment he visibly bounces or stumbles in, never an
+;; ordinary landing or a hop onto a platform or an enemy. The five (declared in engine/target/target-handler.gc, called there and in
+;; target.gc and target2.gc) are 'bonk-landing, a landing from beyond fall-far on an actor that hears 'bonk, off which he bounces;
+;; 'bonk-fall, the painful landing of a fall beyond fall-far onto the ground; and the wall smacks 'bonk-wall-lunge, 'bonk-wall-roll and
+;; 'bonk-wall-roll-jump, where the running attack, the roll and the roll jump hit a wall and he is shoved back. The muse log says which.
+(defun *target-bonk-hook* ((which symbol))
+  (gauntlet-muse-drop! which)
   (none))
 
 (defun gauntlet-muse-health-poll! ()

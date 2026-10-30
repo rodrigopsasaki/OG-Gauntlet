@@ -1290,7 +1290,7 @@
   :trans
     (behavior ()
       (when (!= (-> self state-time) (current-time))
-        (if (and (or (smack-surface? #t)
+        (when (and (or (smack-surface? #t)
                      (and (>= (-> self control surface-slope-z) 0.7) (not (logtest? (-> self control status) (cshape-moving-flags t-act)))))
                  (begin
                    (set! (-> self control did-move-to-pole-or-max-jump-height) (the-as int (current-time)))
@@ -1309,6 +1309,8 @@
                  (or (zero? (-> self control unknown-uint20))
                      (>= (the-as uint (- (current-time) (the-as int (-> self control unknown-uint20)))) (the-as uint 12)))
                  (!= (-> self control unknown-uint31) 1))
+          ;; gauntlet: the running attack, the lunge, smacks into a wall and bounces off
+          (*target-bonk-hook* 'bonk-wall-lunge)
           (target-shoved (-> *TARGET-bank* smack-surface-dist)
                          (-> *TARGET-bank* smack-surface-height)
                          (the-as process #f)
@@ -1806,7 +1808,9 @@
             (when (and (or (smack-surface? #f) (>= (-> self control surface-slope-z) 0.7))
                        (>= (the-as uint (- (current-time) (the-as int (-> self control unknown-uint20)))) (the-as uint 3))
                        (time-elapsed? (-> self state-time) 1))
-              (if (>= 6.0 (ja-aframe-num 0))
+              (when (>= 6.0 (ja-aframe-num 0))
+                ;; gauntlet: the roll smacks into a wall in its first frames and bounces off
+                (*target-bonk-hook* 'bonk-wall-roll)
                 (target-shoved (-> *TARGET-bank* smack-surface-dist)
                                (-> *TARGET-bank* smack-surface-height)
                                (the-as process #f)
@@ -1851,8 +1855,10 @@
   :exit target-exit
   :trans
     (behavior ()
-      (if (and (or (smack-surface? #f) (< (target-move-dist (-> *TARGET-bank* stuck-time)) (-> *TARGET-bank* stuck-distance)))
+      (when (and (or (smack-surface? #f) (< (target-move-dist (-> *TARGET-bank* stuck-time)) (-> *TARGET-bank* stuck-distance)))
                (!= (-> self state-time) (current-time)))
+        ;; gauntlet: the roll jump smacks into a wall, or is stopped dead by one, and bounces off
+        (*target-bonk-hook* 'bonk-wall-roll-jump)
         (target-shoved (-> *TARGET-bank* smack-surface-dist)
                        (-> *TARGET-bank* smack-surface-height)
                        (the-as process #f)
