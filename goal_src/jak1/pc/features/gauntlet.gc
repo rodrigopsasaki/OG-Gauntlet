@@ -40,9 +40,10 @@
 ;; clones born beside it by the same init, *gauntlet-lurker-multiplier* of them in all. See "the horde" below; the hook that
 ;; hears of each birth is in engine/entity/entity.gc.
 ;;
-;; On Misty Island (level misty) the muse decides how the island behaves: caught, it is the mod's usual; loose (not yet caught,
-;; or dropped by a hit, a bonk or a death), it is mayhem: more lurkers, faster, babaks charged. An icon of her in a corner of the hud
-;; shows which. See "the muse" and "the muse's body" below.
+;; On Misty Island (level misty) the muse decides how the island behaves: caught, the island is calm, the lurkers it places and nothing
+;; more, at their own pace and as charged as babak-charge-chance makes them; loose (not yet caught, or dropped by a hit, a bonk or a
+;; death), it is mayhem: those lurkers with their company (the horde's clones) and the mayhem's extras, faster, babaks charged. An icon of
+;; her in a corner of the hud shows which. See "the muse" and "the muse's body" below.
 ;;
 ;; The bomb is the big dark eco bomb Gol and Maia's robot drops in the final
 ;; boss (darkecobomb, levels/finalboss/robotboss-weapon.gc), made available
@@ -557,7 +558,8 @@
 ;; is a power cell that runs; catching her ends a chase. Here catching her is the island calming down.
 ;;   LOOSE    she is not with Jak: mayhem. The state on arrival, before the first catch: "you catch her and things behave
 ;;            normally" makes not having caught her yet the abnormal one.
-;;   CARRIED  she is: the mod's usual lurkers (the eco-charged ones, the clones of "the horde"), nothing more.
+;;   CARRIED  she is: the island is calm. The lurkers Misty places and nothing more: no clones of the horde, no extras, their own pace, and
+;;            as charged as babak-charge-chance makes a babak (it rolls once at birth, as everywhere).
 ;; *gauntlet-muse-carried* is the one authority, for the log, the state file, the icon and every effect below; nothing keeps a
 ;; second copy. It flips in three places only, all below: gauntlet-muse-caught! (the muse's own state calls it as she is caught),
 ;; gauntlet-muse-drop! (Jak is hit, bonks, or dies) and gauntlet-muse-poll! (Misty is entered or left). The first catch is the
@@ -565,8 +567,9 @@
 ;; Dropping her pops a new muse out on her path where Jak lost her, to be chased and caught again (see "the muse's body").
 ;;
 ;; While LOOSE, on Misty only (every effect asks gauntlet-mayhem-for? of its own process, whose entity says what level it is of):
-;;   more enemies   each lurker Misty places has misty-mayhem-extra more clones, on top of lurker-multiplier's ("the horde"); catching
-;;                  her takes only those away, with a puff
+;;   more enemies   each lurker Misty places has its company: lurker-multiplier's clones ("the horde") and misty-mayhem-extra more on top.
+;;                  None of it stands while she is with Jak. Catching her takes every clone away, with a puff each; dropping her brings
+;;                  them all in beside the lurkers that are standing, each in a burst of dark eco
 ;;   faster         babaks and bonelurkers run misty-mayhem-speed times faster (babak.gc, bonelurker.gc): live, and it composes
 ;;                  with the desperation by multiplication, a blue babak at one hit running both
 ;;   stronger       a babak wears a charge by the chance misty-mayhem-charge-chance instead of babak-charge-chance. It rolls both when it is born and
@@ -3676,13 +3679,16 @@
 ;; because the kernel invalidates them. The walk costs one pass over a pool of a few hundred processes, once per birth and once
 ;; per state write.
 ;;
-;; Misty Island's lurkers have more company while the muse is loose (see "the muse"): *gauntlet-misty-mayhem-extra* more clones,
-;; the extras. They live in slots of their own (the last GAUNTLET_HORDE_MAX_CLONES of the group's handles), so that taking them
-;; away on a catch, or topping them up on a drop, never touches the normal clones, and so that the group does not have to remember
-;; which are which. The watcher of a Misty group stays for as long as extras could come (until its level goes, the original is
-;; put away or killed), because an original whose normal clones are all dead is still owed its extras the next time she is dropped.
-;; A group tops itself up once for each time the muse has gone loose (*gauntlet-muse-episode*), so extras that Jak killed are not
-;; born again while she stays loose, and a Misty lurker born in the calm gets its extras the first time she is lost.
+;; Misty Island's lurkers have company only while the muse is loose (see "the muse"): their normal clones, and *gauntlet-misty-mayhem-extra*
+;; more, the extras. With her caught Misty is calm: the lurkers it places and nothing else, so a lurker born then has no company, and
+;; catching her takes the whole of it away, each clone with a puff. (With the muse setting off Misty is a level like any other, and only
+;; the extras, which need her, go.) The normal clones live in the first GAUNTLET_HORDE_MAX_CLONES slots of the group's handles and the
+;; extras in the last, each at the angle of its slot, so a top-up on a drop puts each where a birth would have, and the group does not
+;; have to remember which are which. The watcher of a Misty group stays for as long as company could come (until its level goes, the
+;; original is put away or killed), because a lurker born or standing in the calm is owed all of it the next time she is dropped. A
+;; group is brought its company once for each time the muse has gone loose (*gauntlet-muse-episode*), so clones that Jak killed are not
+;; born again while she stays loose. A Misty lurker born while she is loose has its company from its birth, by the same
+;; gauntlet-horde-mayhem!, and not from the multiplier's ring below.
 ;;
 ;; Nothing here keeps a string: a field of a plain process subtype that points into the process's own heap is not moved when
 ;; the heap compacts (engine/entity/relocate.gc adjusts only what each type's relocate method names, as nav-enemy's does for its
@@ -3757,34 +3763,54 @@
   (process-spawn part-tracker :init part-tracker-init group-land-poof-dirt 300 #f #f #f where :to *entity-pool*)
   0)
 
-(defun gauntlet-horde-extras-alive ((horde gauntlet-horde))
-  "How many of horde's Misty extras are still alive."
-  (let ((alive 0))
-    (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
-      (if (handle->process (-> horde clones (+ GAUNTLET_HORDE_MAX_CLONES i))) (+! alive 1)))
-    alive))
+(defun gauntlet-horde-base-asked ()
+  "How many normal clones a lurker is owed: lurker-multiplier minus one, at most GAUNTLET_HORDE_MAX_CLONES. The slots 0 up to this are its."
+  (min (+ *gauntlet-lurker-multiplier* -1) GAUNTLET_HORDE_MAX_CLONES))
 
-(defun gauntlet-horde-calm! ((horde gauntlet-horde))
-  "The muse is with Jak: every extra of horde still alive goes, each with a puff where it stood. Only the extras; the normal
-   clones are the mod's usual and stay."
-  (let ((gone 0))
-    (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
-      (let* ((slot (+ GAUNTLET_HORDE_MAX_CLONES i))
-             (alive (handle->process (-> horde clones slot)))
-             (body (if alive (as-type alive process-drawable))))
-        (when alive
-          (if body (gauntlet-puff! (-> body root trans)))
-          (deactivate alive)
-          (+! gone 1))))
+(defun gauntlet-horde-extras-asked ()
+  "How many extras a Misty lurker is owed while the muse is loose: misty-mayhem-extra, at most GAUNTLET_HORDE_MAX_CLONES. Slots 4 and up."
+  (min *gauntlet-misty-mayhem-extra* GAUNTLET_HORDE_MAX_CLONES))
+
+(defun gauntlet-horde-calm! ((horde gauntlet-horde) (all symbol))
+  "Take away horde's clones still alive, each with a puff where it stood: all of them (the muse is with Jak, and Misty's lurkers are the
+   originals and nothing more) when all is true, or only the extras (the muse setting was turned off, and Misty is a level like the rest)
+   when it is false."
+  (let ((gone 0)
+        (first-slot (if all 0 GAUNTLET_HORDE_MAX_CLONES)))
+    (let ((slot first-slot))
+      (while (< slot GAUNTLET_HORDE_SLOTS)
+        (let* ((alive (handle->process (-> horde clones slot)))
+               (body (if alive (as-type alive process-drawable))))
+          (when alive
+            (if body (gauntlet-puff! (-> body root trans)))
+            (deactivate alive)
+            (+! gone 1)))
+        (+! slot 1)))
     (if (> gone 0)
-      (format 0 "GAUNTLET HORDE ~S mayhem over, -~D extras~%" (res-lump-struct (-> horde ent) 'name string) gone)))
+      (format 0 "GAUNTLET HORDE ~S calm, -~D clones~%" (res-lump-struct (-> horde ent) 'name string) gone)))
   0)
 
+(defun gauntlet-horde-slot-born! ((horde gauntlet-horde) (slot int) (centre vector) (angle float) (radius float))
+  "Born the clone of horde's slot slot standing radius from centre, angle round from +z towards +x, in a burst of dark eco, the colour of the
+   mayhem. True when one came; false when no process was free for it."
+  (let ((spot (new 'stack-no-clear 'vector)))
+    (set! (-> spot x) (+ (-> centre x) (* radius (sin angle))))
+    (set! (-> spot y) (-> centre y))
+    (set! (-> spot z) (+ (-> centre z) (* radius (cos angle))))
+    (set! (-> spot w) 1.0)
+    (let ((twin (gauntlet-horde-clone! (-> horde ent) spot)))
+      (when (handle->process twin)
+        (set! (-> horde clones slot) twin)
+        (process-spawn part-tracker :init part-tracker-init group-dark-eco-box-explosion -1 #f #f #f spot :to *entity-pool*)
+        #t))))
+
 (defun gauntlet-horde-mayhem! ((horde gauntlet-horde))
-  "The muse is loose: top horde's extras up to *gauntlet-misty-mayhem-extra* (four at most), as many as the cap on the crowd
-   allows, each in the slot of its own, on a ring wider than the normal clones' around the original where it stands NOW (where it was placed
-   when it is gone: a culled or killed one), so the extras arrive at the lurker that is in front of Jak and not at a home he may never
-   have seen, each with a burst of dark eco. This is done once for each time she goes loose, which the group's episode remembers, so extras
+  "The muse is loose: bring horde's company back up to what it is owed, the normal clones (lurker-multiplier minus one, on the ring of 3 m
+   they are born on, each at the angle of its slot) and then the extras (*gauntlet-misty-mayhem-extra*, on the wider ring), as many as the
+   cap on the crowd allows, each in the slot of its own, round the original where it stands NOW (where it was placed when it is gone: a
+   culled or killed one), so the company arrives at the lurker that is in front of Jak and not at a home he may never have seen, each with a
+   burst of dark eco. While the muse was with Jak there was none (gauntlet-horde-calm!), so on a drop all of it comes, and a lurker born in the
+   mayhem is brought its company by this too. This is done once for each time she goes loose, which the group's episode remembers, so clones
    Jak killed stay dead."
   (set! (-> horde episode) *gauntlet-muse-episode*)
   (gauntlet-horde-recount!)
@@ -3792,47 +3818,55 @@
          (proc (handle->process (-> horde original)))
          (live (if proc (as-type proc process-drawable)))
          (centre (new 'stack-no-clear 'vector))
-         (have (gauntlet-horde-extras-alive horde))
-         (asked (- (min *gauntlet-misty-mayhem-extra* GAUNTLET_HORDE_MAX_CLONES) have))
+         (base-total (gauntlet-horde-base-asked))
+         (extras-total (gauntlet-horde-extras-asked))
          (room (max 0 (- *gauntlet-horde-max-clones* *gauntlet-horde-clones*)))
-         (wanted (min asked room))
-         (born 0))
+         (missing 0)
+         (born-base 0)
+         (born-extras 0))
     (set! (-> centre quad) (-> (if live (-> live root trans) (-> ent extra trans)) quad))
-    (when (> wanted 0)
-      (let ((spot (new 'stack-no-clear 'vector)))
-        (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
-          (let ((slot (+ GAUNTLET_HORDE_MAX_CLONES i)))
-            (when (and (< born wanted) (not (handle->process (-> horde clones slot))))
-              (let ((angle (+ (degrees 45) (* (degrees 90) (the float i)))))
-                (set! (-> spot x) (+ (-> centre x) (* GAUNTLET_HORDE_EXTRA_RADIUS (sin angle))))
-                (set! (-> spot y) (-> centre y))
-                (set! (-> spot z) (+ (-> centre z) (* GAUNTLET_HORDE_EXTRA_RADIUS (cos angle))))
-                (set! (-> spot w) 1.0))
-              (let ((twin (gauntlet-horde-clone! ent spot)))
-                (when (handle->process twin)
-                  (set! (-> horde clones slot) twin)
-                  (+! born 1)
-                  ;; it is born in a burst of dark eco, the colour of the mayhem
-                  (process-spawn part-tracker :init part-tracker-init group-dark-eco-box-explosion -1 #f #f #f spot :to *entity-pool*))))))))
-    (if (< wanted asked)
-      (format 0 "GAUNTLET HORDE ~S mayhem capped: ~D of ~D extras fit (~D alive, cap ~D)~%"
-              (res-lump-struct ent 'name string) wanted asked *gauntlet-horde-clones* *gauntlet-horde-max-clones*))
-    (if (> born 0)
-      (format 0 "GAUNTLET HORDE ~S mayhem +~D extras around (~M, ~M, ~M), where the ~A stands~%"
-              (res-lump-struct ent 'name string) born (-> centre x) (-> centre y) (-> centre z) (if live "live one" "original was placed"))))
+    (dotimes (i base-total)
+      (when (not (handle->process (-> horde clones i)))
+        (cond
+          ((<= room 0) (+! missing 1))
+          ((gauntlet-horde-slot-born! horde i centre (* (/ (degrees 360) (the float base-total)) (the float i)) GAUNTLET_HORDE_RING_RADIUS)
+           (+! born-base 1)
+           (+! room -1))
+          (else (+! missing 1)))))
+    (dotimes (i extras-total)
+      (let ((slot (+ GAUNTLET_HORDE_MAX_CLONES i)))
+        (when (not (handle->process (-> horde clones slot)))
+          (cond
+            ((<= room 0) (+! missing 1))
+            ((gauntlet-horde-slot-born! horde slot centre (+ (degrees 45) (* (degrees 90) (the float i))) GAUNTLET_HORDE_EXTRA_RADIUS)
+             (+! born-extras 1)
+             (+! room -1))
+            (else (+! missing 1))))))
+    (if (> missing 0)
+      (format 0 "GAUNTLET HORDE ~S mayhem capped: ~D clones did not fit (~D alive, cap ~D)~%"
+              (res-lump-struct ent 'name string) missing *gauntlet-horde-clones* *gauntlet-horde-max-clones*))
+    (if (> (+ born-base born-extras) 0)
+      (begin
+        (format 0 "GAUNTLET HORDE ~S mayhem +~D clones +~D extras" (res-lump-struct ent 'name string) born-base born-extras)
+        (format 0 " around (~M, ~M, ~M), where the ~A stands~%" (-> centre x) (-> centre y) (-> centre z) (if live "live one" "original was placed")))))
   0)
 
 (defun gauntlet-horde-misty-watch? ((horde gauntlet-horde))
-  "True when horde is Misty's and extras could still come to it: the muse is a state of the island and asks for any."
-  (and (= (-> horde level-name) 'misty) *gauntlet-misty-muse-enabled* (> *gauntlet-misty-mayhem-extra* 0)))
+  "True when horde is Misty's and clones could still come to it: the muse is a state of the island, and with her loose a lurker is owed its
+   normal clones and the extras (with her caught it is owed none)."
+  (and (= (-> horde level-name) 'misty)
+       *gauntlet-misty-muse-enabled*
+       (or (> (gauntlet-horde-base-asked) 0) (> (gauntlet-horde-extras-asked) 0))))
 
 (defun gauntlet-horde-mayhem-poll! ((horde gauntlet-horde))
-  "Per-frame, for a group of Misty's: the extras go the moment the muse is with Jak, and come, once, the moment she is loose."
+  "Per-frame, for a group of Misty's. With the muse setting on: all its clones go the moment the muse is with Jak, and come, once, the moment
+   she is loose. With it off Misty is a level like the rest, and only the extras go."
   (when (= (-> horde level-name) 'misty)
     (cond
+      ((not *gauntlet-misty-muse-enabled*) (gauntlet-horde-calm! horde #f))
       ((gauntlet-muse-loose?)
        (if (!= (-> horde episode) *gauntlet-muse-episode*) (gauntlet-horde-mayhem! horde)))
-      (else (gauntlet-horde-calm! horde))))
+      (else (gauntlet-horde-calm! horde #t))))
   0)
 
 (defstate gauntlet-horde-watch (gauntlet-horde)
@@ -3915,11 +3949,14 @@
   "The actor ent has just been born (the entity system's hook, below). If it came up as a lurker that gets company, and its
    story is not already finished (a babak that gives its power cell back is not to be multiplied), spawn the watcher and
    the clones on a ring around it, the first straight along the z axis, and say so. The multiplier asks for some clones; the
-   cap on the live ones, counted afresh, says how many fit, possibly none, and then there is no watcher either."
+   cap on the live ones, counted afresh, says how many fit, possibly none, and then there is no watcher either.
+   One of Misty's, with the muse setting on, is owed its company by the muse and not by the multiplier alone: it gets a watcher whether or
+   not any clone is due, and the watcher brings the company when she is loose (at birth too, here) and takes it away when she is with Jak."
   (let* ((original (-> ent extra process))
-         (asked (min (+ *gauntlet-lurker-multiplier* -1) GAUNTLET_HORDE_MAX_CLONES))
-         ;; one of Misty's, with extras possible: it gets a watcher even with no normal clones to watch
-         (misty (and *gauntlet-misty-muse-enabled* (> *gauntlet-misty-mayhem-extra* 0) (= (-> ent extra level name) 'misty))))
+         (asked (gauntlet-horde-base-asked))
+         (misty (and *gauntlet-misty-muse-enabled*
+                     (= (-> ent extra level name) 'misty)
+                     (or (> asked 0) (> (gauntlet-horde-extras-asked) 0)))))
     (when (and original
                (or (> asked 0) misty)
                (not (logtest? (-> ent extra perm status) (entity-perm-status complete)))
@@ -3927,8 +3964,9 @@
       (gauntlet-horde-recount!)
       (let* ((name (res-lump-struct ent 'name string))
              (room (max 0 (- *gauntlet-horde-max-clones* *gauntlet-horde-clones*)))
-             (wanted (min asked room)))
-        (if (< wanted asked)
+             ;; Misty's normal clones are the muse's to bring (gauntlet-horde-mayhem!), not born here
+             (wanted (if misty 0 (min asked room))))
+        (if (and (not misty) (< wanted asked))
           (format 0 "GAUNTLET HORDE ~S capped: ~D of ~D clones asked for fit (~D alive, cap ~D)~%"
                   name wanted asked *gauntlet-horde-clones* *gauntlet-horde-max-clones*))
         (when (or (> wanted 0) misty)
@@ -3954,7 +3992,7 @@
                         (+! born 1)))))
                 (if (< born wanted)
                   (format 0 "GAUNTLET HORDE ~S wanted +~D clones and no process was free for the rest~%" name wanted))
-                ;; the muse loose: the extras are born with the rest, so a lurker that comes up in the mayhem arrives in it
+                ;; the muse loose: the company is born with the lurker, so one that comes up in the mayhem arrives in it
                 (if (and misty (gauntlet-muse-loose?)) (gauntlet-horde-mayhem! horde))
                 (cond
                   ((> born 0) (format 0 "GAUNTLET HORDE ~S ~A +~D clones~%" name (-> original type) born))

@@ -117,9 +117,9 @@
 ;; The eco effects scale with Jak's missing health (gauntlet-desperation in gauntlet.gc), and a power cell heals him.
 (defconstant GAUNTLET_DESPERATION_MAX_DEFAULT 2.0) ;; every eco effect is this many times stronger with one hit left (1.0 at full health, linear between)
 (defconstant GAUNTLET_CELL_HEAL_ENABLED_DEFAULT #t) ;; a power cell heals Jak up to 3 hits, never above
-;; Misty Island's muse: with her caught the island is the mod's usual, without her (not yet caught, or dropped by a hit, a bonk or a death) it is mayhem.
+;; Misty Island's muse: with her caught the island is calm (its own lurkers and no company), without her (not yet caught, or dropped by a hit, a bonk or a death) it is mayhem.
 (defconstant GAUNTLET_MISTY_MUSE_ENABLED_DEFAULT #t) ;; the muse is a state of the island, shown by an icon, and a loose one brings the mayhem below
-(defconstant GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT 2) ;; every lurker Misty places has this many more clones while the muse is loose, on top of lurker-multiplier's
+(defconstant GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT 2) ;; every lurker Misty places has this many more clones while the muse is loose, on top of lurker-multiplier's (which Misty has only then too)
 (defconstant GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT 1.8) ;; Misty's babaks and bonelurkers run this many times faster while she is loose; 1.5 was a pace nobody noticed against the calm one
 (defconstant GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT 1.0) ;; the chance a Misty babak is born charged while she is loose, instead of babak-charge-chance
 (defconstant GAUNTLET_MISTY_MAYHEM_ATMOSPHERE_DEFAULT 1.0) ;; how far the world is tinted dark-eco violet while she is loose, from 0 (not at all) to 1 (as far as it goes)
@@ -190,7 +190,7 @@
 (define *gauntlet-desperation-max* GAUNTLET_DESPERATION_MAX_DEFAULT) ;; live: read every frame an eco effect is applied
 (define *gauntlet-cell-heal-enabled* GAUNTLET_CELL_HEAL_ENABLED_DEFAULT) ;; off: a power cell leaves Jak's health as the game made it
 (define *gauntlet-misty-muse-enabled* GAUNTLET_MISTY_MUSE_ENABLED_DEFAULT) ;; off: no icon, no mayhem; the muse is the game's own and her catch is the game's
-(define *gauntlet-misty-mayhem-extra* GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT) ;; live: dropping the muse tops up every group, catching her takes the extras away
+(define *gauntlet-misty-mayhem-extra* GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT) ;; live: dropping the muse tops up every group, catching her takes all the clones away
 (define *gauntlet-misty-mayhem-speed* GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT) ;; live: read every frame a Misty lurker moves; composes with the desperation by multiplication
 (define *gauntlet-misty-mayhem-charge-chance* GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT) ;; read as each babak is born
 (define *gauntlet-misty-mayhem-atmosphere* GAUNTLET_MISTY_MAYHEM_ATMOSPHERE_DEFAULT) ;; live: read every frame the mood is tinted
@@ -200,7 +200,7 @@
 (define *gauntlet-misty-muse-icon-scale* GAUNTLET_MUSE_ICON_SCALE_DEFAULT) ;; live: read every frame the icon is drawn
 (define *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT) ;; off: the worms rise as the game made them
 (define *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT) ;; read at each rise
-(define *gauntlet-lurker-multiplier* GAUNTLET_LURKER_MULTIPLIER_DEFAULT) ;; read as each lurker is born; the ones already in the world keep their company
+(define *gauntlet-lurker-multiplier* GAUNTLET_LURKER_MULTIPLIER_DEFAULT) ;; read as each lurker is born; the ones already in the world keep their company (Misty's, with the muse setting on, have it only while she is loose)
 (define *gauntlet-horde-max-clones* GAUNTLET_HORDE_MAX_CLONES_DEFAULT) ;; read as each lurker is born, and live: clones already standing are never taken away for it
 (define *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT) ;; off: no Klaww, no buttons, and whatever stands is taken away
 (define *gauntlet-klaww-throw-interval* (the int GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT))
