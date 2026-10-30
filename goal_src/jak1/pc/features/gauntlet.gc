@@ -22,9 +22,10 @@
 ;; its nest with the stolen power cell, and throws boulders at Jak; the buttons around the beach throw boulders back (one hit
 ;; each), and the cell is his to give up when he falls. The fight survives Jak dying. "klaww" in the request file drops him anywhere. See "Klaww" below.
 ;;
-;; Also at Sentinel Beach, each scout fly box wears an eco colour (a table) and opens only when Jak breaks it carrying that eco (green: at full
-;; health); a wrong try bounces him off with a burst of the box's colour. The crabs and puppies near a box carry its eco: they glow its
-;; colour and spill it where they die. The game asks the box through a hook in engine/common-obs/crates.gc. See "the scout fly boxes".
+;; On every level, each scout fly box wears an eco colour (a table) and opens only when Jak breaks it carrying that eco (green: at full
+;; health); a wrong try bounces him off with a burst of the box's colour. The lurkers near a box may carry its eco: they glow its
+;; colour and spill it where they die, and come back after a while if it is still closed. The game asks the box through a hook in
+;; engine/common-obs/crates.gc. See "the scout fly boxes".
 ;;
 ;; The skull TNT barrels of Mountain Pass stand wherever a table of spots puts them (the first is on Sentinel Beach, between a
 ;; power cell and the spot below it): touch one and Jak dies, and it explodes. A barrel that is gone is stood again once Jak
@@ -3795,11 +3796,12 @@
 ;; Nothing here may have a side effect on a path the 'query 'pickup of pckernel.gc reaches (it calls pickup-collectable! with an
 ;; amount of 0 every frame): the gate reads Jak's fact directly and never asks him anything.
 ;;
-;; Where the eco comes from: lurkers carry it. Each non-green box has one or two carriers, the crabs and puppies of the beach that
-;; stand nearest to it, named in the second table. A carrier glows its colour and trails the aura of Jak's eco of it, and when it
-;; dies it spills a pickup of that eco where it fell. A carrier only looks and spills: the babak's blue pace and red shove live in
-;; fields of its type and a copy of its enemy info (babak.gc), which a crab and a puppy do not have and would need each their own
-;; surgery. The eco Jak picks up times out, which is why the carriers are the ones near their box.
+;; Where the eco comes from: free eco of the level (a vent, a cluster of pickups, a crate with eco in it) or a carrier, a lurker. The
+;; second table names the carriers of a box: the crabs, puppies, bunnies, hoppers, rats and bonelurkers placed nearest to it,
+;; at most two. A carrier glows its colour and trails the aura of Jak's eco of it, and when it dies it spills a pickup of that eco
+;; where it fell. A carrier only looks and spills: the babak's blue pace and red shove live in fields of its type and a copy of its
+;; enemy info (babak.gc), which the others do not have and would need each their own surgery, and for the same reason babaks, already
+;; charged in their own right, are never carriers. The eco Jak picks up times out, which is why a source must be near its box.
 ;;
 ;; The spill is one-off: the pickup is made with fact-options one-off, which the eco's die state (collectables.gc) reads, so that it is
 ;; gone for good once picked up. Without it the game brings an eco pickup born again at the spot it fell as soon as Jak's own eco of
@@ -3811,15 +3813,22 @@
 ;; only when Jak is near, and the delay would be the entity's to keep; a clone is gauntlet-horde-clone!, which the mod already trusts,
 ;; and is the watcher's own to time. Once the box is open nothing returns.
 ;;
-;; Both tables are keyed by level and entity name, so another level is a few rows. The colour of a box is by the eco around it: a
-;; box near a vent or a cluster of an eco wears it, the rest are spread so that all four are on the beach. Sentinel Beach has
-;; blue eco (the crates and pickups by the start, and the one by the sentinel) and green vents (the cluster at the far end), and
-;; no red or yellow, which only the carriers bring. The carriers were picked from the level's actor list: for each box, the nearest
-;; crab or puppy not already taken, within GAUNTLET_FLYBOX_CARRIER_RANGE, at most two; the distance is the box to its carrier's
-;; placed spot (they wander a little from it). Every buzzer crate that is born is logged with its name and place, whatever its
-;; level, so that the table can be filled for a new one.
+;; Both tables are keyed by level and entity name, and generated offline from the decompiler's actor lists by a script
+;; (decompiler_out/jak1/entities/*-actors.json: a buzzer crate is a crate whose eco-info lump has type 8). The rules it applied:
+;;   - Geyser Rock (training): every box is blue; its blue eco is the vent before the door and the blue singles on the way.
+;;   - Elsewhere a colour needs a source near its box, or the box is green, which needs none. A source is free eco of that colour
+;;     (an unblocked vent, a cluster of singles, a crate with eco in it) or a carrier. "Near" comes from how long eco lasts
+;;     (*FACT-bank*: a single lasts 5 s, the most any pickups add up to is 20 s, which a vent gives at once) and Jak's run speed
+;;     (10 m/s, *walk-mods*), taking 8 m/s of it and keeping 1.5 s back to line up the attack: a vent reaches 148 m, two singles 68 m,
+;;     one single 28 m. A carrier's spill is one single, so its placed spot may be that 28 m away plus the distance at which it
+;;     notices Jak and can be led to the box (25 m for a crab, 30 m for the others): 53 or 58 m, box to carrier, placed spot.
+;;   - Zoomer levels (rolling, firecanyon, ogre, lavatube): the zoomer breaks a box through this same path (the crate's 'racer
+;;     attack, sent by Jak's own process, so the gate is asked), and his fact is set there for yellow, red and green; but blue eco is
+;;     turned into a boost by the zoomer's event handler and never carried, so those levels have no blue box.
+;;   - A level shows a mix: no colour has more than a share of the boxes (ceil(boxes / colours the level has a source for)), blue
+;;     preferring free eco and red and yellow preferring carriers. Sentinel Beach keeps the hand-made rows of the first version.
+;; Every buzzer crate that is born is logged with its name and place, whatever its level, so that a table row is easy to check.
 
-(defconstant GAUNTLET_FLYBOX_CARRIER_RANGE (meters 60)) ;; how far a carrier may stand from its box, placed spot to placed spot: farther and the eco would time out on the way
 (defconstant GAUNTLET_FLYBOX_LIFT (meters 0.75)) ;; the middle of a box, above its base
 (defconstant GAUNTLET_FLYBOX_SHOVE_UP (meters 1.5)) ;; how high a refusal throws Jak
 (defconstant GAUNTLET_FLYBOX_REFUSE_BURSTS 8) ;; bursts of a box's colour when it refuses
@@ -3829,26 +3838,166 @@
 (defmacro gauntlet-flybox-table (join row)
   "Expand row once per box, (row level name eco): the buzzer crate named name of level wants eco (red, blue, yellow or green)."
   `(,join
-     (,row beach "crate-2467" blue)
+     ;; beach
      (,row beach "crate-213" blue)
+     (,row beach "crate-2467" blue)
      (,row beach "crate-646" yellow)
      (,row beach "crate-647" red)
-     (,row beach "crate-651" red)
+     (,row beach "crate-648" green)
      (,row beach "crate-649" green)
-     (,row beach "crate-648" green)))
+     (,row beach "crate-651" red)
+     ;; citadel
+     (,row citadel "crate-2996" green)
+     (,row citadel "crate-2997" red)
+     (,row citadel "crate-2998" green)
+     (,row citadel "crate-2999" green)
+     (,row citadel "crate-3000" blue)
+     (,row citadel "crate-3001" blue)
+     (,row citadel "crate-3002" yellow)
+     ;; darkcave
+     (,row darkcave "crate-3022" green)
+     ;; firecanyon
+     (,row firecanyon "crate-1019" green)
+     (,row firecanyon "crate-1027" green)
+     (,row firecanyon "crate-1028" green)
+     (,row firecanyon "crate-1029" green)
+     (,row firecanyon "crate-1030" green)
+     (,row firecanyon "crate-1032" green)
+     (,row firecanyon "crate-1033" green)
+     ;; jungle
+     (,row jungle "crate-1844" green)
+     (,row jungle "crate-28" green)
+     (,row jungle "crate-3" green)
+     (,row jungle "crate-47" blue)
+     (,row jungle "crate-58" blue)
+     (,row jungle "crate-688" red)
+     (,row jungle "crate-689" yellow)
+     ;; lavatube
+     (,row lavatube "crate-3025" green)
+     (,row lavatube "crate-3026" green)
+     (,row lavatube "crate-3027" yellow)
+     (,row lavatube "crate-3028" yellow)
+     (,row lavatube "crate-3029" green)
+     (,row lavatube "crate-3117" yellow)
+     (,row lavatube "crate-3118" green)
+     ;; maincave
+     (,row maincave "crate-2685" yellow)
+     (,row maincave "crate-2689" green)
+     (,row maincave "crate-2697" yellow)
+     (,row maincave "crate-3018" green)
+     ;; misty
+     (,row misty "crate-2560" green)
+     (,row misty "crate-2561" green)
+     (,row misty "crate-659" blue)
+     (,row misty "crate-672" green)
+     (,row misty "crate-673" red)
+     (,row misty "crate-684" yellow)
+     (,row misty "crate-747" green)
+     ;; ogre
+     (,row ogre "crate-2430" green)
+     (,row ogre "crate-2989" green)
+     (,row ogre "crate-2990" green)
+     (,row ogre "crate-2991" green)
+     (,row ogre "crate-2992" green)
+     (,row ogre "crate-2993" green)
+     (,row ogre "crate-2994" green)
+     ;; robocave
+     (,row robocave "crate-2779" yellow)
+     (,row robocave "crate-2985" blue)
+     ;; rolling
+     (,row rolling "crate-2176" green)
+     (,row rolling "crate-2187" green)
+     (,row rolling "crate-2188" green)
+     (,row rolling "crate-2194" green)
+     (,row rolling "crate-2199" green)
+     (,row rolling "crate-2209" green)
+     (,row rolling "crate-2289" green)
+     ;; snow
+     (,row snow "crate-1132" blue)
+     (,row snow "crate-1133" red)
+     (,row snow "crate-1138" red)
+     (,row snow "crate-3134" green)
+     (,row snow "crate-975" blue)
+     (,row snow "crate-976" yellow)
+     (,row snow "crate-980" yellow)
+     ;; sunken
+     (,row sunken "crate-917" blue)
+     (,row sunken "crate-923" green)
+     (,row sunken "crate-925" green)
+     (,row sunken "crate-926" green)
+     ;; sunkenb
+     (,row sunkenb "crate-2705" blue)
+     ;; swamp
+     (,row swamp "crate-2936" yellow)
+     (,row swamp "crate-748" red)
+     (,row swamp "crate-762" yellow)
+     (,row swamp "crate-786" blue)
+     (,row swamp "crate-787" blue)
+     (,row swamp "crate-843" red)
+     (,row swamp "crate-849" green)
+     ;; training
+     (,row training "crate-2955" blue)
+     (,row training "crate-2956" blue)
+     (,row training "crate-2957" blue)
+     (,row training "crate-2958" blue)
+     (,row training "crate-2959" blue)
+     (,row training "crate-2960" blue)
+     (,row training "crate-2961" blue)
+     ;; village1
+     (,row village1 "crate-3141" green)
+     (,row village1 "crate-3142" green)
+     (,row village1 "crate-3143" green)
+     (,row village1 "crate-3144" green)
+     (,row village1 "crate-3145" green)
+     (,row village1 "crate-3146" green)
+     (,row village1 "crate-3147" green)
+     ;; village2
+     (,row village2 "crate-3127" blue)
+     (,row village2 "crate-3128" green)
+     (,row village2 "crate-3129" green)
+     (,row village2 "crate-3130" green)
+     (,row village2 "crate-3131" green)
+     (,row village2 "crate-3132" green)
+     (,row village2 "crate-3133" green)
+     ;; village3
+     (,row village3 "crate-3121" green)
+     (,row village3 "crate-3122" green)
+     (,row village3 "crate-3123" green)
+     (,row village3 "crate-3124" green)
+     (,row village3 "crate-3125" green)
+     (,row village3 "crate-3126" green)
+     (,row village3 "crate-3148" green)))
 
 (defmacro gauntlet-carrier-table (join row)
   "Expand row once per carrier, (row level lurker box meters): the lurker named lurker of level carries the eco of the box named
    box, and stood meters from it when placed."
   `(,join
-     (,row beach "lurkercrab-1" "crate-2467" 26.7)
      (,row beach "lurkerpuppy-5" "crate-213" 24.7)
      (,row beach "lurkerpuppy-6" "crate-213" 33.3)
+     (,row beach "lurkercrab-1" "crate-2467" 26.7)
      (,row beach "lurkerpuppy-2" "crate-646" 37.6)
      (,row beach "lurkercrab-3" "crate-646" 48.0)
      (,row beach "lurkercrab-8" "crate-647" 38.6)
      (,row beach "lurkercrab-65" "crate-647" 46.8)
-     (,row beach "lurkercrab-7" "crate-651" 47.3)))
+     (,row beach "lurkercrab-7" "crate-651" 47.3)
+     (,row jungle "hopper-34" "crate-688" 32.6)
+     (,row jungle "hopper-33" "crate-689" 39.0)
+     (,row misty "bonelurker-21" "crate-659" 53.4)
+     (,row misty "bonelurker-15" "crate-673" 18.9)
+     (,row misty "bonelurker-26" "crate-684" 49.6)
+     (,row misty "bonelurker-24" "crate-684" 51.6)
+     (,row snow "snow-bunny-64" "crate-1132" 30.4)
+     (,row snow "snow-bunny-63" "crate-1132" 39.4)
+     (,row snow "snow-bunny-69" "crate-1133" 41.5)
+     (,row snow "snow-bunny-68" "crate-1133" 46.9)
+     (,row snow "snow-bunny-71" "crate-1138" 41.2)
+     (,row snow "snow-bunny-117" "crate-976" 17.5)
+     (,row snow "snow-bunny-56" "crate-976" 19.2)
+     (,row snow "snow-bunny-116" "crate-980" 3.2)
+     (,row snow "snow-bunny-115" "crate-980" 54.2)
+     (,row swamp "swamp-rat-19" "crate-748" 13.6)
+     (,row swamp "swamp-rat-20" "crate-748" 30.7)
+     (,row swamp "swamp-rat-24" "crate-843" 30.8)))
 
 (defmacro gauntlet-row-flybox-eco (level name eco)
   `(when (and (= at-level (quote ,level)) (string= at-name ,name))
@@ -3948,10 +4097,25 @@
     (send-event jak 'shove #f (static-attack-info ((shove-up GAUNTLET_FLYBOX_SHOVE_UP) (shove-back *gauntlet-flybox-bounce*) (vector away)))))
   0)
 
+(defconstant GAUNTLET_FLYBOX_RACER_GAP (seconds 0.75)) ;; the zoomer is told a box refuses it at most this often
+(define *gauntlet-racer-refused* (the-as time-frame 0)) ;; when a box last refused the zoomer
+
+(defun gauntlet-flybox-fresh-refusal? ((box crate) (mode symbol) (id uint))
+  "True when this refusal is news. A spin or a flop reaches a crate on more than one frame under one attack id, so an attack is
+   told once. The zoomer's ramming (mode 'racer) sends its attack with id 0 every frame it touches the box, so it is told by the
+   clock instead, at most once every GAUNTLET_FLYBOX_RACER_GAP, whichever box."
+  (cond
+    ((= mode 'racer)
+     (when (time-elapsed? *gauntlet-racer-refused* GAUNTLET_FLYBOX_RACER_GAP)
+       (set-time! *gauntlet-racer-refused*)
+       #t))
+    (else (!= id (-> box incomming-attack-id)))))
+
 (defun gauntlet-flybox-refuse! ((box crate) (eco gauntlet-eco) (attacker process) (mode symbol) (id uint))
   "The box refuses an attack that would have broken it: a burst of its own colour, and when Jak did it, the log of what he
-   carried and the bounce off. Once for each attack, because a spin or a flop reaches a crate on more than one frame."
-  (when (!= id (-> box incomming-attack-id))
+   carried and the bounce off. Once for each attack, because a spin or a flop reaches a crate on more than one frame. No bounce
+   for the zoomer: it is already thrown back by the solid box, and a 'shove sent to a racing Jak is not the walking one."
+  (when (gauntlet-flybox-fresh-refusal? box mode id)
     (format 0 "GAUNTLET FLYBOX: ~S (~A) refused ~A, Jak carried ~A, health ~F of ~F~%"
             (res-lump-struct (-> box entity) 'name string) (gauntlet-eco-name eco) mode (gauntlet-jak-carries)
             (-> *target* fact health) (-> *target* fact health-max))
@@ -3960,7 +4124,7 @@
       (+! (-> middle y) GAUNTLET_FLYBOX_LIFT)
       (dotimes (i GAUNTLET_FLYBOX_REFUSE_BURSTS)
         (gauntlet-eco-scatter! middle eco)))
-    (if (= (-> attacker type) target) (gauntlet-flybox-bounce! box attacker)))
+    (if (and (= (-> attacker type) target) (!= mode 'racer)) (gauntlet-flybox-bounce! box attacker)))
   (none))
 
 (defun *crate-attack-gate-hook* ((box crate) (attacker process) (mode symbol) (id uint))
@@ -4129,7 +4293,7 @@
       (gauntlet-eco-glow! proc eco)
       (let ((carriers (gauntlet-flybox-say-carriers level-name name)))
         (if (and (zero? carriers) (!= eco (gauntlet-eco green)))
-          (format 0 "GAUNTLET FLYBOX: ~S no carrier within ~M m~%" name GAUNTLET_FLYBOX_CARRIER_RANGE)))
+          (format 0 "GAUNTLET FLYBOX: ~S has no carrier, its eco is free in the level~%" name)))
       (process-spawn gauntlet-eco-watch :init gauntlet-eco-watch-init-by-other ent (process->handle proc) eco #f :to *entity-pool*)))
   0)
 
