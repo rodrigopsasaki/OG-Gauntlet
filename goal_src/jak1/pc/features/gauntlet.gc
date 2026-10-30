@@ -1123,8 +1123,8 @@
 ;; Row 0 is the bridge: the tall pillar runners jump from is about 17 m away, so the pull drags that jump back toward the bridge.
 ;; Its trigger is a gate across the bridge, not the spot's point: a 5 m circle was easy to cross without entering (the bridge is
 ;; wider than a runner's line, and a jump off the pillar or the eco pad lands anywhere on it), and the one play that did it dropped
-;; nothing at all (the 2026-10-30 log). The gate runs 10 m to each side of the spot, at right angles to the line from the blue eco
-;; pad at the bridge's south end (the ring of eco-211 to eco-218, about -1307.2 922.0) to the foot of the pillar at its north end
+;; nothing at all (the 2026-10-30 log). The gate runs 10 m to each side of the spot, at right angles to the line from the pad at the
+;; bridge's south end (the ring of green eco pills eco-211 to eco-218, about -1307.2 922.0) to the foot of the pillar at its north end
 ;; (about -1322.0 958.0, where the money arc of training-cam-7 starts), so Jak crossing anywhere along its width, with the trigger
 ;; radius to spare, sets the bomb off, and crossing at the middle of the bridge's length is still what it means.
 ;; Row 1 is the blue eco vent before the precursor door, the only vent in the level (ecovent-245 of training-actors.json, with
