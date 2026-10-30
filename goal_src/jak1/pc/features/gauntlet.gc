@@ -601,9 +601,66 @@
   "The chance the babak proc, being born, is charged with eco: the mayhem's in the mayhem, else babak-charge-chance."
   (if (gauntlet-mayhem-for? proc) *gauntlet-misty-mayhem-charge-chance* *gauntlet-babak-charge-chance*))
 
+;; The beat of a change: the moment the muse is lost or caught has to be a moment, and not only a state that is different afterwards. On a loss the
+;; screen flashes violet (drawn by the icon's process, below, over the flash's GAUNTLET_MUSE_FLASH_TIME), the camera shakes at half the strength of a
+;; boulder's landing, bonelurkers and babaks roar, a burst of dark eco goes off at Jak, and Daxter says what a Daxter says. On a catch there is the
+;; eco chime and Daxter's relief. The icon's own spin is the same flash. The settings it answers to: misty-mayhem-atmosphere scales the flash, and
+;; misty-mayhem-voice is the line.
+(defconstant GAUNTLET_MAYHEM_ROAR_GAP (seconds 0.15)) ;; the babak answers the bonelurker this long after
+(defconstant GAUNTLET_MAYHEM_VOICE_GAP (seconds 6)) ;; Daxter speaks at most this often, a loss and a catch in quick turn included
+(defconstant GAUNTLET_MAYHEM_FLASH_ALPHA 60.0) ;; the screen's violet flash at its first frame, of the 128 that is opaque
+
+(define *gauntlet-mayhem-roar-at* (the-as time-frame 0)) ;; when the second roar is due, 0 while there is none; the icon's process plays it
+(define *gauntlet-mayhem-voice-time* (- 0 (seconds 3600))) ;; when Daxter last spoke, long ago until he does
+(define *gauntlet-mayhem-voice-last* -1) ;; which line he said last, so the next one is another
+
+(defun gauntlet-mayhem-say! ((lines (array string)))
+  "Daxter says one of lines, picked at random but never the one before, as an ambient hint (the mode the mayor's lines use: the voice streams with
+   its subtitles, without lowering the music). No more often than GAUNTLET_MAYHEM_VOICE_GAP. When another hint is playing the engine refuses the
+   spawn (*hint-semaphore*) and the line is lost, which is logged; it is not retried, so it never lands late."
+  (when (and *gauntlet-misty-mayhem-voice* (time-elapsed? *gauntlet-mayhem-voice-time* GAUNTLET_MAYHEM_VOICE_GAP))
+    (let ((pick (rand-vu-int-range 0 (+ (length lines) -1))))
+      (if (= pick *gauntlet-mayhem-voice-last*) (set! pick (mod (+ pick 1) (length lines))))
+      (set! *gauntlet-mayhem-voice-last* pick)
+      (cond
+        ((ambient-hint-spawn (-> lines pick) (the-as vector #f) *entity-pool* 'ambient)
+         (set-time! *gauntlet-mayhem-voice-time*)
+         (format 0 "GAUNTLET MAYHEM voice ~S~%" (-> lines pick)))
+        (else (format 0 "GAUNTLET MAYHEM voice ~S skipped, a hint is already playing~%" (-> lines pick))))))
+  0)
+
+(defun gauntlet-mayhem-onset! ()
+  "The muse has just been lost: the beat that says so. (The screen's flash is the icon process's, from *gauntlet-muse-flip-time*.)"
+  (format 0 "GAUNTLET MAYHEM onset~%")
+  ;; half a boulder's shake
+  (activate! *camera-smush-control* 410.0 37 600 1.0 0.995)
+  (sound-play "bonelurk-roar" :position #f)
+  (set! *gauntlet-mayhem-roar-at* (+ (current-time) GAUNTLET_MAYHEM_ROAR_GAP))
+  (when *target*
+    ;; dark eco's own burst, the particles of a dark eco crate breaking (crates.gc); the break's sound is a separate thing and is not played
+    (process-spawn part-tracker :init part-tracker-init group-dark-eco-box-explosion -1 #f #f #f (target-pos 0) :to *entity-pool*))
+  ;; "it's an ambush", "look out", "a bad feeling"
+  (gauntlet-mayhem-say! (new 'static 'boxed-array :type string "sksp0069" "sksp0152" "sksp0124"))
+  0)
+
+(defun gauntlet-mayhem-relief! ()
+  "The muse has just been caught: Daxter's relief. (The chime and the burst are the flip's.)"
+  (format 0 "GAUNTLET MAYHEM relief~%")
+  ;; "we showed him a thing or two", "we made it"
+  (gauntlet-mayhem-say! (new 'static 'boxed-array :type string "sksp009a" "sksp0095"))
+  0)
+
+(defun gauntlet-mayhem-roar-poll! ()
+  "Per-frame, from the icon's process: the babak's answer to the bonelurker's roar, when it is due."
+  (when (and (nonzero? *gauntlet-mayhem-roar-at*) (>= (current-time) *gauntlet-mayhem-roar-at*))
+    (set! *gauntlet-mayhem-roar-at* 0)
+    (sound-play "babak-roar" :position #f))
+  0)
+
 (defun gauntlet-muse-flip! ((carried symbol))
   "Make carried the muse's state and say so, once: an eco burst at Jak (blue and a green eco chime when she is his, red and the
-   warning when he has lost her) beside the icon's flash. A flip to the state she is in already is nothing."
+   warning when he has lost her) beside the icon's flash, and the beat of the change (gauntlet-mayhem-onset!, gauntlet-mayhem-relief!). A flip
+   to the state she is in already is nothing."
   (when (!= carried *gauntlet-muse-carried*)
     (set! *gauntlet-muse-carried* carried)
     (set-time! *gauntlet-muse-flip-time*)
@@ -614,7 +671,8 @@
         (gauntlet-eco-burst! *target* (if carried (gauntlet-eco blue) (gauntlet-eco red))))
       (if carried
         (sound-play "g-eco-pickup" :position #f)
-        (sound-play "robo-warning" :position #f))))
+        (sound-play "robo-warning" :position #f)))
+    (if carried (gauntlet-mayhem-relief!) (gauntlet-mayhem-onset!)))
   0)
 
 ;; ------------------------------------------------------------ the mayhem's world --
@@ -4668,6 +4726,7 @@
                       'rot-quat
                       (quaternion-axis-angle! (new-stack-quaternion0) 0.0 1.0 0.15 (+ *gauntlet-misty-muse-icon-yaw* sway (* flash (degrees 360)))))
           (gauntlet-muse-lights! *gauntlet-muse-carried* flash)
+          (gauntlet-mayhem-roar-poll!)
           (let* ((aspect (-> *pc-settings* aspect-ratio-scale))
                  (cx GAUNTLET_MUSE_ICON_X)
                  ;; the middle of her figure, in the Klaww bar's half-height space
@@ -4678,6 +4737,10 @@
                  (thick-x (max 1 (the int (/ 2.0 aspect))))
                  (pulse (gauntlet-muse-wave GAUNTLET_MUSE_PULSE_PERIOD)))
             (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug-no-zbuf))
+              ;; a loss flashes the whole screen violet, fading with the icon's flash (misty-mayhem-atmosphere scales it)
+              (when (and (not *gauntlet-muse-carried*) (< 0.0 flash))
+                (draw-sprite2d-xy buf 0 0 512 224
+                                  (gauntlet-muse-rgba 150 20 170 (the int (* GAUNTLET_MAYHEM_FLASH_ALPHA flash *gauntlet-misty-mayhem-atmosphere*)))))
               (gauntlet-muse-frame-draw!
                 buf cx cy half-w half-h thick-x
                 (cond
@@ -4791,6 +4854,7 @@
      (,row "misty-mayhem-extra" count *gauntlet-misty-mayhem-extra* GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT 0.0 4.0)
      (,row "misty-mayhem-speed" ratio *gauntlet-misty-mayhem-speed* GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT 1.0 4.0)
      (,row "misty-mayhem-charge-chance" ratio *gauntlet-misty-mayhem-charge-chance* GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT 0.0 1.0)
+     (,row "misty-mayhem-voice" flag *gauntlet-misty-mayhem-voice* GAUNTLET_MISTY_MAYHEM_VOICE_DEFAULT 0 0)
      (,row "misty-mayhem-atmosphere" ratio *gauntlet-misty-mayhem-atmosphere* GAUNTLET_MISTY_MAYHEM_ATMOSPHERE_DEFAULT 0.0 1.0)
      (,row "misty-muse-icon-yaw" degrees *gauntlet-misty-muse-icon-yaw* GAUNTLET_MUSE_ICON_YAW_DEFAULT 0.0 360.0)
      (,row "misty-muse-icon-scale" ratio *gauntlet-misty-muse-icon-scale* GAUNTLET_MUSE_ICON_SCALE_DEFAULT 0.5 3.0)
