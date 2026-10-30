@@ -617,6 +617,79 @@
         (sound-play "robo-warning" :position #f))))
   0)
 
+;; ------------------------------------------------------------ the mayhem's world --
+
+;; The mayhem has to be seen on the island and not only met: while the muse is loose Misty's light turns to dark eco's violet (the game's own
+;; colour of danger, and unclaimed: red already means red eco in this mod), the fog thickens and closes in, and the lurkers wear it too, and
+;; with her caught it fades back. The island's mood is rewritten every frame by its mood function (update-mood-misty, engine/gfx/mood/mood.gc:
+;; the fog, the sun and the sky's colours, the palette's light groups), so the tint is applied AFTER it, in place, each frame, by
+;; *mood-post-hook* (engine/gfx/mood/time-of-day.gc, which calls it for each active level), and cannot compound: the next frame the game
+;; writes the plain values again. What the game writes only once (the second light group's colours, make-misty-light-kit) is not touched,
+;; because a multiply there would compound; the second group's ambient is copied from the first's every frame, so that one is tinted.
+;; The tint is a blend, *gauntlet-mayhem-blend*, that seeks its target (1.0 while she is loose, else 0.0) so that the world turns over
+;; GAUNTLET_MAYHEM_FADE_IN seconds and comes back over GAUNTLET_MAYHEM_FADE_OUT, and snaps to 0.0 when Misty goes. Only the mood of the
+;; level named misty is touched, so the other level of a pair (the village next to it) is never tinted. The values are in the mood's own
+;; units: colours 0 to 255 for the fog, the sky and the sun (the sun's env colour is halved later, in update-time-of-day), 0 to 1 for the lights.
+
+(defconstant GAUNTLET_MAYHEM_FADE_IN 1.2) ;; seconds for the world to turn when she is lost
+(defconstant GAUNTLET_MAYHEM_FADE_OUT 3.0) ;; and to come back when she is caught: slower, a relief and not a cut
+(defconstant GAUNTLET_MAYHEM_FOG_CLOSING 0.45) ;; the fog's far end comes in by this share at full blend (180 m to about 100 m)
+
+(define *gauntlet-mayhem-blend* 0.0) ;; 0.0 calm up to 1.0 mayhem
+
+(defun gauntlet-mayhem-blend-poll! ()
+  "Per-frame: the blend seeks 1.0 while the muse is loose and 0.0 otherwise, not while the game is paused, and is 0.0 at once when Misty is
+   not running (so the next visit starts plain)."
+  (cond
+    ((not (gauntlet-misty-active?)) (set! *gauntlet-mayhem-blend* 0.0))
+    ((paused?))
+    ((gauntlet-muse-loose?)
+     (set! *gauntlet-mayhem-blend* (seek *gauntlet-mayhem-blend* 1.0 (/ (seconds-per-frame) GAUNTLET_MAYHEM_FADE_IN))))
+    (else
+     (set! *gauntlet-mayhem-blend* (seek *gauntlet-mayhem-blend* 0.0 (/ (seconds-per-frame) GAUNTLET_MAYHEM_FADE_OUT)))))
+  0)
+
+(defun gauntlet-mood-toward! ((colour vector) (r float) (g float) (b float) (amount float))
+  "Move colour's red, green and blue amount of the way (0 to 1) to r, g and b; its fourth is left as it is."
+  (set! (-> colour x) (lerp (-> colour x) r amount))
+  (set! (-> colour y) (lerp (-> colour y) g amount))
+  (set! (-> colour z) (lerp (-> colour z) b amount))
+  0)
+
+(defun gauntlet-mood-dim! ((colour vector) (blend float))
+  "Take the green out of colour and a little of the red and the blue, as far as blend (0 to 1): what leaves a light violet."
+  (set! (-> colour x) (* (-> colour x) (- 1.0 (* 0.25 blend))))
+  (set! (-> colour y) (* (-> colour y) (- 1.0 (* 0.65 blend))))
+  (set! (-> colour z) (* (-> colour z) (- 1.0 (* 0.10 blend))))
+  0)
+
+(defun gauntlet-mayhem-tint! ((mood mood-context) (blend float))
+  "Tint mood, the mood of Misty this frame, blend of the way to the mayhem's violet."
+  (let ((fog (-> mood current-fog))
+        (sun (-> mood current-sun))
+        (lights (-> mood light-group)))
+    (gauntlet-mood-toward! (-> fog fog-color) 118.0 18.0 110.0 (* 0.7 blend))
+    (gauntlet-mood-toward! (-> fog erase-color) 52.0 0.0 48.0 blend)
+    (gauntlet-mood-toward! (-> sun env-color) 118.0 18.0 110.0 (* 0.6 blend))
+    (gauntlet-mood-toward! (-> sun sun-color) 200.0 20.0 160.0 (* 0.8 blend))
+    (set! (-> fog fog-dists y) (* (-> fog fog-dists y) (- 1.0 (* GAUNTLET_MAYHEM_FOG_CLOSING blend))))
+    ;; the lights Jak and the lurkers are lit by: the first group's ambient and its first light, always written this frame, and its
+    ;; second light when the palette is between two snapshots (it is not written otherwise, and is not in use then). The second group's
+    ;; ambient is copied from the first's by the mood function every frame.
+    (gauntlet-mood-dim! (-> lights 0 ambi color) blend)
+    (gauntlet-mood-dim! (-> lights 0 dir0 color) blend)
+    (if (< 0.0 (-> lights 0 dir1 levels x)) (gauntlet-mood-dim! (-> lights 0 dir1 color) blend))
+    (gauntlet-mood-dim! (-> lights 1 ambi color) blend)
+    (gauntlet-mood-dim! (-> mood current-prt-color) blend))
+  0)
+
+;; gauntlet: engine/gfx/mood/time-of-day.gc calls this with each active level after its mood function has run
+(defun *mood-post-hook* ((lev level))
+  (when (and (= (-> lev name) 'misty) (= (-> lev status) 'active))
+    (let ((blend (* *gauntlet-mayhem-blend* *gauntlet-misty-mayhem-atmosphere*)))
+      (if (< 0.001 blend) (gauntlet-mayhem-tint! (-> lev mood) blend))))
+  (none))
+
 ;; ------------------------------------------------------------------ the ring --
 
 (defconstant GAUNTLET_RING_LIFT (meters 0.3)) ;; a ring floats this far over the ground so it is not buried
@@ -4649,6 +4722,7 @@
        (set! *gauntlet-muse-carried* #f)
        (set! *gauntlet-muse-entity* (the-as entity-actor #f))
        (format 0 "GAUNTLET MUSE Misty left, the muse is loose for the next visit~%")))
+    (gauntlet-mayhem-blend-poll!)
     (when (and here *gauntlet-misty-muse-enabled*)
       (gauntlet-muse-health-poll!)
       (gauntlet-muse-body-poll!)
@@ -4717,6 +4791,7 @@
      (,row "misty-mayhem-extra" count *gauntlet-misty-mayhem-extra* GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT 0.0 4.0)
      (,row "misty-mayhem-speed" ratio *gauntlet-misty-mayhem-speed* GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT 1.0 4.0)
      (,row "misty-mayhem-charge-chance" ratio *gauntlet-misty-mayhem-charge-chance* GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT 0.0 1.0)
+     (,row "misty-mayhem-atmosphere" ratio *gauntlet-misty-mayhem-atmosphere* GAUNTLET_MISTY_MAYHEM_ATMOSPHERE_DEFAULT 0.0 1.0)
      (,row "misty-muse-icon-yaw" degrees *gauntlet-misty-muse-icon-yaw* GAUNTLET_MUSE_ICON_YAW_DEFAULT 0.0 360.0)
      (,row "misty-muse-icon-scale" ratio *gauntlet-misty-muse-icon-scale* GAUNTLET_MUSE_ICON_SCALE_DEFAULT 0.5 3.0)
      (,row "worm-cubes-enabled" flag *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT 0 0)
