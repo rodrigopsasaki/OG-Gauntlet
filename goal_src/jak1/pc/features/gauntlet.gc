@@ -24,7 +24,8 @@
 ;;
 ;; On every level, each scout fly box wears an eco colour (a table) and opens only when Jak breaks it carrying that eco (green: at full
 ;; health); a wrong try bounces him off with a burst of the box's colour. The lurkers near a box may carry its eco: they glow its
-;; colour and spill it where they die, and come back after a while if it is still closed. The game asks the box through a hook in
+;; colour and spill it where they die, and come back after a while if it is still closed; a box with no eco of its colour in reach has a
+;; small cluster of it placed beside it when it is born. The game asks the box through a hook in
 ;; engine/common-obs/crates.gc. See "the scout fly boxes".
 ;;
 ;; The skull TNT barrels of Mountain Pass stand wherever a table of spots puts them (the first is on Sentinel Beach, between a
@@ -3965,12 +3966,14 @@
 ;; Nothing here may have a side effect on a path the 'query 'pickup of pckernel.gc reaches (it calls pickup-collectable! with an
 ;; amount of 0 every frame): the gate reads Jak's fact directly and never asks him anything.
 ;;
-;; Where the eco comes from: free eco of the level (a vent, a cluster of pickups, a crate with eco in it) or a carrier, a lurker. The
-;; second table names the carriers of a box: the crabs, puppies, bunnies, hoppers, rats and bonelurkers placed nearest to it,
+;; Where the eco comes from: free eco of the level (a vent, a cluster of pickups, a crate with eco in it), a carrier, a lurker, or eco placed beside the
+;; box by the mod. The second table names the carriers of a box: the crabs, puppies, bunnies, hoppers, rats and bonelurkers placed nearest to it,
 ;; at most two. A carrier glows its colour and trails the aura of Jak's eco of it, and when it dies it spills a pickup of that eco
 ;; where it fell. A carrier only looks and spills: the babak's blue pace and red shove live in fields of its type and a copy of its
 ;; enemy info (babak.gc), which the others do not have and would need each their own surgery, and for the same reason babaks, already
-;; charged in their own right, are never carriers. The eco Jak picks up times out, which is why a source must be near its box.
+;; charged in their own right, are never carriers. The eco Jak picks up times out, which is why a source must be near its box. The third table
+;; names the boxes that have no source in reach at all: when one of them is born, its watcher places a small cluster of its colour beside it
+;; (see "Placed eco" below), so a colour never needs a natural source and green is a share of the boxes and not the fallback.
 ;;
 ;; The spill is one-off: the pickup is made with fact-options one-off, which the eco's die state (collectables.gc) reads, so that it is
 ;; gone for good once picked up. Without it the game brings an eco pickup born again at the spot it fell as soon as Jak's own eco of
@@ -3982,20 +3985,23 @@
 ;; only when Jak is near, and the delay would be the entity's to keep; a clone is gauntlet-horde-clone!, which the mod already trusts,
 ;; and is the watcher's own to time. Once the box is open nothing returns.
 ;;
-;; Both tables are keyed by level and entity name, and generated offline from the decompiler's actor lists by a script
+;; The three tables are keyed by level and entity name, and generated offline from the decompiler's actor lists by a script
 ;; (decompiler_out/jak1/entities/*-actors.json: a buzzer crate is a crate whose eco-info lump has type 8). The rules it applied:
-;;   - Geyser Rock (training): every box is blue; its blue eco is the vent before the door and the blue singles on the way.
-;;   - Elsewhere a colour needs a source near its box, or the box is green, which needs none. A source is free eco of that colour
-;;     (an unblocked vent, a cluster of singles, a crate with eco in it) or a carrier. "Near" comes from how long eco lasts
-;;     (*FACT-bank*: a single lasts 5 s, the most any pickups add up to is 20 s, which a vent gives at once) and Jak's run speed
-;;     (10 m/s, *walk-mods*), taking 8 m/s of it and keeping 1.5 s back to line up the attack: a vent reaches 148 m, two singles 68 m,
-;;     one single 28 m. A carrier's spill is one single, so its placed spot may be that 28 m away plus the distance at which it
-;;     notices Jak and can be led to the box (25 m for a crab, 30 m for the others): 53 or 58 m, box to carrier, placed spot.
-;;   - Zoomer levels (rolling, firecanyon, ogre, lavatube): the zoomer breaks a box through this same path (the crate's 'racer
-;;     attack, sent by Jak's own process, so the gate is asked), and his fact is set there for yellow, red and green; but blue eco is
-;;     turned into a boost by the zoomer's event handler and never carried, so those levels have no blue box.
-;;   - A level shows a mix: no colour has more than a share of the boxes (ceil(boxes / colours the level has a source for)), blue
-;;     preferring free eco and red and yellow preferring carriers. Sentinel Beach keeps the hand-made rows of the first version.
+;;   - Geyser Rock (training): every box is blue; its blue eco is the vent before the door and the blue singles on the way, and eco is placed
+;;     for the boxes none of them reaches.
+;;   - Sentinel Beach keeps the hand-made rows of the first version, carriers and all, and has nothing placed.
+;;   - Elsewhere a level shows an even mix. A quarter of its boxes (rounded; none in a level of one or two) are green, deliberately, and the rest are
+;;     dealt over the colours the level can carry as evenly as they go (counts at most one apart). Zoomer levels (rolling, firecanyon, ogre,
+;;     lavatube): the zoomer breaks a box through this same path (the crate's 'racer attack, sent by Jak's own process, so the gate is asked),
+;;     and his fact is set there for yellow, red and green; but blue eco is turned into a boost by the zoomer's event handler and never carried,
+;;     so those levels have no blue box.
+;;   - Within that mix the natural sources come first: of the ways to deal the colours, the one that leaves the most boxes with a source in
+;;     reach is taken. A source is free eco of that colour (an unblocked vent, a cluster of singles, a crate with eco in it) or a carrier. "Near"
+;;     comes from how long eco lasts (*FACT-bank*: a single lasts 5 s, the most any pickups add up to is 20 s, which a vent gives at once) and
+;;     Jak's run speed (10 m/s, *walk-mods*), taking 8 m/s of it and keeping 1.5 s back to line up the attack: a vent reaches 148 m, two
+;;     singles 68 m, one single 28 m, and free eco counts only within 85 percent of that. A carrier's spill is one single, so its placed spot
+;;     may be that 28 m away plus the distance at which it notices Jak and can be led to the box (25 m for a crab, 30 m for the others): 53 or
+;;     58 m, box to carrier, placed spot. A box that is left with neither gets placed eco.
 ;; Every buzzer crate that is born is logged with its name and place, whatever its level, so that a table row is easy to check.
 
 (defconstant GAUNTLET_FLYBOX_LIFT (meters 0.75)) ;; the middle of a box, above its base
@@ -4016,91 +4022,91 @@
      (,row beach "crate-649" green)
      (,row beach "crate-651" red)
      ;; citadel
-     (,row citadel "crate-2996" green)
-     (,row citadel "crate-2997" red)
+     (,row citadel "crate-2996" red)
+     (,row citadel "crate-2997" yellow)
      (,row citadel "crate-2998" green)
      (,row citadel "crate-2999" green)
      (,row citadel "crate-3000" blue)
      (,row citadel "crate-3001" blue)
      (,row citadel "crate-3002" yellow)
      ;; darkcave
-     (,row darkcave "crate-3022" green)
+     (,row darkcave "crate-3022" red)
      ;; firecanyon
      (,row firecanyon "crate-1019" green)
-     (,row firecanyon "crate-1027" green)
-     (,row firecanyon "crate-1028" green)
-     (,row firecanyon "crate-1029" green)
-     (,row firecanyon "crate-1030" green)
+     (,row firecanyon "crate-1027" yellow)
+     (,row firecanyon "crate-1028" yellow)
+     (,row firecanyon "crate-1029" yellow)
+     (,row firecanyon "crate-1030" red)
      (,row firecanyon "crate-1032" green)
-     (,row firecanyon "crate-1033" green)
+     (,row firecanyon "crate-1033" red)
      ;; jungle
-     (,row jungle "crate-1844" green)
+     (,row jungle "crate-1844" yellow)
      (,row jungle "crate-28" green)
      (,row jungle "crate-3" green)
      (,row jungle "crate-47" blue)
      (,row jungle "crate-58" blue)
-     (,row jungle "crate-688" red)
-     (,row jungle "crate-689" yellow)
+     (,row jungle "crate-688" yellow)
+     (,row jungle "crate-689" red)
      ;; lavatube
      (,row lavatube "crate-3025" green)
-     (,row lavatube "crate-3026" green)
+     (,row lavatube "crate-3026" red)
      (,row lavatube "crate-3027" yellow)
      (,row lavatube "crate-3028" yellow)
-     (,row lavatube "crate-3029" green)
+     (,row lavatube "crate-3029" red)
      (,row lavatube "crate-3117" yellow)
      (,row lavatube "crate-3118" green)
      ;; maincave
-     (,row maincave "crate-2685" yellow)
-     (,row maincave "crate-2689" green)
+     (,row maincave "crate-2685" blue)
+     (,row maincave "crate-2689" red)
      (,row maincave "crate-2697" yellow)
      (,row maincave "crate-3018" green)
      ;; misty
-     (,row misty "crate-2560" green)
+     (,row misty "crate-2560" blue)
      (,row misty "crate-2561" green)
-     (,row misty "crate-659" blue)
-     (,row misty "crate-672" green)
-     (,row misty "crate-673" red)
+     (,row misty "crate-659" yellow)
+     (,row misty "crate-672" red)
+     (,row misty "crate-673" blue)
      (,row misty "crate-684" yellow)
      (,row misty "crate-747" green)
      ;; ogre
-     (,row ogre "crate-2430" green)
-     (,row ogre "crate-2989" green)
+     (,row ogre "crate-2430" yellow)
+     (,row ogre "crate-2989" red)
      (,row ogre "crate-2990" green)
-     (,row ogre "crate-2991" green)
-     (,row ogre "crate-2992" green)
-     (,row ogre "crate-2993" green)
+     (,row ogre "crate-2991" yellow)
+     (,row ogre "crate-2992" red)
+     (,row ogre "crate-2993" red)
      (,row ogre "crate-2994" green)
      ;; robocave
      (,row robocave "crate-2779" yellow)
      (,row robocave "crate-2985" blue)
      ;; rolling
      (,row rolling "crate-2176" green)
-     (,row rolling "crate-2187" green)
-     (,row rolling "crate-2188" green)
-     (,row rolling "crate-2194" green)
+     (,row rolling "crate-2187" red)
+     (,row rolling "crate-2188" yellow)
+     (,row rolling "crate-2194" red)
      (,row rolling "crate-2199" green)
-     (,row rolling "crate-2209" green)
-     (,row rolling "crate-2289" green)
+     (,row rolling "crate-2209" yellow)
+     (,row rolling "crate-2289" red)
      ;; snow
-     (,row snow "crate-1132" blue)
+     (,row snow "crate-1132" yellow)
      (,row snow "crate-1133" red)
-     (,row snow "crate-1138" red)
+     (,row snow "crate-1138" green)
      (,row snow "crate-3134" green)
      (,row snow "crate-975" blue)
-     (,row snow "crate-976" yellow)
-     (,row snow "crate-980" yellow)
+     (,row snow "crate-976" red)
+     (,row snow "crate-980" blue)
      ;; sunken
      (,row sunken "crate-917" blue)
-     (,row sunken "crate-923" green)
+     (,row sunken "crate-923" red)
      (,row sunken "crate-925" green)
-     (,row sunken "crate-926" green)
+     (,row sunken "crate-926" yellow)
      ;; sunkenb
      (,row sunkenb "crate-2705" blue)
      ;; swamp
      (,row swamp "crate-2936" yellow)
-     (,row swamp "crate-748" red)
+     (,row swamp "crate-748" blue)
      (,row swamp "crate-762" yellow)
-     (,row swamp "crate-786" blue)
+     (,row swamp "crate-786" green)
      (,row swamp "crate-787" blue)
      (,row swamp "crate-843" red)
      (,row swamp "crate-849" green)
@@ -4113,29 +4119,29 @@
      (,row training "crate-2960" blue)
      (,row training "crate-2961" blue)
      ;; village1
-     (,row village1 "crate-3141" green)
+     (,row village1 "crate-3141" red)
      (,row village1 "crate-3142" green)
-     (,row village1 "crate-3143" green)
-     (,row village1 "crate-3144" green)
+     (,row village1 "crate-3143" blue)
+     (,row village1 "crate-3144" blue)
      (,row village1 "crate-3145" green)
-     (,row village1 "crate-3146" green)
-     (,row village1 "crate-3147" green)
+     (,row village1 "crate-3146" yellow)
+     (,row village1 "crate-3147" yellow)
      ;; village2
      (,row village2 "crate-3127" blue)
      (,row village2 "crate-3128" green)
      (,row village2 "crate-3129" green)
-     (,row village2 "crate-3130" green)
-     (,row village2 "crate-3131" green)
-     (,row village2 "crate-3132" green)
-     (,row village2 "crate-3133" green)
+     (,row village2 "crate-3130" yellow)
+     (,row village2 "crate-3131" blue)
+     (,row village2 "crate-3132" yellow)
+     (,row village2 "crate-3133" red)
      ;; village3
-     (,row village3 "crate-3121" green)
-     (,row village3 "crate-3122" green)
+     (,row village3 "crate-3121" blue)
+     (,row village3 "crate-3122" yellow)
      (,row village3 "crate-3123" green)
-     (,row village3 "crate-3124" green)
-     (,row village3 "crate-3125" green)
+     (,row village3 "crate-3124" red)
+     (,row village3 "crate-3125" red)
      (,row village3 "crate-3126" green)
-     (,row village3 "crate-3148" green)))
+     (,row village3 "crate-3148" blue)))
 
 (defmacro gauntlet-carrier-table (join row)
   "Expand row once per carrier, (row level lurker box meters): the lurker named lurker of level carries the eco of the box named
@@ -4159,14 +4165,62 @@
      (,row snow "snow-bunny-63" "crate-1132" 39.4)
      (,row snow "snow-bunny-69" "crate-1133" 41.5)
      (,row snow "snow-bunny-68" "crate-1133" 46.9)
-     (,row snow "snow-bunny-71" "crate-1138" 41.2)
      (,row snow "snow-bunny-117" "crate-976" 17.5)
      (,row snow "snow-bunny-56" "crate-976" 19.2)
      (,row snow "snow-bunny-116" "crate-980" 3.2)
      (,row snow "snow-bunny-115" "crate-980" 54.2)
-     (,row swamp "swamp-rat-19" "crate-748" 13.6)
-     (,row swamp "swamp-rat-20" "crate-748" 30.7)
      (,row swamp "swamp-rat-24" "crate-843" 30.8)))
+
+(defmacro gauntlet-placed-table (join row)
+  "Expand row once per box that gets eco placed beside it, (row level name): the buzzer crate named name of level has no source of its eco
+   in reach, free or carried, so the mod puts a small cluster of it near the box when the box is born."
+  `(,join
+     (,row citadel "crate-2996")
+     (,row darkcave "crate-3022")
+     (,row firecanyon "crate-1027")
+     (,row firecanyon "crate-1028")
+     (,row firecanyon "crate-1029")
+     (,row firecanyon "crate-1030")
+     (,row firecanyon "crate-1033")
+     (,row jungle "crate-1844")
+     (,row lavatube "crate-3026")
+     (,row lavatube "crate-3028")
+     (,row lavatube "crate-3029")
+     (,row maincave "crate-2685")
+     (,row maincave "crate-2689")
+     (,row misty "crate-2560")
+     (,row misty "crate-672")
+     (,row ogre "crate-2430")
+     (,row ogre "crate-2989")
+     (,row ogre "crate-2991")
+     (,row ogre "crate-2992")
+     (,row ogre "crate-2993")
+     (,row rolling "crate-2187")
+     (,row rolling "crate-2188")
+     (,row rolling "crate-2194")
+     (,row rolling "crate-2209")
+     (,row rolling "crate-2289")
+     (,row sunken "crate-923")
+     (,row sunken "crate-926")
+     (,row training "crate-2956")
+     (,row training "crate-2957")
+     (,row training "crate-2958")
+     (,row training "crate-2959")
+     (,row training "crate-2961")
+     (,row village1 "crate-3141")
+     (,row village1 "crate-3143")
+     (,row village1 "crate-3144")
+     (,row village1 "crate-3146")
+     (,row village1 "crate-3147")
+     (,row village2 "crate-3130")
+     (,row village2 "crate-3131")
+     (,row village2 "crate-3132")
+     (,row village2 "crate-3133")
+     (,row village3 "crate-3121")
+     (,row village3 "crate-3122")
+     (,row village3 "crate-3124")
+     (,row village3 "crate-3125")
+     (,row village3 "crate-3148")))
 
 (defmacro gauntlet-row-flybox-eco (level name eco)
   `(when (and (= at-level (quote ,level)) (string= at-name ,name))
@@ -4196,6 +4250,15 @@
   (let ((found 0))
     (gauntlet-carrier-table begin gauntlet-row-carrier-say)
     found))
+
+(defmacro gauntlet-row-placed (level name)
+  `(when (and (= at-level (quote ,level)) (string= at-name ,name))
+     (return #t)))
+
+(defun gauntlet-flybox-placed? ((at-level symbol) (at-name string))
+  "True when the table has eco placed beside the box named at-name of level at-level when it is born."
+  (gauntlet-placed-table begin gauntlet-row-placed)
+  #f)
 
 (defun gauntlet-eco-name ((eco gauntlet-eco))
   "The word for an eco, in the logs."
@@ -4229,10 +4292,34 @@
       ((and (= eco (gauntlet-eco yellow)) (= mode 'eco-yellow)) #t)
       (else (and (= (-> fact eco-type) (gauntlet-eco-pickup eco)) (< 0.0 (-> fact eco-level)))))))
 
+(deftype gauntlet-relaxed (structure)
+  ((boxes handle 8))) ;; GAUNTLET_RELAXED_SLOTS: a level has seven boxes at most
+
+(define *gauntlet-relaxed* (new 'global 'gauntlet-relaxed))
+(dotimes (i 8)
+  (set! (-> *gauntlet-relaxed* boxes i) (the-as handle #f)))
+
+(defun gauntlet-flybox-relax! ((box handle))
+  "Remember that the box box asks for nothing but full health from now until it is gone: the eco that was to be placed for it found no
+   safe ground, and a box that wants an eco nobody can find would be a box nobody can open. Forgotten by itself when the box's process is."
+  (dotimes (i 8)
+    (when (not (handle->process (-> *gauntlet-relaxed* boxes i)))
+      (set! (-> *gauntlet-relaxed* boxes i) box)
+      (return 0)))
+  0)
+
+(defun gauntlet-flybox-relaxed? ((box process))
+  "True when box was relaxed to green (see gauntlet-flybox-relax!)."
+  (dotimes (i 8)
+    (when (= (handle->process (-> *gauntlet-relaxed* boxes i)) box)
+      (return #t)))
+  #f)
+
 (defun gauntlet-flybox-eco-of ((box crate))
-  "The eco box wants: its table row when it is a scout fly box with an entity, else none."
+  "The eco box wants: its table row when it is a scout fly box with an entity (green when its placed eco found no safe ground), else none."
   (if (and (-> box entity) (type-type? (-> box type) crate-buzzer))
-    (gauntlet-flybox-eco (-> box entity extra level name) (res-lump-struct (-> box entity) 'name string))
+    (let ((eco (gauntlet-flybox-eco (-> box entity extra level name) (res-lump-struct (-> box entity) 'name string))))
+      (if (and (!= eco (gauntlet-eco none)) (gauntlet-flybox-relaxed? box)) (gauntlet-eco green) eco))
     (gauntlet-eco none)))
 
 (defun gauntlet-eco-scatter! ((centre vector) (kind gauntlet-eco))
@@ -4325,13 +4412,161 @@
    (eco         gauntlet-eco)
    (carrier     symbol) ;; true for a lurker, false for a box
    (level-name  symbol)
-   (back-at     time-frame)) ;; for a carrier that died: when it comes back; 0 while it is here
+   (back-at     time-frame) ;; for a carrier that died: when it comes back; 0 while it is here
+   (placed      handle 3) ;; GAUNTLET_PLACED_SINGLES: the singles placed beside a box, children of this process, which end with it; a null handle where there is none
+   (placement   symbol)) ;; for a box: 'due when eco is to be placed beside it and is not yet, 'placed once it is, #f when the table gives it none
   (:states
    gauntlet-eco-watch-run))
+
+;; Placed eco. A box whose colour has no source in reach (no free eco of it, no carrier near) gets a small cluster of that eco beside it, put there
+;; by its watcher when the box is born: GAUNTLET_PLACED_SINGLES ordinary singles of the colour, on the ground a few metres from the box. Ordinary
+;; means the engine's own pickups, born the way birth-pickup-at-point makes them and not one-off, so they are what every placed eco of the
+;; game is: collected, they wait for Jak's eco of that colour to run out and come back where they were, and a player is never stranded without
+;; the eco his box asks for. (Not made by birth-pickup-at-point itself, because that calls the red eco hint of Misty Island, a voice line, for
+;; every red one it makes.) They are children of the watcher, so they go with it: when the box is open, culled, or its level goes, and when
+;; a death puts the entity pool away. They are never placed where the ground is not the box's own: every spot is probed for ground at
+;; run time (the way the bomb finds its landing), within GAUNTLET_PLACED_TOLERANCE of the box's base and reached by ground that never steps
+;; by more than GAUNTLET_PLACED_STEP between probes a few metres apart, so a spot over a drop or on another ledge is passed over. The middle
+;; of the cluster is tried 6 m from the box, then 4, then 2.5, on the side of Jak first (he is the one who is walking up to it) and
+;; then around. A box that finds no spot at any of them, or is given no process, is relaxed to green instead: it asks for full health, and
+;; says so in the log, so that no box is ever left asking for eco the player cannot reach.
+(defconstant GAUNTLET_PLACED_SINGLES 3) ;; singles in a cluster (the handles above)
+(defconstant GAUNTLET_PLACED_ANGLES 8) ;; directions tried round the box at each distance
+(defconstant GAUNTLET_PLACED_TOLERANCE (meters 1.5)) ;; the ground of a spot may differ this much in height from the box's own base
+(defconstant GAUNTLET_PLACED_STEP (meters 1.0)) ;; and the ground on the way there may step this much between one probe and the next
+(defconstant GAUNTLET_PLACED_SPREAD (meters 1.4)) ;; the singles beside the first stand this far from it, on either side
+(defconstant GAUNTLET_PLACED_RAISE (meters 0.3)) ;; and this far over the ground
+(defconstant GAUNTLET_PLACED_FAR (meters 6)) ;; the middle of the cluster is tried this far from the box first,
+(defconstant GAUNTLET_PLACED_MID (meters 4)) ;; then this,
+(defconstant GAUNTLET_PLACED_CLOSE (meters 2.5)) ;; then this
+
+(defun gauntlet-placed-ground? ((box vector) (x float) (z float) (out vector))
+  "True when there is ground at (x, z) within GAUNTLET_PLACED_TOLERANCE of the height of box, a box's base; out is that ground. The ground
+   is searched for from 3 m over the box's base downward, so a roof or a floor over a floor is not mistaken for it."
+  (let ((probe (new 'stack-no-clear 'vector)))
+    (set-vector! probe x (+ (-> box y) (meters 1)) z 1.0)
+    (gauntlet-ground-below probe out)
+    ;; a probe that found nothing hands back its own height
+    (and (!= (-> out y) (-> probe y))
+         (>= GAUNTLET_PLACED_TOLERANCE (fabs (- (-> out y) (-> box y)))))))
+
+(defun gauntlet-placed-reachable? ((box vector) (angle float) (radius float) (out vector))
+  "True when the spot radius from box at angle (from +z towards +x) stands on ground that can be walked to from the box: probed a third, two
+   thirds and all of the way, each within the tolerance of the box's base and none a step from the one before. out is the spot's ground."
+  (let ((before (-> box y))
+        (walkable #t))
+    (dotimes (i 3)
+      (when walkable
+        (let ((reach (* radius (/ (the float (+ i 1)) 3.0))))
+          (cond
+            ((gauntlet-placed-ground? box (+ (-> box x) (* reach (sin angle))) (+ (-> box z) (* reach (cos angle))) out)
+             (if (< GAUNTLET_PLACED_STEP (fabs (- (-> out y) before))) (set! walkable #f))
+             (set! before (-> out y)))
+            (else (set! walkable #f))))))
+    walkable))
+
+(defun gauntlet-placed-middle! ((box vector) (toward float) (out vector))
+  "Find the middle of a cluster for box: ground a few metres from it that can be walked to (gauntlet-placed-reachable?), nearest the direction
+   toward first (an angle from +z towards +x), then alternately to either side of it. The far distance is tried all round before a nearer
+   one, so the cluster is as far from the box as it can be got. True and written to out when there is one."
+  (dotimes (ri 3)
+    (let ((radius (cond
+                    ((zero? ri) GAUNTLET_PLACED_FAR)
+                    ((= ri 1) GAUNTLET_PLACED_MID)
+                    (else GAUNTLET_PLACED_CLOSE))))
+      (dotimes (ai GAUNTLET_PLACED_ANGLES)
+        (let* ((turn (* (/ (degrees 360) (the float GAUNTLET_PLACED_ANGLES)) (the float (/ (+ ai 1) 2))))
+               (angle (+ toward (if (zero? (logand ai 1)) turn (- turn)))))
+          (if (gauntlet-placed-reachable? box angle radius out) (return #t))))))
+  #f)
+
+(defmacro gauntlet-place-pickup (type parent where fact)
+  "Born one ordinary pickup of type (eco-red, eco-blue or eco-yellow) at where, a child of parent, the way birth-pickup-at-point makes
+   one (engine/common-obs/collectables.gc): a handle to it, or a null handle when the pool has no process to give."
+  `(let ((proc (get-process *pickup-dead-pool* ,type #x4000)))
+     (cond
+       (proc
+        ((method-of-type ,type activate) (the-as ,type proc) ,parent (quote ,type) (the-as pointer #x70004000))
+        (run-now-in-process proc initialize-eco-by-other ,where *null-vector* ,fact)
+        (process->handle proc))
+       (else (the-as handle #f)))))
+
+(defun gauntlet-eco-place-one! ((eco gauntlet-eco) (parent process) (where vector))
+  "One ordinary single of eco (red, blue or yellow) standing at where, a child of parent, and a handle to it (null when there is none)."
+  (let ((fact (new 'static 'fact-info)))
+    (set! (-> fact pickup-type) (gauntlet-eco-pickup eco))
+    (set! (-> fact pickup-spawn-amount) 1.0)
+    (set! (-> fact options) (fact-options))
+    (case eco
+      (((gauntlet-eco red)) (gauntlet-place-pickup eco-red parent where fact))
+      (((gauntlet-eco blue)) (gauntlet-place-pickup eco-blue parent where fact))
+      (((gauntlet-eco yellow)) (gauntlet-place-pickup eco-yellow parent where fact))
+      (else (the-as handle #f)))))
 
 (defbehavior gauntlet-eco-watch-name gauntlet-eco-watch ()
   "The subject's name, from its entity: only to be called while its level is active."
   (res-lump-struct (-> self ent) 'name string))
+
+(defbehavior gauntlet-eco-watch-unplace! gauntlet-eco-watch ()
+  "Take back the singles placed beside the box that are still standing, and make the placing due again: the setting is off."
+  (let ((gone 0))
+    (dotimes (i GAUNTLET_PLACED_SINGLES)
+      (let ((single (handle->process (-> self placed i))))
+        (when single
+          (deactivate single)
+          (+! gone 1))
+        (set! (-> self placed i) (the-as handle #f))))
+    (when (eq? (-> self placement) 'placed)
+      (set! (-> self placement) 'due)
+      (format 0 "GAUNTLET FLYBOX: ~S placed eco taken back, the setting is off~%" (gauntlet-eco-watch-name))))
+  0)
+
+(defbehavior gauntlet-eco-watch-place! gauntlet-eco-watch ((pd process-drawable))
+  "Put the box's eco beside it: a cluster of GAUNTLET_PLACED_SINGLES singles round a middle on ground that can be walked to from the box, the
+   middle on the side Jak is on. When no ground is found, or no single could be born, the box is relaxed to green and says so."
+  (let ((box (-> pd root trans))
+        (middle (new 'stack-no-clear 'vector))
+        (spot (new 'stack-no-clear 'vector))
+        (toward (new 'stack-no-clear 'vector))
+        (have 0))
+    (if *target*
+      (vector-! toward (target-pos 0) box)
+      (vector-reset! toward))
+    (when (gauntlet-placed-middle! box (vector-y-angle toward) middle)
+      (let* ((dx (- (-> middle x) (-> box x)))
+             (dz (- (-> middle z) (-> box z)))
+             (len (fmax 1.0 (sqrtf (+ (* dx dx) (* dz dz))))))
+        (dotimes (i GAUNTLET_PLACED_SINGLES)
+          (let ((side (cond
+                        ((zero? i) 0.0)
+                        ((= i 1) 1.0)
+                        (else -1.0))))
+            (set! (-> spot quad) (-> middle quad))
+            ;; the singles beside the first stand across the line from the box, each on ground of its own
+            (when (or (zero? i)
+                      (gauntlet-placed-ground? box
+                                               (+ (-> middle x) (* side GAUNTLET_PLACED_SPREAD (/ dz len)))
+                                               (- (-> middle z) (* side GAUNTLET_PLACED_SPREAD (/ dx len)))
+                                               spot))
+              (+! (-> spot y) GAUNTLET_PLACED_RAISE)
+              (set! (-> spot w) 1.0)
+              (let ((single (gauntlet-eco-place-one! (-> self eco) self spot)))
+                (when (handle->process single)
+                  (set! (-> self placed have) single)
+                  (+! have 1))))))))
+    (cond
+      ((> have 0)
+       (set! (-> self placement) 'placed)
+       (format 0 "GAUNTLET FLYBOX: ~S placed ~D ~A eco ~M m from it~%"
+               (gauntlet-eco-watch-name) have (gauntlet-eco-name (-> self eco)) (vector-vector-xz-distance box middle))
+       (format 0 "GAUNTLET FLYBOX: ... round (~M, ~M, ~M), the box at height ~M~%" (-> middle x) (-> middle y) (-> middle z) (-> box y)))
+      (else
+       (set! (-> self placement) #f)
+       (gauntlet-flybox-relax! (-> self subject))
+       (format 0 "GAUNTLET FLYBOX: ~S found no safe ground for its ~A eco, the box now wants full health instead~%"
+               (gauntlet-eco-watch-name) (gauntlet-eco-name (-> self eco)))
+       (set! (-> self eco) (gauntlet-eco green)))))
+  0)
 
 (defbehavior gauntlet-eco-watch-show! gauntlet-eco-watch ((pd process-drawable))
   "One frame of the colour: a carrier wears the aura of Jak's eco of it; a box glows and flares at random about its middle."
@@ -4422,6 +4657,7 @@
              (deactivate self))
             ((not *gauntlet-flybox-enabled*)
              (gauntlet-eco-watch-calm! pd)
+             (gauntlet-eco-watch-unplace!)
              (if (not pd) (deactivate self)))
             ((nonzero? (-> self back-at))
              (cond
@@ -4437,7 +4673,10 @@
                   (= (-> pd next-state name) 'nav-enemy-die))
              (gauntlet-eco-watch-spill! pd)
              (gauntlet-eco-watch-await-return!))
-            (else (gauntlet-eco-watch-show! pd))))
+            (else
+             (gauntlet-eco-watch-show! pd)
+             ;; the box is born, or the setting was on again: its eco is put beside it
+             (if (eq? (-> self placement) 'due) (gauntlet-eco-watch-place! pd)))))
         (suspend))))
 
 (defbehavior gauntlet-eco-watch-init-by-other gauntlet-eco-watch ((ent entity-actor) (subject handle) (eco gauntlet-eco) (carrier symbol))
@@ -4448,6 +4687,9 @@
   (set! (-> self carrier) carrier)
   (set! (-> self back-at) 0)
   (set! (-> self level-name) (-> ent extra level name))
+  (set! (-> self placement) (if (and (not carrier) (gauntlet-flybox-placed? (-> ent extra level name) (res-lump-struct ent 'name string))) 'due #f))
+  (dotimes (i GAUNTLET_PLACED_SINGLES)
+    (set! (-> self placed i) (the-as handle #f)))
   (go gauntlet-eco-watch-run)
   (none))
 
@@ -4461,8 +4703,11 @@
     (when (and (!= eco (gauntlet-eco none)) (zero? (-> ent extra perm user-int8 0)))
       (gauntlet-eco-glow! proc eco)
       (let ((carriers (gauntlet-flybox-say-carriers level-name name)))
-        (if (and (zero? carriers) (!= eco (gauntlet-eco green)))
-          (format 0 "GAUNTLET FLYBOX: ~S has no carrier, its eco is free in the level~%" name)))
+        (cond
+          ((gauntlet-flybox-placed? level-name name)
+           (format 0 "GAUNTLET FLYBOX: ~S has no source of its eco in reach, it is placed beside it~%" name))
+          ((and (zero? carriers) (!= eco (gauntlet-eco green)))
+           (format 0 "GAUNTLET FLYBOX: ~S has no carrier, its eco is free in the level~%" name))))
       (process-spawn gauntlet-eco-watch :init gauntlet-eco-watch-init-by-other ent (process->handle proc) eco #f :to *entity-pool*)))
   0)
 
