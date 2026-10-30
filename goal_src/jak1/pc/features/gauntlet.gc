@@ -3767,35 +3767,44 @@
 
 (defun gauntlet-horde-mayhem! ((horde gauntlet-horde))
   "The muse is loose: top horde's extras up to *gauntlet-misty-mayhem-extra* (four at most), as many as the cap on the crowd
-   allows, each in the slot of its own, on a ring wider than the normal clones' around where the original was placed. This
-   is done once for each time she goes loose, which the group's episode remembers, so extras Jak killed stay dead."
+   allows, each in the slot of its own, on a ring wider than the normal clones' around the original where it stands NOW (where it was placed
+   when it is gone: a culled or killed one), so the extras arrive at the lurker that is in front of Jak and not at a home he may never
+   have seen, each with a burst of dark eco. This is done once for each time she goes loose, which the group's episode remembers, so extras
+   Jak killed stay dead."
   (set! (-> horde episode) *gauntlet-muse-episode*)
   (gauntlet-horde-recount!)
   (let* ((ent (-> horde ent))
+         (proc (handle->process (-> horde original)))
+         (live (if proc (as-type proc process-drawable)))
+         (centre (new 'stack-no-clear 'vector))
          (have (gauntlet-horde-extras-alive horde))
          (asked (- (min *gauntlet-misty-mayhem-extra* GAUNTLET_HORDE_MAX_CLONES) have))
          (room (max 0 (- *gauntlet-horde-max-clones* *gauntlet-horde-clones*)))
          (wanted (min asked room))
          (born 0))
+    (set! (-> centre quad) (-> (if live (-> live root trans) (-> ent extra trans)) quad))
     (when (> wanted 0)
       (let ((spot (new 'stack-no-clear 'vector)))
         (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
           (let ((slot (+ GAUNTLET_HORDE_MAX_CLONES i)))
             (when (and (< born wanted) (not (handle->process (-> horde clones slot))))
               (let ((angle (+ (degrees 45) (* (degrees 90) (the float i)))))
-                (set! (-> spot x) (+ (-> ent extra trans x) (* GAUNTLET_HORDE_EXTRA_RADIUS (sin angle))))
-                (set! (-> spot y) (-> ent extra trans y))
-                (set! (-> spot z) (+ (-> ent extra trans z) (* GAUNTLET_HORDE_EXTRA_RADIUS (cos angle))))
+                (set! (-> spot x) (+ (-> centre x) (* GAUNTLET_HORDE_EXTRA_RADIUS (sin angle))))
+                (set! (-> spot y) (-> centre y))
+                (set! (-> spot z) (+ (-> centre z) (* GAUNTLET_HORDE_EXTRA_RADIUS (cos angle))))
                 (set! (-> spot w) 1.0))
               (let ((twin (gauntlet-horde-clone! ent spot)))
                 (when (handle->process twin)
                   (set! (-> horde clones slot) twin)
-                  (+! born 1))))))))
+                  (+! born 1)
+                  ;; it is born in a burst of dark eco, the colour of the mayhem
+                  (process-spawn part-tracker :init part-tracker-init group-dark-eco-box-explosion -1 #f #f #f spot :to *entity-pool*))))))))
     (if (< wanted asked)
       (format 0 "GAUNTLET HORDE ~S mayhem capped: ~D of ~D extras fit (~D alive, cap ~D)~%"
               (res-lump-struct ent 'name string) wanted asked *gauntlet-horde-clones* *gauntlet-horde-max-clones*))
     (if (> born 0)
-      (format 0 "GAUNTLET HORDE ~S mayhem +~D extras~%" (res-lump-struct ent 'name string) born)))
+      (format 0 "GAUNTLET HORDE ~S mayhem +~D extras around (~M, ~M, ~M), where the ~A stands~%"
+              (res-lump-struct ent 'name string) born (-> centre x) (-> centre y) (-> centre z) (if live "live one" "original was placed"))))
   0)
 
 (defun gauntlet-horde-misty-watch? ((horde gauntlet-horde))
@@ -4487,6 +4496,54 @@
   (gauntlet-flybox-born! ent)
   (none))
 
+(defconstant GAUNTLET_LURKER_TINT_FRAMES 6) ;; how often the lurkers' tint is renewed while the world is turning, 5 times a second
+
+;; The mayhem's lurkers: the Misty lurkers go violet with the light. The world's own draw path (not the hud's) reads a process's color-mult and
+;; color-emissive, and the mood's tint (above) already reaches them through the lights, but a lurker's own colour is what the eye finds, so while
+;; the blend is up each Misty nav enemy is also pushed toward violet in its own colours, in a sweep of the entity pool every few frames (a sweep is
+;; one pass over a pool of a few hundred; nothing writes these two fields on a lurker of Misty but the eco, which is left alone: a charged babak
+;; (babak.gc says), a carrier of a scout fly box (the table says; its box glows with it) and the muse and the sharkey, whose looks are their own).
+;; When the blend goes back to nothing one last sweep makes them plain again. The values the callback reads are globals, because a lambda has no
+;; captures.
+(define *gauntlet-lurker-tint* 0.0) ;; the blend the sweep in progress paints with
+(define *gauntlet-lurker-tint-countdown* 0)
+(define *gauntlet-lurker-tint-lit* #f) ;; the last sweep painted a tint, so a last one is owed that paints none
+
+(defun gauntlet-lurker-tint-one! ((proc process))
+  "Paint proc with *gauntlet-lurker-tint* of the violet if it is a Misty lurker that wears no eco."
+  (let ((nav (as-type proc nav-enemy)))
+    (when (and nav
+               (-> nav entity)
+               (= (-> nav entity extra level name) 'misty)
+               (!= (-> nav type symbol) 'muse)
+               (!= (-> nav type symbol) 'sharkey)
+               (not (gauntlet-babak-charged? nav))
+               (not (gauntlet-carrier-box 'misty (res-lump-struct (-> nav entity) 'name string))))
+      (let ((b *gauntlet-lurker-tint*))
+        (set-vector! (-> nav draw color-mult) (lerp 1.0 0.75 b) (lerp 1.0 0.45 b) (lerp 1.0 0.85 b) 1.0)
+        (set-vector! (-> nav draw color-emissive) (* 0.2 b) 0.0 (* 0.12 b) 0.0))))
+  (none))
+
+(defun gauntlet-lurker-tint-poll! ()
+  "Per-frame: while the mood is tinted, renew the lurkers' violet every GAUNTLET_LURKER_TINT_FRAMES frames; once it is not, take it away in a
+   last sweep (not when Misty is going: its entities are not to be read then, and its lurkers go with it)."
+  (let ((blend (* *gauntlet-mayhem-blend* *gauntlet-misty-mayhem-atmosphere*)))
+    (cond
+      ((< 0.001 blend)
+       (+! *gauntlet-lurker-tint-countdown* -1)
+       (when (>= 0 *gauntlet-lurker-tint-countdown*)
+         (set! *gauntlet-lurker-tint-countdown* GAUNTLET_LURKER_TINT_FRAMES)
+         (set! *gauntlet-lurker-tint* blend)
+         (set! *gauntlet-lurker-tint-lit* #t)
+         (iterate-process-tree *entity-pool* (lambda ((proc process)) (gauntlet-lurker-tint-one! proc) (none)) *null-kernel-context*)))
+      (*gauntlet-lurker-tint-lit*
+       (set! *gauntlet-lurker-tint-lit* #f)
+       (set! *gauntlet-lurker-tint-countdown* 0)
+       (when (gauntlet-misty-active?)
+         (set! *gauntlet-lurker-tint* 0.0)
+         (iterate-process-tree *entity-pool* (lambda ((proc process)) (gauntlet-lurker-tint-one! proc) (none)) *null-kernel-context*)))))
+  0)
+
 ;; --------------------------------------------------------- the muse's body --
 
 ;; Catching the muse is the game's (levels/misty/muse.gc): the cell, the cutscene, and she is gone. She is not followed by anything
@@ -4820,6 +4877,7 @@
        (set! *gauntlet-muse-entity* (the-as entity-actor #f))
        (format 0 "GAUNTLET MUSE Misty left, the muse is loose for the next visit~%")))
     (gauntlet-mayhem-blend-poll!)
+    (gauntlet-lurker-tint-poll!)
     (when (and here *gauntlet-misty-muse-enabled*)
       (gauntlet-muse-health-poll!)
       (gauntlet-muse-body-poll!)
