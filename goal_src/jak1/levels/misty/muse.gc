@@ -2,6 +2,7 @@
 (in-package goal)
 (bundles "MIS.DGO")
 (require "engine/common-obs/nav-enemy.gc")
+(require "pc/features/gauntlet-h.gc")
 
 ;; DECOMP BEGINS
 
@@ -16,7 +17,8 @@
    (dest-point         vector :inline)
    (anim               spool-anim)
    (victory-anim       spool-anim)
-   (old-target-pos     transformq :inline))
+   (old-target-pos     transformq :inline)
+   (dropped-time       time-frame))
   (:states
    muse-caught
    muse-idle))
@@ -57,6 +59,22 @@
   (eval-path-curve-div! (-> self path) arg0 (the float arg1) 'interp)
   0
   (none))
+
+;; gauntlet: the point of this muse's path nearest where, written to out. A muse that Jak dropped starts there, so that she is always on
+;; her own path (and so on the nav mesh she runs on), as near the place he lost her as the path comes.
+(defun muse-path-point-nearest ((this muse) (where vector) (out vector))
+  (let ((info (new 'stack-no-clear 'point-on-path-segment-info))
+        (best 4096000.0))
+    (dotimes (i (+ (-> this path curve num-cverts) -1))
+      (eval-path-curve-div! (-> this path) (the-as vector (-> info segment)) (the float i) 'interp)
+      (eval-path-curve-div! (-> this path) (-> info segment 1) (the float (+ i 1)) 'interp)
+      (set! (-> info point quad) (-> where quad))
+      (analyze-point-on-path-segment info)
+      (when (< (-> info distance-to-segment) best)
+        (set! best (-> info distance-to-segment))
+        (set! (-> out quad) (-> info nearest-point quad))))
+    (set! (-> out w) 1.0))
+  out)
 
 (defbehavior muse-check-dest-point muse ()
   (let ((gp-0 (new 'stack-no-clear 'point-on-path-segment-info))
@@ -119,11 +137,12 @@
   :bounds (static-spherem 0 2 0 3)
   :shadow muse-shadow-mg)
 
+;; gauntlet: a muse Jak has just dropped cannot be caught for GAUNTLET_MUSE_GRACE, or she would be caught where she lands
 (defmethod touch-handler ((this muse) (arg0 process) (arg1 event-message-block))
-  (go muse-caught))
+  (if (time-elapsed? (-> this dropped-time) GAUNTLET_MUSE_GRACE) (go muse-caught)))
 
 (defmethod attack-handler ((this muse) (arg0 process) (arg1 event-message-block))
-  (go muse-caught))
+  (if (time-elapsed? (-> this dropped-time) GAUNTLET_MUSE_GRACE) (go muse-caught)))
 
 nav-enemy-default-event-handler
 
@@ -233,6 +252,14 @@ nav-enemy-default-event-handler
   :code
     (behavior ()
       (sound-play "money-pickup")
+      ;; gauntlet: the task is closed by the first catch only. Every later one (a muse Jak dropped and caught again) is over at once:
+      ;; no cell, no cutscene, no blackout, and the mod told which kind it was
+      (when (task-closed? (game-task misty-muse) (task-status need-reminder))
+        (process-entity-status! self (entity-perm-status dead) #t)
+        (gauntlet-muse-caught! 'again)
+        (deactivate self)
+        (loop
+          (suspend)))
       (close-specific-task! (game-task misty-muse) (task-status need-reminder))
       (process-entity-status! self (entity-perm-status dead) #t)
       (suspend)
@@ -286,7 +313,9 @@ nav-enemy-default-event-handler
           (else
            (send-event *target* 'trans 'restore (-> self old-target-pos))
            (set-blackout-frames 0)
-           (set-blackout-frames (seconds 0.1))))))
+           (set-blackout-frames (seconds 0.1)))))
+      ;; gauntlet: she is Jak's now, the cell and the cutscene having been the game's own
+      (gauntlet-muse-caught! 'first))
   :post
     (behavior ()
       (nav-enemy-method-51 self)
@@ -376,6 +405,14 @@ nav-enemy-default-event-handler
   (set! (-> this player-path-index) 0.0)
   (eval-path-curve-div! (-> this path) (-> this dest-point) (-> this current-path-index) 'interp)
   (set! (-> this collide-info trans quad) (-> this dest-point quad))
+  (set! (-> this dropped-time) (- (current-time) GAUNTLET_MUSE_GRACE))
+  ;; gauntlet: a muse Jak dropped (pc/features/gauntlet.gc asks by *gauntlet-muse-start*) starts on her path where he lost her, loose
+  ;; and uncatchable for a moment, the nav mesh told where she is as the other nav enemies that are moved are
+  (when (!= 0.0 (-> *gauntlet-muse-start* w))
+    (muse-path-point-nearest this *gauntlet-muse-start* (-> this collide-info trans))
+    (set! (-> *gauntlet-muse-start* w) 0.0)
+    (set-time! (-> this dropped-time))
+    (set-current-poly! (-> this nav) (nav-control-method-16 (-> this nav) (-> this collide-info trans))))
   (set! (-> this nav nearest-y-threshold) 20480.0)
   (set-vector! (-> this neck twist-max) 8192.0 8192.0 0.0 1.0)
   (set! (-> this neck up) (the-as uint 0))

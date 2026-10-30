@@ -34,6 +34,10 @@
 ;; clones born beside it by the same init, *gauntlet-lurker-multiplier* of them in all. See "the horde" below; the hook that
 ;; hears of each birth is in engine/entity/entity.gc.
 ;;
+;; On Misty Island (level misty) the muse decides how the island behaves: caught, it is the mod's usual; loose (not yet caught,
+;; or dropped by a hit, a bonk or a death), it is mayhem: more lurkers, faster, babaks charged. An icon of her in a corner of the hud
+;; shows which. See "the muse" and "the muse's body" below.
+;;
 ;; The bomb is the big dark eco bomb Gol and Maia's robot drops in the final
 ;; boss (darkecobomb, levels/finalboss/robotboss-weapon.gc), made available
 ;; outside the Citadel:
@@ -522,6 +526,73 @@
          (format 0 "GAUNTLET CELL healed from ~F to ~F~%" before after))
         (else (format 0 "GAUNTLET CELL no heal needed, health ~F~%" before)))))
   (none))
+
+;; ------------------------------------------------------------------ the muse --
+
+;; Misty Island has one state that matters, and it is the muse's: is she with Jak or not. The island's muse (levels/misty/muse.gc)
+;; is a power cell that runs; catching her ends a chase. Here catching her is the island calming down.
+;;   LOOSE    she is not with Jak: mayhem. The state on arrival, before the first catch: "you catch her and things behave
+;;            normally" makes not having caught her yet the abnormal one.
+;;   CARRIED  she is: the mod's usual lurkers (the eco-charged ones, the clones of "the horde"), nothing more.
+;; *gauntlet-muse-carried* is the one authority, for the log, the state file, the icon and every effect below; nothing keeps a
+;; second copy. It flips in three places only, all below: gauntlet-muse-caught! (the muse's own state calls it as she is caught),
+;; gauntlet-muse-drop! (Jak is hit, bonks, or dies) and gauntlet-muse-poll! (Misty is entered or left). The first catch is the
+;; game's (the cell, the cutscene) and the muse is gone as the game makes her; the catches after it are over at once and give nothing.
+;; Dropping her pops a new muse out on her path where Jak lost her, to be chased and caught again (see "the muse's body").
+;;
+;; While LOOSE, on Misty only (every effect asks gauntlet-mayhem-for? of its own process, whose entity says what level it is of):
+;;   more enemies   each lurker Misty places has misty-mayhem-extra more clones, on top of lurker-multiplier's ("the horde"); catching
+;;                  her takes only those away, with a puff
+;;   faster         babaks and bonelurkers run misty-mayhem-speed times faster (babak.gc, bonelurker.gc): live, and it composes
+;;                  with the desperation by multiplication, a blue babak at one hit running both
+;;   stronger       a babak is born charged with the chance misty-mayhem-charge-chance instead of babak-charge-chance
+;; The muse herself, the sharkey and the lurkers that are not nav enemies (the balloon lurkers, the quicksand ones) are not
+;; reached; the first has no use for it and the rest have no pace or charge to scale.
+
+(defconstant GAUNTLET_MUSE_FLASH_TIME (seconds 0.8)) ;; the icon's flash, and the burn of its glow, after a flip
+
+(define *gauntlet-muse-carried* #f) ;; THE authority: the muse is with Jak. Starts every visit to Misty #f
+(define *gauntlet-muse-episode* 0) ;; counts the times she has gone loose (arriving counts), so a group of the horde tops itself up once for each
+(define *gauntlet-muse-flip-time* (- 0 (seconds 3600))) ;; when the state last flipped, long ago until it does: the icon's flash reads it
+(define *gauntlet-muse-was-here* #f) ;; Misty was active the last time the poll looked
+(define *gauntlet-muse-health* -1.0) ;; Jak's health the last time the poll looked, -1 with no Jak: a fall in it is a hit
+
+(defun gauntlet-misty-active? ()
+  "True while Misty Island is loaded and running, wherever Jak is: the muse's state lives exactly that long."
+  (= (level-status *level* 'misty) 'active))
+
+(defun gauntlet-muse-loose? ()
+  "True while the mayhem is on: the setting is on, Misty is running and the muse is not with Jak."
+  (and *gauntlet-misty-muse-enabled* (not *gauntlet-muse-carried*) (gauntlet-misty-active?)))
+
+(defun gauntlet-mayhem-for? ((proc process))
+  "True when the mayhem applies to proc: the muse is loose and proc is something Misty placed (its entity is of Misty's level),
+   so a babak of the swamp is never rushed because a muse got away."
+  (and (gauntlet-muse-loose?) (-> proc entity) (= (-> proc entity extra level name) 'misty)))
+
+(defun gauntlet-misty-pace ((proc process))
+  "How many times faster than its own pace proc moves now: *gauntlet-misty-mayhem-speed* in the mayhem, else 1.0."
+  (if (gauntlet-mayhem-for? proc) *gauntlet-misty-mayhem-speed* 1.0))
+
+(defun gauntlet-babak-charge-chance ((proc process))
+  "The chance the babak proc, being born, is charged with eco: the mayhem's in the mayhem, else babak-charge-chance."
+  (if (gauntlet-mayhem-for? proc) *gauntlet-misty-mayhem-charge-chance* *gauntlet-babak-charge-chance*))
+
+(defun gauntlet-muse-flip! ((carried symbol))
+  "Make carried the muse's state and say so, once: an eco burst at Jak (blue and a green eco chime when she is his, red and the
+   warning when he has lost her) beside the icon's flash. A flip to the state she is in already is nothing."
+  (when (!= carried *gauntlet-muse-carried*)
+    (set! *gauntlet-muse-carried* carried)
+    (set-time! *gauntlet-muse-flip-time*)
+    (if (not carried) (+! *gauntlet-muse-episode* 1))
+    (format 0 "GAUNTLET MUSE now ~A~%" (if carried "carried, things are calm" "loose, mayhem"))
+    (when *target*
+      (dotimes (i 6)
+        (gauntlet-eco-burst! *target* (if carried (gauntlet-eco blue) (gauntlet-eco red))))
+      (if carried
+        (sound-play "g-eco-pickup" :position #f)
+        (sound-play "robo-warning" :position #f))))
+  0)
 
 ;; ------------------------------------------------------------------ the ring --
 
@@ -3202,26 +3273,37 @@
 ;; because the kernel invalidates them. The walk costs one pass over a pool of a few hundred processes, once per birth and once
 ;; per state write.
 ;;
+;; Misty Island's lurkers have more company while the muse is loose (see "the muse"): *gauntlet-misty-mayhem-extra* more clones,
+;; the extras. They live in slots of their own (the last GAUNTLET_HORDE_MAX_CLONES of the group's handles), so that taking them
+;; away on a catch, or topping them up on a drop, never touches the normal clones, and so that the group does not have to remember
+;; which are which. The watcher of a Misty group stays for as long as extras could come (until its level goes, the original is
+;; put away or killed), because an original whose normal clones are all dead is still owed its extras the next time she is dropped.
+;; A group tops itself up once for each time the muse has gone loose (*gauntlet-muse-episode*), so extras that Jak killed are not
+;; born again while she stays loose, and a Misty lurker born in the calm gets its extras the first time she is lost.
+;;
 ;; Nothing here keeps a string: a field of a plain process subtype that points into the process's own heap is not moved when
 ;; the heap compacts (engine/entity/relocate.gc adjusts only what each type's relocate method names, as nav-enemy's does for its
 ;; neck and rand-gen), so a copy of the actor's name would dangle. The name is read from the entity instead, which is safe while
 ;; the actor's level is active, and the line that is written once it is not names the level.
 
-(defconstant GAUNTLET_HORDE_MAX_CLONES 4) ;; clones in ONE group: the console's multiplier tops out at 5, the original and four clones. gauntlet-horde holds this many handles (the cap on all groups together is the setting *gauntlet-horde-max-clones*)
+(defconstant GAUNTLET_HORDE_MAX_CLONES 4) ;; clones in ONE group: the console's multiplier tops out at 5, the original and four clones; and Misty's extras at four too (the cap on all groups together is the setting *gauntlet-horde-max-clones*)
+(defconstant GAUNTLET_HORDE_SLOTS 8) ;; handles a group holds: slots 0 to 3 are its normal clones, 4 to 7 Misty's extras. deftype below needs this written out
 (defconstant GAUNTLET_HORDE_RING_RADIUS (meters 3)) ;; clones stand this far from the original, evenly around it
+(defconstant GAUNTLET_HORDE_EXTRA_RADIUS (meters 5)) ;; and Misty's extras this far, a quarter turn at a time from a diagonal, so they stand between and outside the others
 
 (deftype gauntlet-horde (process)
   ((ent        entity-actor) ;; the actor the clones are of; its memory is its level's, so it is read only while that level is active
    (original   handle) ;; the actor's own process, the one the entity system manages
    (level-name symbol) ;; the level the actor belongs to
-   (clones     handle 4)) ;; GAUNTLET_HORDE_MAX_CLONES of them, a null handle (not a zero) where there is none
+   (episode    int32) ;; the *gauntlet-muse-episode* this group last topped its extras up for; 0 before it has
+   (clones     handle 8)) ;; GAUNTLET_HORDE_SLOTS of them, a null handle (not a zero) where there is none
   (:states
    gauntlet-horde-watch))
 
 (defun gauntlet-horde-live-clones ((horde gauntlet-horde))
-  "How many of horde's clones are still alive."
+  "How many of horde's clones, normal and extra, are still alive."
   (let ((alive 0))
-    (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
+    (dotimes (i GAUNTLET_HORDE_SLOTS)
       (if (handle->process (-> horde clones i)) (+! alive 1)))
     alive))
 
@@ -3245,8 +3327,8 @@
   0)
 
 (defbehavior gauntlet-horde-remove-clones gauntlet-horde ()
-  "Take away every clone still alive."
-  (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
+  "Take away every clone still alive, the extras too."
+  (dotimes (i GAUNTLET_HORDE_SLOTS)
     (let ((alive (handle->process (-> self clones i))))
       (if alive (deactivate alive))))
   0)
@@ -3265,6 +3347,82 @@
   (and (not (handle->process (-> self original)))
        (not (logtest? (-> self ent extra perm status) (entity-perm-status dead)))))
 
+(define-extern gauntlet-horde-clone! (function entity-actor vector handle)) ;; below: the extras are born the way the clones are
+
+(defun gauntlet-puff! ((where vector))
+  "A puff of dust at where, from the game's own particles for Jak's landings (target-part.gc, in GAME.CGO)."
+  (process-spawn part-tracker :init part-tracker-init group-land-poof-dirt 300 #f #f #f where :to *entity-pool*)
+  0)
+
+(defun gauntlet-horde-extras-alive ((horde gauntlet-horde))
+  "How many of horde's Misty extras are still alive."
+  (let ((alive 0))
+    (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
+      (if (handle->process (-> horde clones (+ GAUNTLET_HORDE_MAX_CLONES i))) (+! alive 1)))
+    alive))
+
+(defun gauntlet-horde-calm! ((horde gauntlet-horde))
+  "The muse is with Jak: every extra of horde still alive goes, each with a puff where it stood. Only the extras; the normal
+   clones are the mod's usual and stay."
+  (let ((gone 0))
+    (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
+      (let* ((slot (+ GAUNTLET_HORDE_MAX_CLONES i))
+             (alive (handle->process (-> horde clones slot)))
+             (body (if alive (as-type alive process-drawable))))
+        (when alive
+          (if body (gauntlet-puff! (-> body root trans)))
+          (deactivate alive)
+          (+! gone 1))))
+    (if (> gone 0)
+      (format 0 "GAUNTLET HORDE ~S mayhem over, -~D extras~%" (res-lump-struct (-> horde ent) 'name string) gone)))
+  0)
+
+(defun gauntlet-horde-mayhem! ((horde gauntlet-horde))
+  "The muse is loose: top horde's extras up to *gauntlet-misty-mayhem-extra* (four at most), as many as the cap on the crowd
+   allows, each in the slot of its own, on a ring wider than the normal clones' around where the original was placed. This
+   is done once for each time she goes loose, which the group's episode remembers, so extras Jak killed stay dead."
+  (set! (-> horde episode) *gauntlet-muse-episode*)
+  (gauntlet-horde-recount!)
+  (let* ((ent (-> horde ent))
+         (have (gauntlet-horde-extras-alive horde))
+         (asked (- (min *gauntlet-misty-mayhem-extra* GAUNTLET_HORDE_MAX_CLONES) have))
+         (room (max 0 (- *gauntlet-horde-max-clones* *gauntlet-horde-clones*)))
+         (wanted (min asked room))
+         (born 0))
+    (when (> wanted 0)
+      (let ((spot (new 'stack-no-clear 'vector)))
+        (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
+          (let ((slot (+ GAUNTLET_HORDE_MAX_CLONES i)))
+            (when (and (< born wanted) (not (handle->process (-> horde clones slot))))
+              (let ((angle (+ (degrees 45) (* (degrees 90) (the float i)))))
+                (set! (-> spot x) (+ (-> ent extra trans x) (* GAUNTLET_HORDE_EXTRA_RADIUS (sin angle))))
+                (set! (-> spot y) (-> ent extra trans y))
+                (set! (-> spot z) (+ (-> ent extra trans z) (* GAUNTLET_HORDE_EXTRA_RADIUS (cos angle))))
+                (set! (-> spot w) 1.0))
+              (let ((twin (gauntlet-horde-clone! ent spot)))
+                (when (handle->process twin)
+                  (set! (-> horde clones slot) twin)
+                  (+! born 1))))))))
+    (if (< wanted asked)
+      (format 0 "GAUNTLET HORDE ~S mayhem capped: ~D of ~D extras fit (~D alive, cap ~D)~%"
+              (res-lump-struct ent 'name string) wanted asked *gauntlet-horde-clones* *gauntlet-horde-max-clones*))
+    (if (> born 0)
+      (format 0 "GAUNTLET HORDE ~S mayhem +~D extras~%" (res-lump-struct ent 'name string) born)))
+  0)
+
+(defun gauntlet-horde-misty-watch? ((horde gauntlet-horde))
+  "True when horde is Misty's and extras could still come to it: the muse is a state of the island and asks for any."
+  (and (= (-> horde level-name) 'misty) *gauntlet-misty-muse-enabled* (> *gauntlet-misty-mayhem-extra* 0)))
+
+(defun gauntlet-horde-mayhem-poll! ((horde gauntlet-horde))
+  "Per-frame, for a group of Misty's: the extras go the moment the muse is with Jak, and come, once, the moment she is loose."
+  (when (= (-> horde level-name) 'misty)
+    (cond
+      ((gauntlet-muse-loose?)
+       (if (!= (-> horde episode) *gauntlet-muse-episode*) (gauntlet-horde-mayhem! horde)))
+      (else (gauntlet-horde-calm! horde))))
+  0)
+
 (defstate gauntlet-horde-watch (gauntlet-horde)
   :code
     (behavior ()
@@ -3275,13 +3433,15 @@
            ;; the actor's name is in the level's memory, which is going: the level is named instead
            (format 0 "GAUNTLET HORDE ~A clones culled (level unloaded)~%" (-> self level-name))
            (deactivate self))
-          ((zero? (gauntlet-horde-live-clones self))
+          ((and (zero? (gauntlet-horde-live-clones self))
+                (not (and (gauntlet-horde-misty-watch? self) (handle->process (-> self original)))))
            (format 0 "GAUNTLET HORDE ~S watcher done (no clone left)~%" (gauntlet-horde-name))
            (deactivate self))
           ((gauntlet-horde-walked-away?)
            (gauntlet-horde-remove-clones)
            (format 0 "GAUNTLET HORDE ~S clones culled (the original was culled, Jak walked away)~%" (gauntlet-horde-name))
-           (deactivate self)))
+           (deactivate self))
+          (else (gauntlet-horde-mayhem-poll! self)))
         (suspend))))
 
 (defbehavior gauntlet-horde-init-by-other gauntlet-horde ((ent entity-actor) (original handle))
@@ -3289,7 +3449,8 @@
   (set! (-> self ent) ent)
   (set! (-> self original) original)
   (set! (-> self level-name) (-> ent extra level name))
-  (dotimes (i GAUNTLET_HORDE_MAX_CLONES)
+  (set! (-> self episode) 0)
+  (dotimes (i GAUNTLET_HORDE_SLOTS)
     (set! (-> self clones i) (the-as handle #f)))
   (go gauntlet-horde-watch)
   (none))
@@ -3344,9 +3505,11 @@
    the clones on a ring around it, the first straight along the z axis, and say so. The multiplier asks for some clones; the
    cap on the live ones, counted afresh, says how many fit, possibly none, and then there is no watcher either."
   (let* ((original (-> ent extra process))
-         (asked (min (+ *gauntlet-lurker-multiplier* -1) GAUNTLET_HORDE_MAX_CLONES)))
+         (asked (min (+ *gauntlet-lurker-multiplier* -1) GAUNTLET_HORDE_MAX_CLONES))
+         ;; one of Misty's, with extras possible: it gets a watcher even with no normal clones to watch
+         (misty (and *gauntlet-misty-muse-enabled* (> *gauntlet-misty-mayhem-extra* 0) (= (-> ent extra level name) 'misty))))
     (when (and original
-               (> asked 0)
+               (or (> asked 0) misty)
                (not (logtest? (-> ent extra perm status) (entity-perm-status complete)))
                (gauntlet-horde-lurker? original))
       (gauntlet-horde-recount!)
@@ -3356,13 +3519,13 @@
         (if (< wanted asked)
           (format 0 "GAUNTLET HORDE ~S capped: ~D of ~D clones asked for fit (~D alive, cap ~D)~%"
                   name wanted asked *gauntlet-horde-clones* *gauntlet-horde-max-clones*))
-        (when (> wanted 0)
+        (when (or (> wanted 0) misty)
           (let ((watcher (process-spawn gauntlet-horde :init gauntlet-horde-init-by-other ent (process->handle original) :to *entity-pool*)))
             (when watcher
               (let ((horde (-> watcher 0))
                     (home (new 'stack-no-clear 'vector))
                     (spot (new 'stack-no-clear 'vector))
-                    (step (/ (degrees 360) (the float wanted)))
+                    (step (/ (degrees 360) (the float (max wanted 1))))
                     (born 0))
                 (set! (-> home quad) (-> ent extra trans quad))
                 ;; a clone is tried only if every one before it was born: the first that is not ends the line
@@ -3379,8 +3542,11 @@
                         (+! born 1)))))
                 (if (< born wanted)
                   (format 0 "GAUNTLET HORDE ~S wanted +~D clones and no process was free for the rest~%" name wanted))
+                ;; the muse loose: the extras are born with the rest, so a lurker that comes up in the mayhem arrives in it
+                (if (and misty (gauntlet-muse-loose?)) (gauntlet-horde-mayhem! horde))
                 (cond
                   ((> born 0) (format 0 "GAUNTLET HORDE ~S ~A +~D clones~%" name (-> original type) born))
+                  (misty)
                   (else (deactivate horde))))))))))
   (none))
 
@@ -3388,6 +3554,257 @@
 (defun *entity-born-hook* ((ent entity-actor))
   (gauntlet-horde-born! ent)
   (none))
+
+;; --------------------------------------------------------- the muse's body --
+
+;; Catching the muse is the game's (levels/misty/muse.gc): the cell, the cutscene, and she is gone. She is not followed by anything
+;; and does not stay with Jak; that she is his is shown by an icon (below) and nothing else. Dropping her makes a new muse, a
+;; second process of her type from her own actor, born the way the horde's clones are (gauntlet-horde-clone!, which is why this
+;; section follows "the horde"): on her path where Jak lost her (muse.gc reads *gauntlet-muse-start*), loose and not to be caught for
+;; GAUNTLET_MUSE_GRACE, then the muse of the game again, chasing and run from, giving a catch that is over at once (muse-caught
+;; tells a first catch, which closes the task, from the rest). The game's own muse is never the one, because by the time Jak can
+;; lose her hers is gone and her actor marked dead, so no birth by the entity system will bring her back; that is the reason for
+;; the new one. The same new muse is also the one that stands on the island on a later visit (or after a death, which puts every
+;; process of the entity pool away, hers with them) when the actor is dead and the task closed: the mod makes her at her home.
+
+(deftype gauntlet-muse-world (structure)
+  ((muse handle) ;; the muse this mod made, until she is caught or put away
+   (icon handle) ;; the process that drives the icon
+   (face handle))) ;; the manipy it draws her with
+
+(define *gauntlet-muse-world* (new 'global 'gauntlet-muse-world))
+(set! (-> *gauntlet-muse-world* muse) (the-as handle #f))
+(set! (-> *gauntlet-muse-world* icon) (the-as handle #f))
+(set! (-> *gauntlet-muse-world* face) (the-as handle #f))
+
+(define *gauntlet-muse-entity* (the-as entity-actor #f)) ;; her actor, found while Misty is up, forgotten when it goes (its memory is the level's)
+
+(defun gauntlet-muse-entity-find! ()
+  "Her actor, muse-2 of Misty Island, found by name when it is not known; #f when Misty is not up."
+  (when (not *gauntlet-muse-entity*)
+    (let ((found (entity-by-name "muse-2")))
+      (if (and found (type-type? (-> found type) entity-actor))
+        (set! *gauntlet-muse-entity* (the-as entity-actor found)))))
+  *gauntlet-muse-entity*)
+
+(defun gauntlet-muse-spawn! ((near-jak symbol))
+  "Make a muse, loose: at her home when near-jak is #f, else on her path where Jak stands."
+  (let ((ent (gauntlet-muse-entity-find!)))
+    (cond
+      ((not ent) (format 0 "GAUNTLET MUSE has no muse-2 actor to make a muse from~%"))
+      (else
+       (set! (-> *gauntlet-muse-start* w) 0.0)
+       (when (and near-jak *target*)
+         (set! (-> *gauntlet-muse-start* quad) (-> (target-pos 0) quad))
+         (set! (-> *gauntlet-muse-start* w) 1.0))
+       (let* ((born (gauntlet-horde-clone! ent (-> ent extra trans)))
+              (muse (as-type (handle->process born) process-drawable)))
+         (set! (-> *gauntlet-muse-start* w) 0.0)
+         (set! (-> *gauntlet-muse-world* muse) born)
+         (if muse
+           (format 0 "GAUNTLET MUSE loose at (~M, ~M, ~M)~%" (-> muse root trans x) (-> muse root trans y) (-> muse root trans z))
+           (format 0 "GAUNTLET MUSE could not be made~%"))))))
+  0)
+
+(defun gauntlet-muse-caught! ((kind symbol))
+  "The muse's own state calls this as Jak catches her, kind 'first (the game's catch, the cell given) or 'again (the new muse
+   the mod made after a drop, nothing given). She is his."
+  (when (and *gauntlet-misty-muse-enabled* (gauntlet-misty-active?))
+    (format 0 "GAUNTLET MUSE caught (~A)~%" kind)
+    (gauntlet-muse-flip! #t))
+  (none))
+
+(defun gauntlet-muse-drop! ((why symbol))
+  "Jak has lost the muse he carries, why being 'hit, 'bonk or 'death. She pops out loose where he stands, unless he died: a death
+   puts every process of the entity pool away, so the poll below makes her at her home once it has. Dropped once for a hit,
+   however many frames of invulnerability follow, because the second finds her loose already."
+  (when (and *gauntlet-misty-muse-enabled* *gauntlet-muse-carried* (gauntlet-misty-active?))
+    (let ((where (if *target* (target-pos 0) *null-vector*)))
+      (format 0 "GAUNTLET MUSE dropped (~A) at (~M, ~M, ~M)~%" why (-> where x) (-> where y) (-> where z)))
+    (gauntlet-muse-flip! #f)
+    (if (!= why 'death) (gauntlet-muse-spawn! #t)))
+  (none))
+
+;; gauntlet: engine/target/target-handler.gc calls this when Jak lands hard on something that hears 'bonk, which is what a bonk is:
+;; he came down on a platform or an enemy with a velocity change over 4 m/s along gravity (the collision handler's own test), the
+;; thing under him is told 'bonk and, from a fall beyond fall-far, he bounces off it
+(defun *target-bonk-hook* ()
+  (gauntlet-muse-drop! 'bonk)
+  (none))
+
+(defun gauntlet-muse-health-poll! ()
+  "Per-frame, on Misty: a hit is a fall in Jak's health, or his last hit, which does not lower it (he is dying: the flag is set before
+   his death begins). Every way he can lose health is a fall in it (an attack, a hit of damage mode, the red babak's second hit),
+   which is why this is where hits are seen and not a hook in the hit state; invulnerable frames let no hit land, so nothing falls."
+  (let ((health (if *target* (-> *target* fact health) -1.0)))
+    (when (and *target* *gauntlet-muse-carried*)
+      (cond
+        ((or (logtest? (-> *target* state-flags) (state-flags dying)) (>= 0.0 health)) (gauntlet-muse-drop! 'death))
+        ((and (<= 0.0 *gauntlet-muse-health*) (< health *gauntlet-muse-health*)) (gauntlet-muse-drop! 'hit))))
+    (set! *gauntlet-muse-health* health))
+  0)
+
+(defun gauntlet-muse-body-poll! ()
+  "Per-frame, on Misty, with the muse loose: if the game will not bring her back (her actor is dead and none of her is standing) and
+   the mod has not made one, make her at her home. That is every visit after the first catch, and every death."
+  (let ((ent (gauntlet-muse-entity-find!)))
+    (when (and ent
+               *target*
+               (not *gauntlet-muse-carried*)
+               (not (-> ent extra process))
+               (logtest? (-> ent extra perm status) (entity-perm-status bit-0 dead))
+               (not (handle->process (-> *gauntlet-muse-world* muse))))
+      (gauntlet-muse-spawn! #f)))
+  0)
+
+;; ---------------------------------------------------------------- the icon --
+
+;; Whether the muse is with Jak is shown on screen by her model in a corner of the hud, whenever he is on Misty: dark while she is
+;; loose, lit while she is his, and it flashes at each change (gold when she is caught, red when she is lost). It is drawn the way the
+;; hud draws its own counters and the pc port's battle counter (pc/hud-classes-pc.gc): a manipy of her art with the hud's draw function,
+;; placed in the hud's own space (x from 0 to 512, y from 0 to 448, the middle at 256 and 224) and scaled by the video's relative
+;; scales. Her art is in MIS.DGO only, so it is looked up by the symbol of her skeleton group, *muse-sg*, and only while Misty is up,
+;; and the manipy is given her actor, whose level the art is loaded from (initialize-skeleton) and which has the level's unload
+;; take it away. A model cannot be cut to her face, so she is drawn whole, small. The card behind her, a frame drawn the way the
+;; Klaww bar is, says the same as her colour in case her colour does not show.
+;; Left of the middle: the health is top left, the buzzers bottom left, the orbs top right and the eco timers bottom right, and the pc
+;; port's battle counter right of the middle.
+(defconstant GAUNTLET_MUSE_ICON_X 44) ;; the middle of her, in the hud's 512 wide space
+(defconstant GAUNTLET_MUSE_ICON_Y 190) ;; and in its 448 high one
+(defconstant GAUNTLET_MUSE_ICON_SCALE 0.016) ;; the hud scale of her art (the battle counter's bonelurker is 0.004; she is smaller)
+(defconstant GAUNTLET_MUSE_ICON_LIFT 2867.0) ;; how high the middle of her figure is above her feet, in the art's units (0.7 m)
+(defconstant GAUNTLET_MUSE_FRAME_HALF_W 22) ;; the frame around her: half its width in the hud's 512 wide space, undone by the aspect
+(defconstant GAUNTLET_MUSE_FRAME_HALF_H 26) ;; and half its height in the 2D space of the Klaww bar (y from 0 to 224)
+
+(defun gauntlet-muse-face ()
+  "The manipy that draws the muse's face, or #f while there is none."
+  (let ((proc (handle->process (-> *gauntlet-muse-world* face))))
+    (the-as manipy (if (and proc (type-type? (-> proc type) manipy)) proc))))
+
+(defun gauntlet-muse-face-make! ()
+  "Make the manipy: her art, drawn by the hud's draw function, idling. It is in the entity pool with her actor as its entity, so
+   Misty's unload takes it away and so does a death, after which this makes it again."
+  (let ((ent (gauntlet-muse-entity-find!))
+        (skel '*muse-sg*))
+    (when (and ent (-> skel value))
+      (let ((made (manipy-spawn (new 'static 'vector :w 1.0) ent (the-as skeleton-group (-> skel value)) #f :to *entity-pool*)))
+        (when made
+          (let ((icon (-> made 0)))
+            (set! (-> icon draw dma-add-func) dma-add-process-drawable-hud)
+            (set-vector! (-> icon root trans) 0.0 0.0 0.0 1.0)
+            (set-vector! (-> icon root scale) GAUNTLET_MUSE_ICON_SCALE GAUNTLET_MUSE_ICON_SCALE GAUNTLET_MUSE_ICON_SCALE 1.0)
+            (logior! (-> icon mask) (process-mask pause))
+            (logclear! (-> icon mask) (process-mask menu progress))
+            (send-event icon 'art-joint-anim "muse-idle" 0)
+            ;; turned to the camera and a little aside, the way the battle counter turns its lurkers
+            (send-event icon 'rot-quat (quaternion-axis-angle! (new-stack-quaternion0) 0.0 1.0 0.15 (degrees 200))))
+          (set! (-> *gauntlet-muse-world* face) (ppointer->handle made))))))
+  0)
+
+(defun gauntlet-muse-icon-shown? ()
+  "True when the icon is to be seen: Jak is inside Misty and nothing else has the screen (a cutscene, the progress menu, a fade)."
+  (and *target*
+       (gauntlet-in-level? 'misty)
+       (not (movie?))
+       (not *progress-process*)
+       (time-elapsed? (-> *game-info* letterbox-time) (seconds 0.1))
+       (time-elapsed? (-> *game-info* blackout-time) (seconds 0.1))))
+
+(defun gauntlet-muse-icon-frame! ()
+  "One frame of the icon: the manipy, made if it is not there, shown or hidden, put in its corner and tinted for the state (dark
+   and cold while she is loose, plain while she is his, a burning gold or red for GAUNTLET_MUSE_FLASH_TIME after a flip), and the frame
+   around it."
+  (if (not (gauntlet-muse-face)) (gauntlet-muse-face-make!))
+  (let ((face (gauntlet-muse-face))
+        (shown (gauntlet-muse-icon-shown?)))
+    (when face
+      (send-event face 'draw shown)
+      (when shown
+        (let* ((since (- (current-time) *gauntlet-muse-flip-time*))
+               (flash (fmax 0.0 (- 1.0 (/ (the float since) (the float GAUNTLET_MUSE_FLASH_TIME)))))
+               (draw (-> face draw))
+               (sx (* GAUNTLET_MUSE_ICON_SCALE (-> *video-parms* relative-x-scale)))
+               (sy (* GAUNTLET_MUSE_ICON_SCALE (/ 512.0 448.0) (-> *video-parms* relative-y-scale))))
+          ;; the hud's space has y running down, so her y scale is negative to stand her up, and her middle is lifted to the corner
+          (set-vector! (-> face root scale) sx (- sy) sx 1.0)
+          (set! (-> face root trans x) (the float (+ GAUNTLET_MUSE_ICON_X -256)))
+          (set! (-> face root trans y)
+                (+ (- (the float GAUNTLET_MUSE_ICON_Y) (the float (-> *video-parms* screen-sy))) (* sy GAUNTLET_MUSE_ICON_LIFT)))
+          (set! (-> face root trans z) 2048.0)
+          (cond
+            (*gauntlet-muse-carried*
+             (set-vector! (-> draw color-mult) 1.0 1.0 1.0 1.0)
+             (set-vector! (-> draw color-emissive) (* 0.9 flash) (* 0.8 flash) (* 0.2 flash) 0.0))
+            (else
+             (set-vector! (-> draw color-mult) 0.2 0.22 0.28 1.0)
+             (set-vector! (-> draw color-emissive) (* 0.9 flash) (* 0.1 flash) (* 0.1 flash) 0.0)))
+          (let* ((aspect (-> *pc-settings* aspect-ratio-scale))
+                 (cx GAUNTLET_MUSE_ICON_X)
+                 (cy (/ GAUNTLET_MUSE_ICON_Y 2))
+                 (grow (the int (* 6.0 flash)))
+                 (half-w (+ grow (max 1 (the int (/ (the float GAUNTLET_MUSE_FRAME_HALF_W) aspect)))))
+                 (half-h (+ grow GAUNTLET_MUSE_FRAME_HALF_H))
+                 (thick-x (max 1 (the int (/ 2.0 aspect)))))
+            (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug-no-zbuf))
+              (cond
+                ((< 0.0 flash)
+                 (draw-sprite2d-xy buf (- cx half-w) (- cy half-h) (* 2 half-w) 2 (static-rgba 255 255 255 150))
+                 (draw-sprite2d-xy buf (- cx half-w) (+ cy half-h) (* 2 half-w) 2 (static-rgba 255 255 255 150))
+                 (draw-sprite2d-xy buf (- cx half-w) (- cy half-h) thick-x (* 2 half-h) (static-rgba 255 255 255 150))
+                 (draw-sprite2d-xy buf (+ cx half-w) (- cy half-h) thick-x (* 2 half-h) (static-rgba 255 255 255 150)))
+                (*gauntlet-muse-carried*
+                 (draw-sprite2d-xy buf (- cx half-w) (- cy half-h) (* 2 half-w) 2 (static-rgba 255 190 50 110))
+                 (draw-sprite2d-xy buf (- cx half-w) (+ cy half-h) (* 2 half-w) 2 (static-rgba 255 190 50 110))
+                 (draw-sprite2d-xy buf (- cx half-w) (- cy half-h) thick-x (* 2 half-h) (static-rgba 255 190 50 110))
+                 (draw-sprite2d-xy buf (+ cx half-w) (- cy half-h) thick-x (* 2 half-h) (static-rgba 255 190 50 110)))
+                (else
+                 (draw-sprite2d-xy buf (- cx half-w) (- cy half-h) (* 2 half-w) 2 (static-rgba 110 110 125 70))
+                 (draw-sprite2d-xy buf (- cx half-w) (+ cy half-h) (* 2 half-w) 2 (static-rgba 110 110 125 70))
+                 (draw-sprite2d-xy buf (- cx half-w) (- cy half-h) thick-x (* 2 half-h) (static-rgba 110 110 125 70))
+                 (draw-sprite2d-xy buf (+ cx half-w) (- cy half-h) thick-x (* 2 half-h) (static-rgba 110 110 125 70))))))))))
+  0)
+
+(defun gauntlet-muse-icon-ensure! ()
+  "Keep one process alive that drives the icon for as long as Misty is up. It ends itself when Misty goes or the setting is turned
+   off, and its handle lives in a structure, as the Klaww bar's does."
+  (when (and *gauntlet-misty-muse-enabled*
+             *target*
+             (gauntlet-misty-active?)
+             (not (handle->process (-> *gauntlet-muse-world* icon))))
+    (set! (-> *gauntlet-muse-world* icon)
+          (ppointer->handle
+            (process-spawn-function process
+                                    (lambda :behavior process ()
+                                      (loop
+                                        (if (and *gauntlet-misty-muse-enabled* (gauntlet-misty-active?))
+                                          (gauntlet-muse-icon-frame!)
+                                          (deactivate self))
+                                        (suspend)))
+                                    :to *active-pool*
+                                    :name 'gauntlet-muse-icon))))
+  0)
+
+(defun gauntlet-muse-poll! ()
+  "Per-frame: the muse's state follows Misty. Entering it, the muse is loose; leaving it, she is loose again for the next visit,
+   whatever the visit before ended with. While it is up, hits are watched for, her body is kept, and the icon is."
+  (let ((here (gauntlet-misty-active?)))
+    (cond
+      ((and here (not *gauntlet-muse-was-here*))
+       (set! *gauntlet-muse-was-here* #t)
+       (set! *gauntlet-muse-carried* #f)
+       (set! *gauntlet-muse-health* -1.0)
+       (+! *gauntlet-muse-episode* 1)
+       (format 0 "GAUNTLET MUSE Misty entered, the muse is loose~%"))
+      ((and (not here) *gauntlet-muse-was-here*)
+       (set! *gauntlet-muse-was-here* #f)
+       (set! *gauntlet-muse-carried* #f)
+       (set! *gauntlet-muse-entity* (the-as entity-actor #f))
+       (format 0 "GAUNTLET MUSE Misty left, the muse is loose for the next visit~%")))
+    (when (and here *gauntlet-misty-muse-enabled*)
+      (gauntlet-muse-health-poll!)
+      (gauntlet-muse-body-poll!)
+      (gauntlet-muse-icon-ensure!)))
+  0)
 
 ;; --------------------------------------------------------------- the console --
 
@@ -3446,6 +3863,10 @@
      (,row "babak-blue-speed" ratio *gauntlet-babak-blue-speed* GAUNTLET_BABAK_BLUE_SPEED_DEFAULT 1.0 4.0)
      (,row "desperation-max" ratio *gauntlet-desperation-max* GAUNTLET_DESPERATION_MAX_DEFAULT 1.0 5.0)
      (,row "cell-heal-enabled" flag *gauntlet-cell-heal-enabled* GAUNTLET_CELL_HEAL_ENABLED_DEFAULT 0 0)
+     (,row "misty-muse-enabled" flag *gauntlet-misty-muse-enabled* GAUNTLET_MISTY_MUSE_ENABLED_DEFAULT 0 0)
+     (,row "misty-mayhem-extra" count *gauntlet-misty-mayhem-extra* GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT 0.0 4.0)
+     (,row "misty-mayhem-speed" ratio *gauntlet-misty-mayhem-speed* GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT 1.0 4.0)
+     (,row "misty-mayhem-charge-chance" ratio *gauntlet-misty-mayhem-charge-chance* GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT 0.0 1.0)
      (,row "worm-cubes-enabled" flag *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT 0 0)
      (,row "worm-cube-count" count *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT 0.0 8.0)
      (,row "lurker-multiplier" count *gauntlet-lurker-multiplier* GAUNTLET_LURKER_MULTIPLIER_DEFAULT 1.0 5.0)
@@ -3759,6 +4180,12 @@
     (gauntlet-json-key out "healthMax")
     (if *target* (gauntlet-json-fixed out (-> *target* fact health-max)) (format out "null"))
     (gauntlet-json-close out)
+    ;; whether the muse is with Jak: "carried" or "loose" while Misty is up, null anywhere else (and with the setting off)
+    (gauntlet-json-key out "muse")
+    (cond
+      ((and *gauntlet-misty-muse-enabled* (gauntlet-misty-active?))
+       (format out "\"~A\"" (if *gauntlet-muse-carried* "carried" "loose")))
+      (else (format out "null")))
     (gauntlet-json-key out "bomb")
     (let* ((bomb (gauntlet-bomb-process))
            (state-name (if bomb (gauntlet-bomb-state-name bomb) #f)))
@@ -3890,6 +4317,7 @@
   (+! *gauntlet-frame* 1)
   (gauntlet-settings-poll!)
   (gauntlet-desperation-poll!)
+  (gauntlet-muse-poll!)
   (gauntlet-drop-spots-poll!)
   (gauntlet-stampede-poll!)
   (gauntlet-klaww-poll!)

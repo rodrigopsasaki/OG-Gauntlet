@@ -481,6 +481,11 @@
                       target-hit))
     (else (target-standard-event-handler arg0 arg1 arg2 arg3))))
 
+;; gauntlet: called when Jak lands hard on something that hears 'bonk (a platform, an enemy), so the mod can drop the muse he carries
+;; (pc/features/gauntlet.gc, "the muse", sets it). It does nothing until then: this file links ahead of gauntlet.o in GAME.CGO, and
+;; ENGINE.CGO has no gauntlet.o at all. A hook, for the reason *entity-born-hook* is one (engine/entity/entity.gc).
+(define *target-bonk-hook* (the (function none) nothing))
+
 (defbehavior target-bonk-event-handler target ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (let ((s4-0 (new 'stack-no-clear 'vector)))
     (cond
@@ -496,7 +501,9 @@
               (vector-normalize! (vector-! s4-0 (-> self control unknown-sphere-array00 0 prim-core world-sphere) (-> self control actor-contact-pt))
                                  (the-as float 1.0))
               (< 0.01 (-> s4-0 y))))
-       (if (< 0.75 (-> s4-0 y))
+       (when (< 0.75 (-> s4-0 y))
+         ;; gauntlet: this landing is the bonk, so a muse Jak is carrying is dropped by it (pc/features/gauntlet.gc, "the muse")
+         (*target-bonk-hook*)
          (send-event arg0
                      'bonk
                      (-> arg3 param 0)

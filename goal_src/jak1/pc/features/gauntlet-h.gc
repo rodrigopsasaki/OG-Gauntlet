@@ -24,6 +24,18 @@
 ;; one, so a punched cow can bring the herd down on him. It is given the yakow that was hit.
 (define-extern gauntlet-stampede-yakow-hit! (function process-drawable int))
 
+;; Misty Island's muse (pc/features/gauntlet.gc, "the muse"). Catching her calms the island, losing her (a hit, a bonk, a death) starts the
+;; mayhem. babak.gc (GAME.CGO) and bonelurker.gc (MIS.DGO) ask these what their pace and their charge chance are, both for the process
+;; that asks (the answer is only not the plain one for something Misty placed, while the muse is loose), and muse.gc (MIS.DGO) tells
+;; the mod of a catch. All are defined in gauntlet.gc and only called once a level is running.
+(define-extern gauntlet-misty-pace (function process float))
+(define-extern gauntlet-babak-charge-chance (function process float))
+(define-extern gauntlet-muse-caught! (function symbol none))
+
+;; Where a muse that Jak dropped starts. muse.gc reads it as a muse is born (levels/misty/muse.gc, muse-path-point-nearest): with w at
+;; 1.0 the muse starts on the point of its path nearest the xyz, and puts the w back to 0.0; a muse born with w at 0.0 starts where the game puts it.
+(define *gauntlet-muse-start* (new 'global 'vector))
+
 ;; ---------------------------------------------------------- the eco charge --
 
 ;; The mod speaks in eco, so that the colour of a charge tells the player what a hazard does. Red is strength: a red hazard
@@ -98,6 +110,12 @@
 ;; The eco effects scale with Jak's missing health (gauntlet-desperation in gauntlet.gc), and a power cell heals him.
 (defconstant GAUNTLET_DESPERATION_MAX_DEFAULT 2.0) ;; every eco effect is this many times stronger with one hit left (1.0 at full health, linear between)
 (defconstant GAUNTLET_CELL_HEAL_ENABLED_DEFAULT #t) ;; a power cell heals Jak up to 3 hits, never above
+;; Misty Island's muse: with her caught the island is the mod's usual, without her (not yet caught, or dropped by a hit, a bonk or a death) it is mayhem.
+(defconstant GAUNTLET_MISTY_MUSE_ENABLED_DEFAULT #t) ;; the muse is a state of the island, shown by an icon, and a loose one brings the mayhem below
+(defconstant GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT 2) ;; every lurker Misty places has this many more clones while the muse is loose, on top of lurker-multiplier's
+(defconstant GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT 1.5) ;; Misty's babaks and bonelurkers run this many times faster while she is loose
+(defconstant GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT 1.0) ;; the chance a Misty babak is born charged while she is loose, instead of babak-charge-chance
+(defconstant GAUNTLET_MUSE_GRACE (seconds 1.5)) ;; a muse Jak has just dropped cannot be caught for this long, or she would be caught where she lands
 ;; The lurkerworms of Sentinel Beach pull Snowy Mountain's ice cubes up out of the sand when they rise (levels/beach/lurkerworm.gc).
 (defconstant GAUNTLET_WORM_CUBES_ENABLED_DEFAULT #t) ;; a worm that rises raises ice cubes around it
 (defconstant GAUNTLET_WORM_CUBE_COUNT_DEFAULT 2) ;; ice cubes per rise, evenly around the worm; a worm raises a new wave only once the last is gone
@@ -152,6 +170,10 @@
 (define *gauntlet-babak-blue-speed* GAUNTLET_BABAK_BLUE_SPEED_DEFAULT) ;; at full health; a babak keeps the base it was born with, and the desperation multiplies it live
 (define *gauntlet-desperation-max* GAUNTLET_DESPERATION_MAX_DEFAULT) ;; live: read every frame an eco effect is applied
 (define *gauntlet-cell-heal-enabled* GAUNTLET_CELL_HEAL_ENABLED_DEFAULT) ;; off: a power cell leaves Jak's health as the game made it
+(define *gauntlet-misty-muse-enabled* GAUNTLET_MISTY_MUSE_ENABLED_DEFAULT) ;; off: no icon, no mayhem; the muse is the game's own and her catch is the game's
+(define *gauntlet-misty-mayhem-extra* GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT) ;; live: dropping the muse tops up every group, catching her takes the extras away
+(define *gauntlet-misty-mayhem-speed* GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT) ;; live: read every frame a Misty lurker moves; composes with the desperation by multiplication
+(define *gauntlet-misty-mayhem-charge-chance* GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT) ;; read as each babak is born
 (define *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT) ;; off: the worms rise as the game made them
 (define *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT) ;; read at each rise
 (define *gauntlet-lurker-multiplier* GAUNTLET_LURKER_MULTIPLIER_DEFAULT) ;; read as each lurker is born; the ones already in the world keep their company
