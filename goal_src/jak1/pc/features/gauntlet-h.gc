@@ -39,7 +39,8 @@
 ;; ---------------------------------------------------------- the eco charge --
 
 ;; The mod speaks in eco, so that the colour of a charge tells the player what a hazard does. Red is strength: a red hazard
-;; hits for two and throws Jak far. Blue is draw: a blue hazard pulls Jak in, or runs at him faster. A charged hazard glows
+;; hits for two and throws Jak far. Blue is draw: a blue hazard pulls Jak in, or runs at him faster. Yellow and green are not
+;; hazards: they are what the scout fly boxes of Sentinel Beach ask for (yellow eco, green is health). A charged hazard glows
 ;; its colour and carries the aura of Jak's own eco of that colour. The users are the red yakows of the stampede, the bomb
 ;; (blue, it pulls) and the babaks, which are in GAME.CGO and so charged on every level. babak.gc compiles and loads before
 ;; gauntlet.gc, so the kind and the constants live here, ahead of both, and the three functions are declared here and
@@ -48,7 +49,9 @@
   :type uint32
   (none 0)
   (red 1)
-  (blue 2))
+  (blue 2)
+  (yellow 3)
+  (green 4))
 
 (defconstant GAUNTLET_ECO_RED_SHOVE_BACK (meters 9)) ;; a red hit throws Jak this far, two and a half times a plain yakow's
 (defconstant GAUNTLET_ECO_RED_SHOVE_UP (meters 3)) ;; and twice as high
@@ -133,6 +136,9 @@
 (defconstant GAUNTLET_KLAWW_RADIUS_MAX_DEFAULT 2.0) ;; and his boulders blast this many times as wide with one hit left (1.0 with none taken, linear between)
 (defconstant GAUNTLET_KLAWW_RANGE_DEFAULT (meters 140)) ;; he throws while Jak is this close, sideways: the first button is 100 m from the nest, so Jak is still a target while he presses it
 (defconstant GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to where a boulder lands is hit; the landing marker draws this circle
+;; The scout fly boxes of Sentinel Beach each want an eco to open (a table in gauntlet.gc), and lurkers carry it (pc/features/gauntlet.gc, "the scout fly boxes").
+(defconstant GAUNTLET_FLYBOX_ENABLED_DEFAULT #t) ;; the boxes of the table want their eco; the lurkers that carry it glow and spill it
+(defconstant GAUNTLET_FLYBOX_BOUNCE_DEFAULT (meters 2.5)) ;; a box that refuses Jak throws him this far back (and 1.5 m up), with no damage
 ;; The skull TNT barrels of Mountain Pass stand where a table in gauntlet.gc puts them, on any level.
 (defconstant GAUNTLET_TNT_ENABLED_DEFAULT #t) ;; the barrels stand at their spots
 
@@ -188,4 +194,6 @@
 (define *gauntlet-klaww-radius-max* GAUNTLET_KLAWW_RADIUS_MAX_DEFAULT) ;; read as each boulder leaves his hand
 (define *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT)
 (define *gauntlet-klaww-boulder-radius* GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT) ;; a boulder in the air keeps the radius it was thrown with
+(define *gauntlet-flybox-enabled* GAUNTLET_FLYBOX_ENABLED_DEFAULT) ;; live for the rule (off: every box opens as the game made it); the look and the carriers are made at birth
+(define *gauntlet-flybox-bounce* GAUNTLET_FLYBOX_BOUNCE_DEFAULT) ;; read as each refusal happens
 (define *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT) ;; off: no barrels, and whatever stands is put away

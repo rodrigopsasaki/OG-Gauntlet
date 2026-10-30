@@ -22,6 +22,10 @@
 ;; its nest with the stolen power cell, and throws boulders at Jak; the buttons around the beach throw boulders back (one hit
 ;; each), and the cell is his to give up when he falls. The fight survives Jak dying. "klaww" in the request file drops him anywhere. See "Klaww" below.
 ;;
+;; Also at Sentinel Beach, each scout fly box wears an eco colour (a table) and opens only when Jak breaks it carrying that eco (green: at full
+;; health); a wrong try bounces him off with a burst of the box's colour. The crabs and puppies near a box carry its eco: they glow its
+;; colour and spill it where they die. The game asks the box through a hook in engine/common-obs/crates.gc. See "the scout fly boxes".
+;;
 ;; The skull TNT barrels of Mountain Pass stand wherever a table of spots puts them (the first is on Sentinel Beach, between a
 ;; power cell and the spot below it): touch one and Jak dies, and it explodes. A barrel that is gone is stood again once Jak
 ;; is far from it. See "the TNT barrels" below.
@@ -458,7 +462,33 @@
        (set-vector! (-> pd draw color-emissive) (* 0.4 burn) (* 0.02 burn) 0.0 0.0))
       (((gauntlet-eco blue))
        (set-vector! (-> pd draw color-mult) 0.55 0.75 1.0 1.0)
-       (set-vector! (-> pd draw color-emissive) 0.0 (* 0.1 burn) (* 0.45 burn) 0.0))))
+       (set-vector! (-> pd draw color-emissive) 0.0 (* 0.1 burn) (* 0.45 burn) 0.0))
+      (((gauntlet-eco yellow))
+       (set-vector! (-> pd draw color-mult) 1.0 0.95 0.5 1.0)
+       (set-vector! (-> pd draw color-emissive) (* 0.4 burn) (* 0.35 burn) 0.0 0.0))
+      (((gauntlet-eco green))
+       (set-vector! (-> pd draw color-mult) 0.6 1.0 0.6 1.0)
+       (set-vector! (-> pd draw color-emissive) 0.0 (* 0.4 burn) (* 0.05 burn) 0.0))))
+  (none))
+
+(defun gauntlet-eco-burst-at! ((kind gauntlet-eco) (flash vector) (spark vector))
+  "One burst of kind's eco aura, the flash launched at flash and the spark at spark: Jak's own particles for that eco
+   (target-powerup-process in powerups.gc; green is the health eco's, which he also wears)."
+  (case kind
+    (((gauntlet-eco red))
+     (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 273 274)) flash)
+     (launch-particles (-> *part-id-table* 275) spark))
+    (((gauntlet-eco blue))
+     (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 255 256)) flash)
+     (if (rand-vu-percent? 0.5)
+       (launch-particles (-> *part-id-table* 257) flash))
+     (launch-particles (-> *part-id-table* 260) spark))
+    (((gauntlet-eco yellow))
+     (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 269 270)) flash)
+     (launch-particles (-> *part-id-table* 271) spark))
+    (((gauntlet-eco green))
+     (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 277 278)) flash)
+     (launch-particles (-> *part-id-table* 279) spark)))
   (none))
 
 (defun gauntlet-eco-burst! ((pd process-drawable) (kind gauntlet-eco))
@@ -466,17 +496,9 @@
    and are left alone."
   (let ((flash (rand-vu-int-range 3 (+ (-> pd node-list length) -1)))
         (spark (rand-vu-int-range 3 (+ (-> pd node-list length) -1))))
-    (case kind
-      (((gauntlet-eco red))
-       (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 273 274))
-                         (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash)))
-       (launch-particles (-> *part-id-table* 275) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data spark))))
-      (((gauntlet-eco blue))
-       (launch-particles (-> *part-id-table* (if (rand-vu-percent? 0.5) 255 256))
-                         (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash)))
-       (if (rand-vu-percent? 0.5)
-         (launch-particles (-> *part-id-table* 257) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash))))
-       (launch-particles (-> *part-id-table* 260) (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data spark))))))
+    (gauntlet-eco-burst-at! kind
+                            (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data flash))
+                            (vector<-cspace! (new 'stack-no-clear 'vector) (-> pd node-list data spark))))
   (none))
 
 (defun gauntlet-eco-aura! ((pd process-drawable) (kind gauntlet-eco))
@@ -3672,9 +3694,328 @@
                   (else (deactivate horde))))))))))
   (none))
 
+;; ------------------------------------------------------- the scout fly boxes --
+
+;; The scout fly boxes (crate-buzzer, engine/common-obs/crates.gc) each want an eco to open, in the mod's language: the box wears
+;; the colour of the eco it wants, and a plain attack on it does nothing it did not do before. It opens only when Jak breaks it
+;; (the attacks the game already lets break an iron crate, so a steel box would still need its steel attack) while he carries that
+;; eco:
+;;   blue, red   Jak carries that eco (his fact's eco type and an eco level above 0: the same test as the crates' own blue-eco query)
+;;   yellow      the same, or the attack is a yellow eco shot, which counts as the eco it is made of
+;;   green       green is health, not a thing to carry: Jak is at his full health (health-max), carrying nothing
+;; Wrong eco, or none: the box refuses. It does not break, bounces as it does for an attack it cannot break, throws Jak back a
+;; little (a 'shove, which costs no health, the game's own bounce off a wall) and flashes a burst of its own colour, so the player
+;; learns the rule from the box. Only Jak's own attacks and yellow shots are asked: a boulder of Klaww's, a cannon sack or a bomb
+;; breaks it as it always did. Blue eco already pulls crates open (notice-blue, crates.gc): that is kept for a blue box, and a box
+;; of another colour is simply not pulled, so a blue-charged Jak walking by does not break it. The game asks through
+;; *crate-attack-gate-hook* (crates.gc), only on the paths that would break the crate, so nothing else about a crate changes.
+;; Nothing here may have a side effect on a path the 'query 'pickup of pckernel.gc reaches (it calls pickup-collectable! with an
+;; amount of 0 every frame): the gate reads Jak's fact directly and never asks him anything.
+;;
+;; Where the eco comes from: lurkers carry it. Each non-green box has one or two carriers, the crabs and puppies of the beach that
+;; stand nearest to it, named in the second table. A carrier glows its colour and trails the aura of Jak's eco of it, and when it
+;; dies it spills a pickup of that eco where it fell. A carrier only looks and spills: the babak's blue pace and red shove live in
+;; fields of its type and a copy of its enemy info (babak.gc), which a crab and a puppy do not have and would need each their own
+;; surgery. The eco Jak picks up times out, which is why the carriers are the ones near their box. A carrier that is killed is
+;; killed for good until the level loads again (its entity stays dead), like every lurker; its clones of "the horde" are plain.
+;;
+;; Both tables are keyed by level and entity name, so another level is a few rows. The colour of a box is by the eco around it: a
+;; box near a vent or a cluster of an eco wears it, the rest are spread so that all four are on the beach. Sentinel Beach has
+;; blue eco (the crates and pickups by the start, and the one by the sentinel) and green vents (the cluster at the far end), and
+;; no red or yellow, which only the carriers bring. The carriers were picked from the level's actor list: for each box, the nearest
+;; crab or puppy not already taken, within GAUNTLET_FLYBOX_CARRIER_RANGE, at most two; the distance is the box to its carrier's
+;; placed spot (they wander a little from it). Every buzzer crate that is born is logged with its name and place, whatever its
+;; level, so that the table can be filled for a new one.
+
+(defconstant GAUNTLET_FLYBOX_CARRIER_RANGE (meters 60)) ;; how far a carrier may stand from its box, placed spot to placed spot: farther and the eco would time out on the way
+(defconstant GAUNTLET_FLYBOX_LIFT (meters 0.75)) ;; the middle of a box, above its base
+(defconstant GAUNTLET_FLYBOX_SHOVE_UP (meters 1.5)) ;; how high a refusal throws Jak
+(defconstant GAUNTLET_FLYBOX_REFUSE_BURSTS 8) ;; bursts of a box's colour when it refuses
+(defconstant GAUNTLET_FLYBOX_SPILL_BURSTS 10) ;; and of a carrier's when it spills
+(defconstant GAUNTLET_FLYBOX_SCATTER (meters 1.2)) ;; the bursts of a box or a spill are scattered this far around its middle
+
+(defmacro gauntlet-flybox-table (join row)
+  "Expand row once per box, (row level name eco): the buzzer crate named name of level wants eco (red, blue, yellow or green)."
+  `(,join
+     (,row beach "crate-2467" blue)
+     (,row beach "crate-213" blue)
+     (,row beach "crate-646" yellow)
+     (,row beach "crate-647" red)
+     (,row beach "crate-651" red)
+     (,row beach "crate-649" green)
+     (,row beach "crate-648" green)))
+
+(defmacro gauntlet-carrier-table (join row)
+  "Expand row once per carrier, (row level lurker box meters): the lurker named lurker of level carries the eco of the box named
+   box, and stood meters from it when placed."
+  `(,join
+     (,row beach "lurkercrab-1" "crate-2467" 26.7)
+     (,row beach "lurkerpuppy-5" "crate-213" 24.7)
+     (,row beach "lurkerpuppy-6" "crate-213" 33.3)
+     (,row beach "lurkerpuppy-2" "crate-646" 37.6)
+     (,row beach "lurkercrab-3" "crate-646" 48.0)
+     (,row beach "lurkercrab-8" "crate-647" 38.6)
+     (,row beach "lurkercrab-65" "crate-647" 46.8)
+     (,row beach "lurkercrab-7" "crate-651" 47.3)))
+
+(defmacro gauntlet-row-flybox-eco (level name eco)
+  `(when (and (= at-level (quote ,level)) (string= at-name ,name))
+     (return (gauntlet-eco ,eco))))
+
+(defun gauntlet-flybox-eco ((at-level symbol) (at-name string))
+  "The eco the box named at-name of level at-level wants, or none when the table does not know it."
+  (gauntlet-flybox-table begin gauntlet-row-flybox-eco)
+  (gauntlet-eco none))
+
+(defmacro gauntlet-row-carrier-box (level lurker box distance)
+  `(when (and (= at-level (quote ,level)) (string= at-name ,lurker))
+     (return ,box)))
+
+(defun gauntlet-carrier-box ((at-level symbol) (at-name string))
+  "The name of the box the lurker named at-name of level at-level carries the eco of, or #f when it carries nothing."
+  (gauntlet-carrier-table begin gauntlet-row-carrier-box)
+  (the-as string #f))
+
+(defmacro gauntlet-row-carrier-say (level lurker box distance)
+  `(when (and (= at-level (quote ,level)) (string= at-name ,box))
+     (+! found 1)
+     (format 0 "GAUNTLET FLYBOX: ~S is carried by ~S, placed ~F m away~%" at-name ,lurker ,distance)))
+
+(defun gauntlet-flybox-say-carriers ((at-level symbol) (at-name string))
+  "Say, one line each, the carriers of the box named at-name, and how many there are."
+  (let ((found 0))
+    (gauntlet-carrier-table begin gauntlet-row-carrier-say)
+    found))
+
+(defun gauntlet-eco-name ((eco gauntlet-eco))
+  "The word for an eco, in the logs."
+  (case eco
+    (((gauntlet-eco red)) "red")
+    (((gauntlet-eco blue)) "blue")
+    (((gauntlet-eco yellow)) "yellow")
+    (((gauntlet-eco green)) "green")
+    (else "none")))
+
+(defun gauntlet-eco-pickup ((eco gauntlet-eco))
+  "The pickup the game makes of an eco."
+  (case eco
+    (((gauntlet-eco red)) (pickup-type eco-red))
+    (((gauntlet-eco blue)) (pickup-type eco-blue))
+    (((gauntlet-eco yellow)) (pickup-type eco-yellow))
+    (((gauntlet-eco green)) (pickup-type eco-green))
+    (else (pickup-type none))))
+
+(defun gauntlet-jak-carries ()
+  "What Jak carries, for the logs: his eco's name, or nothing once it has run out."
+  (if (and *target* (< 0.0 (-> *target* fact eco-level)))
+    (pickup-type->string (-> *target* fact eco-type))
+    "nothing"))
+
+(defun gauntlet-flybox-met? ((eco gauntlet-eco) (mode symbol))
+  "True when Jak, as he is now, gives a box that wants eco what it asks. Reads his fact and asks him nothing."
+  (let ((fact (-> *target* fact)))
+    (cond
+      ((= eco (gauntlet-eco green)) (<= (-> fact health-max) (-> fact health)))
+      ((and (= eco (gauntlet-eco yellow)) (= mode 'eco-yellow)) #t)
+      (else (and (= (-> fact eco-type) (gauntlet-eco-pickup eco)) (< 0.0 (-> fact eco-level)))))))
+
+(defun gauntlet-flybox-eco-of ((box crate))
+  "The eco box wants: its table row when it is a scout fly box with an entity, else none."
+  (if (and (-> box entity) (type-type? (-> box type) crate-buzzer))
+    (gauntlet-flybox-eco (-> box entity extra level name) (res-lump-struct (-> box entity) 'name string))
+    (gauntlet-eco none)))
+
+(defun gauntlet-eco-scatter! ((centre vector) (kind gauntlet-eco))
+  "One burst of kind's eco, the flash and the spark each at a random spot around centre."
+  (let ((flash (new 'stack-no-clear 'vector))
+        (spark (new 'stack-no-clear 'vector)))
+    (set-vector! flash
+                 (+ (-> centre x) (rand-vu-float-range (- GAUNTLET_FLYBOX_SCATTER) GAUNTLET_FLYBOX_SCATTER))
+                 (+ (-> centre y) (rand-vu-float-range (- GAUNTLET_FLYBOX_SCATTER) GAUNTLET_FLYBOX_SCATTER))
+                 (+ (-> centre z) (rand-vu-float-range (- GAUNTLET_FLYBOX_SCATTER) GAUNTLET_FLYBOX_SCATTER))
+                 1.0)
+    (set-vector! spark
+                 (+ (-> centre x) (rand-vu-float-range (- GAUNTLET_FLYBOX_SCATTER) GAUNTLET_FLYBOX_SCATTER))
+                 (+ (-> centre y) (rand-vu-float-range (- GAUNTLET_FLYBOX_SCATTER) GAUNTLET_FLYBOX_SCATTER))
+                 (+ (-> centre z) (rand-vu-float-range (- GAUNTLET_FLYBOX_SCATTER) GAUNTLET_FLYBOX_SCATTER))
+                 1.0)
+    (gauntlet-eco-burst-at! kind flash spark))
+  (none))
+
+(defun gauntlet-flybox-bounce! ((box crate) (jak process))
+  "Throw Jak back off the box, no damage: a 'shove (the game's bounce off a wall, which takes no health), away from the box
+   along the ground, or backwards from where he faces when he is right over it (a ground pound)."
+  (let ((away (vector-! (new 'stack-no-clear 'vector) (target-pos 0) (-> box root trans))))
+    (set! (-> away y) 0.0)
+    (when (< (vector-xz-length away) 40.96)
+      (vector-z-quaternion! away (-> *target* control quat-for-control))
+      (vector-negate! away away)
+      (set! (-> away y) 0.0))
+    (vector-xz-normalize! away *gauntlet-flybox-bounce*)
+    (set! (-> away y) GAUNTLET_FLYBOX_SHOVE_UP)
+    (send-event jak 'shove #f (static-attack-info ((shove-up GAUNTLET_FLYBOX_SHOVE_UP) (shove-back *gauntlet-flybox-bounce*) (vector away)))))
+  0)
+
+(defun gauntlet-flybox-refuse! ((box crate) (eco gauntlet-eco) (attacker process) (mode symbol) (id uint))
+  "The box refuses an attack that would have broken it: a burst of its own colour, and when Jak did it, the log of what he
+   carried and the bounce off. Once for each attack, because a spin or a flop reaches a crate on more than one frame."
+  (when (!= id (-> box incomming-attack-id))
+    (format 0 "GAUNTLET FLYBOX: ~S (~A) refused ~A, Jak carried ~A, health ~F of ~F~%"
+            (res-lump-struct (-> box entity) 'name string) (gauntlet-eco-name eco) mode (gauntlet-jak-carries)
+            (-> *target* fact health) (-> *target* fact health-max))
+    (let ((middle (new 'stack-no-clear 'vector)))
+      (set! (-> middle quad) (-> box root trans quad))
+      (+! (-> middle y) GAUNTLET_FLYBOX_LIFT)
+      (dotimes (i GAUNTLET_FLYBOX_REFUSE_BURSTS)
+        (gauntlet-eco-scatter! middle eco)))
+    (if (= (-> attacker type) target) (gauntlet-flybox-bounce! box attacker)))
+  (none))
+
+(defun *crate-attack-gate-hook* ((box crate) (attacker process) (mode symbol) (id uint))
+  "The game is about to let attacker break box with an attack of mode mode (or, for 'eco-blue, to let Jak's blue eco pull it
+   open): true if it may. Only a scout fly box of the table asks anything, and only of Jak's own attacks and yellow shots. See
+   the section above."
+  (let ((eco (if (and *gauntlet-flybox-enabled* *target*) (gauntlet-flybox-eco-of box) (gauntlet-eco none))))
+    (cond
+      ((= eco (gauntlet-eco none)) #t)
+      ((= mode 'eco-blue) (= eco (gauntlet-eco blue)))
+      ((not (or (= (-> attacker type) target) (= mode 'eco-yellow))) #t)
+      ((gauntlet-flybox-met? eco mode)
+       (format 0 "GAUNTLET FLYBOX: ~S (~A) open by ~A, Jak carries ~A, health ~F of ~F~%"
+               (res-lump-struct (-> box entity) 'name string) (gauntlet-eco-name eco) mode (gauntlet-jak-carries)
+               (-> *target* fact health) (-> *target* fact health-max))
+       #t)
+      (else
+       (gauntlet-flybox-refuse! box eco attacker mode id)
+       #f))))
+
+;; One small watcher for every box and every carrier of the table, born with it: it keeps the colour on (the glow, the
+;; aura), and for a carrier it waits for the lurker's death and spills what it carried. A carrier is dead when its state is
+;; the nav enemy's die state; one that is simply gone (the entity system culled it as Jak walked away, a death put the pool
+;; away) spilled nothing, and is born again, with a new watcher, by the same hook. Like the horde's watcher it reads the
+;; entity's name only while the entity's level is the one running.
+(deftype gauntlet-eco-watch (process)
+  ((ent         entity-actor)
+   (subject     handle) ;; the box or the lurker
+   (eco         gauntlet-eco)
+   (carrier     symbol) ;; true for a lurker, false for a box
+   (level-name  symbol))
+  (:states
+   gauntlet-eco-watch-run))
+
+(defbehavior gauntlet-eco-watch-name gauntlet-eco-watch ()
+  "The subject's name, from its entity: only to be called while its level is active."
+  (res-lump-struct (-> self ent) 'name string))
+
+(defbehavior gauntlet-eco-watch-show! gauntlet-eco-watch ((pd process-drawable))
+  "One frame of the colour: a carrier wears the aura of Jak's eco of it; a box glows and flares at random about its middle."
+  (cond
+    ((-> self carrier) (gauntlet-eco-aura! pd (-> self eco)))
+    ((not (logtest? (-> pd draw status) (draw-status hidden no-anim)))
+     (gauntlet-eco-glow! pd (-> self eco))
+     (when (rand-vu-percent? 0.5)
+       (let ((middle (new 'stack-no-clear 'vector)))
+         (set! (-> middle quad) (-> pd root trans quad))
+         (+! (-> middle y) GAUNTLET_FLYBOX_LIFT)
+         (gauntlet-eco-scatter! middle (-> self eco))))))
+  0)
+
+(defbehavior gauntlet-eco-watch-calm! gauntlet-eco-watch ((pd process-drawable))
+  "The setting is off: the subject is plain again, as the game made it."
+  (when pd
+    (set-vector! (-> pd draw color-mult) 1.0 1.0 1.0 1.0)
+    (set-vector! (-> pd draw color-emissive) 0.0 0.0 0.0 0.0))
+  0)
+
+(defbehavior gauntlet-eco-watch-spill! gauntlet-eco-watch ((pd process-drawable))
+  "The carrier is dying: its eco is a pickup where it fell, with a flare of its colour. (The red one also makes the game say its
+   red eco hint the first time, as any red eco born does.)"
+  (let ((where (new 'stack-no-clear 'vector)))
+    (set! (-> where quad) (-> pd root trans quad))
+    (format 0 "GAUNTLET CARRIER: ~S died, spills ~A eco at (~M, ~M, ~M)~%"
+            (gauntlet-eco-watch-name) (gauntlet-eco-name (-> self eco)) (-> where x) (-> where y) (-> where z))
+    (+! (-> where y) GAUNTLET_FLYBOX_LIFT)
+    (dotimes (i GAUNTLET_FLYBOX_SPILL_BURSTS)
+      (gauntlet-eco-scatter! where (-> self eco)))
+    (birth-pickup-at-point where (gauntlet-eco-pickup (-> self eco)) (-> *FACT-bank* eco-single-inc) #t *entity-pool* (the-as fact-info #f)))
+  0)
+
+(defstate gauntlet-eco-watch-run (gauntlet-eco-watch)
+  :code
+    (behavior ()
+      (loop
+        (let* ((proc (handle->process (-> self subject)))
+               (pd (if proc (as-type proc process-drawable))))
+          (cond
+            ((!= (level-status *level* (-> self level-name)) 'active)
+             (deactivate self))
+            ((not *gauntlet-flybox-enabled*)
+             (gauntlet-eco-watch-calm! pd)
+             (if (not pd) (deactivate self)))
+            ((not pd)
+             (format 0 "GAUNTLET ~A: ~S is gone, nothing spilled~%" (if (-> self carrier) "CARRIER" "FLYBOX") (gauntlet-eco-watch-name))
+             (deactivate self))
+            ((and (-> self carrier)
+                  (-> pd next-state)
+                  (= (-> pd next-state name) 'nav-enemy-die))
+             (gauntlet-eco-watch-spill! pd)
+             (deactivate self))
+            (else (gauntlet-eco-watch-show! pd))))
+        (suspend))))
+
+(defbehavior gauntlet-eco-watch-init-by-other gauntlet-eco-watch ((ent entity-actor) (subject handle) (eco gauntlet-eco) (carrier symbol))
+  "Watch subject, the process the actor ent was just born as, and keep it wearing eco."
+  (set! (-> self ent) ent)
+  (set! (-> self subject) subject)
+  (set! (-> self eco) eco)
+  (set! (-> self carrier) carrier)
+  (set! (-> self level-name) (-> ent extra level name))
+  (go gauntlet-eco-watch-run)
+  (none))
+
+(defun gauntlet-flybox-box-born! ((ent entity-actor) (proc process-drawable) (level-name symbol))
+  "A buzzer crate was born: logged with its place, and if the table gives it an eco and it is not open already, coloured and
+   watched, with a word about each carrier it has."
+  (let* ((name (res-lump-struct ent 'name string))
+         (eco (gauntlet-flybox-eco level-name name)))
+    (format 0 "GAUNTLET FLYBOX: ~S born at (~M, ~M, ~M) in ~A, eco ~A~%"
+            name (-> ent extra trans x) (-> ent extra trans y) (-> ent extra trans z) level-name (gauntlet-eco-name eco))
+    (when (and (!= eco (gauntlet-eco none)) (zero? (-> ent extra perm user-int8 0)))
+      (gauntlet-eco-glow! proc eco)
+      (let ((carriers (gauntlet-flybox-say-carriers level-name name)))
+        (if (and (zero? carriers) (!= eco (gauntlet-eco green)))
+          (format 0 "GAUNTLET FLYBOX: ~S no carrier within ~M m~%" name GAUNTLET_FLYBOX_CARRIER_RANGE)))
+      (process-spawn gauntlet-eco-watch :init gauntlet-eco-watch-init-by-other ent (process->handle proc) eco #f :to *entity-pool*)))
+  0)
+
+(defun gauntlet-flybox-carrier-born! ((ent entity-actor) (proc process-drawable) (level-name symbol))
+  "A nav enemy was born: if the table names it a carrier, and it is not dead already, it is coloured with the eco of its box
+   and watched."
+  (let* ((name (res-lump-struct ent 'name string))
+         (box (gauntlet-carrier-box level-name name)))
+    (when box
+      (let ((eco (gauntlet-flybox-eco level-name box)))
+        (when (and (!= eco (gauntlet-eco none)) (not (logtest? (-> ent extra perm status) (entity-perm-status complete))))
+          (gauntlet-eco-glow! proc eco)
+          (format 0 "GAUNTLET CARRIER: ~S carries ~A eco for ~S~%" name (gauntlet-eco-name eco) box)
+          (process-spawn gauntlet-eco-watch :init gauntlet-eco-watch-init-by-other ent (process->handle proc) eco #t :to *entity-pool*)))))
+  0)
+
+(defun gauntlet-flybox-born! ((ent entity-actor))
+  "The actor ent has just been born (the entity system's hook, below). A buzzer crate is a scout fly box, and a nav enemy may
+   be a carrier of one; the name is only read for those two, since every actor of every level comes through here."
+  (let* ((proc (-> ent extra process))
+         (pd (if proc (as-type proc process-drawable))))
+    (when pd
+      (cond
+        ((type-type? (-> pd type) crate-buzzer) (gauntlet-flybox-box-born! ent pd (-> ent extra level name)))
+        ((type-type? (-> pd type) nav-enemy) (gauntlet-flybox-carrier-born! ent pd (-> ent extra level name))))))
+  (none))
+
 ;; gauntlet: engine/entity/entity.gc calls this after birth! has run for an actor
 (defun *entity-born-hook* ((ent entity-actor))
   (gauntlet-horde-born! ent)
+  (gauntlet-flybox-born! ent)
   (none))
 
 ;; --------------------------------------------------------- the muse's body --
@@ -4000,6 +4341,8 @@
      (,row "klaww-radius-max" ratio *gauntlet-klaww-radius-max* GAUNTLET_KLAWW_RADIUS_MAX_DEFAULT 1.0 5.0)
      (,row "klaww-range" meters *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT 10.0 500.0)
      (,row "klaww-boulder-radius" meters *gauntlet-klaww-boulder-radius* GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT 0.5 30.0)
+     (,row "flybox-enabled" flag *gauntlet-flybox-enabled* GAUNTLET_FLYBOX_ENABLED_DEFAULT 0 0)
+     (,row "flybox-bounce" meters *gauntlet-flybox-bounce* GAUNTLET_FLYBOX_BOUNCE_DEFAULT 0.0 20.0)
      (,row "tnt-enabled" flag *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT 0 0)))
 
 ;; ---- the settings file
