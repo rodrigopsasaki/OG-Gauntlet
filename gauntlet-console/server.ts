@@ -554,7 +554,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "Scout flies",
     "Boxes want an eco",
     "live",
-    "On every level each scout fly box wears an eco colour and opens only when Jak breaks it while carrying that eco (yellow also takes a yellow eco shot; green wants Jak at full health and no eco; Geyser Rock's boxes are all blue). A wrong or empty try bounces him off the box with a burst of its colour, no damage. A box's eco is free in the level near it, or the lurkers near it carry it (they glow its colour and spill it where they die), or, where neither is in reach, a small cluster of it is placed on the ground beside the box when it is born and goes when the box does. A quarter of a level's boxes are green on purpose. Off opens every box as the game made it at once, and the lurkers stop glowing and spilling and the placed eco is taken back.",
+    "On every level each scout fly box wears an eco colour and opens only when Jak breaks it while carrying that eco (yellow also takes a yellow eco shot; green wants Jak at full health and no eco; Geyser Rock's boxes are all blue). A wrong or empty try bounces him off the box with a burst of its colour, no damage. A box's eco is free in the level near it, or the lurkers near it carry it: they glow its colour and spill it where they die. Off opens every box as the game made it at once, and the lurkers stop glowing and spilling.",
   ),
   num(
     "flybox-bounce",
