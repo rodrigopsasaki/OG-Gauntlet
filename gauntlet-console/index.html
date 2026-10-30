@@ -124,6 +124,7 @@
   <span class="stat">Level <b id="level">-</b></span>
   <span class="stat">Jak <b id="jak">-</b></span>
   <span class="stat" id="desperation-stat" hidden>Eco strength <b id="desperation">-</b></span>
+  <span class="stat" id="muse-stat" hidden>Muse <b id="muse">-</b></span>
   <span class="stat" id="bridge-stat" hidden>Bridge <b id="bridge">-</b></span>
   <span class="stat" id="vent-stat" hidden>Vent <b id="vent">-</b></span>
   <span class="stat" id="klaww-stat" hidden>Klaww <b id="klaww">-</b></span>
@@ -385,6 +386,11 @@ function renderHeader(payload) {
     $("desperation").textContent = `x${fmt(desperation.value)}`;
     $("desperation-status").textContent = `Eco is x${fmt(desperation.value)} as strong now (${hits})`;
   }
+
+  // null off Misty Island, with the setting off, and for a game build older than the muse
+  const muse = state && state.muse;
+  $("muse-stat").hidden = !muse;
+  if (muse) $("muse").textContent = muse === "carried" ? "carried, calm" : "loose, mayhem";
 
   const bridge = state && state.bridge;
   $("bridge-stat").hidden = !bridge;

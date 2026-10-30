@@ -374,6 +374,41 @@ const SETTINGS: readonly SettingSpec[] = [
     "Taking a power cell heals Jak up to 3 hits, never above. Off leaves his health as the game made it.",
   ),
   flag(
+    "misty-muse-enabled",
+    "Misty muse",
+    "The muse decides the island",
+    "live",
+    "On Misty Island the muse is a state: loose (not caught yet, or dropped by a hit, a bonk or a death) it is mayhem, with her caught it is the mod's usual. An icon of her in a corner of the screen shows which. Off leaves the muse as the game made her, with no icon and no mayhem.",
+  ),
+  num(
+    "misty-mayhem-extra",
+    "Misty muse",
+    "Extra clones in the mayhem",
+    "",
+    [0, 4, 1],
+    "live",
+    "While she is loose every lurker Misty places has this many more clones, on top of the lurker multiplier's, kept inside the clone cap. Losing her tops every group up once; catching her takes only these away, with a puff.",
+    true,
+  ),
+  num(
+    "misty-mayhem-speed",
+    "Misty muse",
+    "Speed in the mayhem",
+    "x",
+    [1, 4, 0.1],
+    "live",
+    "How many times faster Misty's babaks and bonelurkers run while she is loose, on top of the eco and the desperation (they multiply). Read every frame, so catching her calms them at once. The balloon and quicksand lurkers, the sharkeys and the muse herself are not reached.",
+  ),
+  num(
+    "misty-mayhem-charge-chance",
+    "Misty muse",
+    "Charge chance in the mayhem",
+    "",
+    [0, 1, 0.05],
+    "next babak",
+    "The chance a Misty babak is born charged with eco while she is loose, instead of the charge chance above. At 1 every one is. Rolled once at birth, so a babak born in the calm stays plain and one born in the mayhem stays charged.",
+  ),
+  flag(
     "worm-cubes-enabled",
     "Beach worms",
     "Worms raise ice cubes",
@@ -574,6 +609,8 @@ interface GauntletState {
   jak: JakState | null;
   /** null only for a game build that does not publish the desperation. */
   desperation: DesperationState | null;
+  /** Whether the muse is with Jak: null off Misty Island, with the setting off, and for a game build that does not publish it. */
+  muse: "carried" | "loose" | null;
   bomb: BombState | null;
   bridge: DropSpotState | null;
   /** null off Geyser Rock, and for a game build that has no vent spot. */
@@ -716,6 +753,8 @@ function parseGauntletState(raw: unknown): GauntletState {
               multiplier: needNumber(horde, "multiplier", "state.horde"),
             };
           }),
+    muse:
+      root.muse === "carried" || root.muse === "loose" ? root.muse : null,
     effects: {
       enabled: needBoolean(needRecord(root.effects, "state.effects"), "enabled", "state.effects"),
     },
