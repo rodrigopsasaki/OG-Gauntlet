@@ -120,6 +120,8 @@
 (defconstant GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT 1.5) ;; Misty's babaks and bonelurkers run this many times faster while she is loose
 (defconstant GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT 1.0) ;; the chance a Misty babak is born charged while she is loose, instead of babak-charge-chance
 (defconstant GAUNTLET_MUSE_GRACE (seconds 1.5)) ;; a muse Jak has just dropped cannot be caught for this long, or she would be caught where she lands
+(defconstant GAUNTLET_MUSE_ICON_YAW_DEFAULT (degrees 200)) ;; which way her icon faces, around the vertical, before it sways; her front is her art's +z and the hud's own creature icons are turned 210, so 200 shows it. Turn it when the icon is seen from behind
+(defconstant GAUNTLET_MUSE_ICON_SCALE_DEFAULT 1.0) ;; how many times the icon's usual size (about 46 px tall of the hud's 448) she is drawn
 ;; The lurkerworms of Sentinel Beach pull Snowy Mountain's ice cubes up out of the sand when they rise (levels/beach/lurkerworm.gc).
 (defconstant GAUNTLET_WORM_CUBES_ENABLED_DEFAULT #t) ;; a worm that rises raises ice cubes around it
 (defconstant GAUNTLET_WORM_CUBE_COUNT_DEFAULT 2) ;; ice cubes per rise, evenly around the worm; a worm raises a new wave only once the last is gone
@@ -185,6 +187,8 @@
 (define *gauntlet-misty-mayhem-extra* GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT) ;; live: dropping the muse tops up every group, catching her takes the extras away
 (define *gauntlet-misty-mayhem-speed* GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT) ;; live: read every frame a Misty lurker moves; composes with the desperation by multiplication
 (define *gauntlet-misty-mayhem-charge-chance* GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT) ;; read as each babak is born
+(define *gauntlet-misty-muse-icon-yaw* GAUNTLET_MUSE_ICON_YAW_DEFAULT) ;; live: read every frame the icon is drawn
+(define *gauntlet-misty-muse-icon-scale* GAUNTLET_MUSE_ICON_SCALE_DEFAULT) ;; live: read every frame the icon is drawn
 (define *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT) ;; off: the worms rise as the game made them
 (define *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT) ;; read at each rise
 (define *gauntlet-lurker-multiplier* GAUNTLET_LURKER_MULTIPLIER_DEFAULT) ;; read as each lurker is born; the ones already in the world keep their company
