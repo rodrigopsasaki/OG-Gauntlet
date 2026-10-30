@@ -389,7 +389,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "Misty muse",
     "The muse decides the island",
     "live",
-    "On Misty Island the muse is a state: loose (not caught yet, or dropped by a hit, a bonk or a death) it is mayhem, with her caught it is the mod's usual. An icon of her in a corner of the screen shows which. Off leaves the muse as the game made her, with no icon and no mayhem.",
+    "On Misty Island the muse is a state: loose (not caught yet, or dropped by a hit, a bonk or a death) it is mayhem, with her caught the island is calm: only the lurkers Misty places, with none of the horde's company, at their own pace, charged by the usual babak chance. An icon of her in a corner of the screen shows which. Off leaves the muse as the game made her, with no icon and no mayhem, and Misty is a level like any other.",
   ),
   num(
     "misty-mayhem-extra",
@@ -398,7 +398,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "",
     [0, 4, 1],
     "live",
-    "While she is loose every lurker Misty places has this many more clones, on top of the lurker multiplier's, kept inside the clone cap. Losing her tops every group up once; catching her takes only these away, with a puff.",
+    "While she is loose every lurker Misty places has this many more clones, on top of the lurker multiplier's (which Misty has only while she is loose too), kept inside the clone cap. Losing her brings every group all its company at once, in a burst of dark eco; catching her takes every clone away, these and the multiplier's, with a puff each.",
     true,
   ),
   num(
@@ -484,7 +484,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "x",
     [1, 5, 1],
     "next birth",
-    "Every lurker the level places on the nav mesh (babaks, lurker crabs, hoppers, bonelurkers, ice cubes and the rest) comes with company: this many of it in all, the original and the clones standing around it on a 3 m ring. 3 turns 1 into 3 and 2 into 6; 1 is the game's own. A clone drops pills, never the power cell. Lurkers already in the world keep the company they were born with; the clones go when their level does, or when Jak walks far enough away that the original is put away (they come back fresh with it).",
+    "Every lurker the level places on the nav mesh (babaks, lurker crabs, hoppers, bonelurkers, ice cubes and the rest) comes with company: this many of it in all, the original and the clones standing around it on a 3 m ring. 3 turns 1 into 3 and 2 into 6; 1 is the game's own. A clone drops pills, never the power cell. Lurkers already in the world keep the company they were born with; the clones go when their level does, or when Jak walks far enough away that the original is put away (they come back fresh with it). On Misty Island the company is the muse's: it stands only while she is loose, and with her caught the lurkers there are alone.",
     true,
   ),
   num(
