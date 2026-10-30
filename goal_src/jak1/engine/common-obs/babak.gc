@@ -241,24 +241,31 @@
   0
   (none))
 
-;; gauntlet: one frame of the eco's strength in a charged babak. A blue one runs blue-pace times the desperation faster than a
+;; gauntlet: one frame of the babak's strength and pace. A blue one runs blue-pace times the desperation faster than a
 ;; plain one (the multiplier itself is scaled), and the info says the same of its run speed and acceleration, which the
 ;; rest of nav-enemy reads (an align babak does not move by them); a red one throws Jak the red distance times the
 ;; desperation. Only a charged babak has an info of its own to write in (see nav-enemy-method-48), the shared one is never touched.
+;; On Misty Island, while the muse is loose, every babak (a plain one too: its run cycle is all it has) runs misty-pace times
+;; faster again, on top of whatever the eco and the desperation make of it: they compose by multiplication. The cannon babak
+;; is left as the game made it.
 (defun babak-burn! ((this babak))
-  (let ((strength (gauntlet-desperation)))
+  (let ((strength (gauntlet-desperation))
+        (mayhem (if (= (-> this type) babak) (gauntlet-misty-pace this) 1.0)))
+    (set! (-> this run-pace) (* (-> this blue-pace) mayhem))
     (case (-> this charge)
       (((gauntlet-eco blue))
-       (set! (-> this run-pace) (* (-> this blue-pace) strength))
-       (set! (-> this nav-info run-travel-speed) (* (-> *babak-nav-enemy-info* run-travel-speed) (-> this run-pace)))
-       (set! (-> this nav-info run-acceleration) (* (-> *babak-nav-enemy-info* run-acceleration) (-> this run-pace))))
+       (set! (-> this run-pace) (* (-> this run-pace) strength))))
+    (when (!= (-> this charge) (gauntlet-eco none))
+      (set! (-> this nav-info run-travel-speed) (* (-> *babak-nav-enemy-info* run-travel-speed) (-> this run-pace)))
+      (set! (-> this nav-info run-acceleration) (* (-> *babak-nav-enemy-info* run-acceleration) (-> this run-pace))))
+    (case (-> this charge)
       (((gauntlet-eco red))
        (set! (-> this nav-info attack-shove-back) (* GAUNTLET_ECO_RED_SHOVE_BACK strength))
        (set! (-> this nav-info attack-shove-up) (* GAUNTLET_ECO_RED_SHOVE_UP strength)))))
   0)
 
 ;; gauntlet: only a plain babak, the type itself, is charged. babak-with-cannon shares this method but is left as the game
-;; made it: never charged, its run-pace 1.0.
+;; made it: never charged, its run-pace 1.0. The chance is the island's mayhem one while the muse is loose on Misty, else babak-charge-chance.
 (defmethod nav-enemy-method-48 ((this babak))
   (initialize-skeleton this *babak-sg* '())
   (set! (-> this charge) (gauntlet-eco none))
@@ -268,7 +275,7 @@
   (let ((info *babak-nav-enemy-info*))
     (when (and *gauntlet-babak-charge-enabled*
                (= (-> this type) babak)
-               (rand-vu-percent? *gauntlet-babak-charge-chance*))
+               (rand-vu-percent? (gauntlet-babak-charge-chance this)))
       (set! (-> this charge) (if (rand-vu-percent? 0.5) (gauntlet-eco blue) (gauntlet-eco red)))
       (set! info (copy info 'process))
       (case (-> this charge)

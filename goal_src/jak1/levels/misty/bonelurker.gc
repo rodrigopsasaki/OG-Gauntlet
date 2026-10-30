@@ -2,6 +2,7 @@
 (in-package goal)
 (bundles "MIS.DGO")
 (require "engine/common-obs/nav-enemy.gc")
+(require "pc/features/gauntlet-h.gc")
 (declare-type bonelurker nav-enemy)
 
 ;; DECOMP BEGINS
@@ -144,6 +145,9 @@ nav-enemy-default-event-handler
         (logior! (-> self nav-enemy-flags) (nav-enemy-flags navenmf6))))
   :code
     (behavior ()
+      ;; gauntlet: the charge cycles play misty-pace times faster, which a bonelurker that walks by its animation's own motion
+      ;; (use-align in its info) covers as ground: 1.0 unless the muse is loose on Misty. Read on every frame of the cycle, so
+      ;; catching her calms them at once, and it multiplies the random 0.8 to 1.2 each one is given.
       (set! (-> self rotate-speed) 524288.0)
       (set! (-> self turn-time) (seconds 0.1))
       (set! (-> self speed-scale) 1.0)
@@ -152,36 +156,36 @@ nav-enemy-default-event-handler
           ((ja-group? bonelurker-win-ja) (ja-channel-push! 1 (seconds 0.3)))
           ((ja-group? bonelurker-stun-ja) (ja-channel-push! 1 (seconds 0.2)))
           (else (ja-channel-push! 1 (seconds 0.15))))
-        (ja-no-eval :group! bonelurker-charge-left-ja :num! (seek! max f30-0) :frame-num 0.0)
+        (ja-no-eval :group! bonelurker-charge-left-ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self))) :frame-num 0.0)
         (until (ja-done? 0)
           (suspend)
-          (ja :num! (seek! max f30-0)))
-        (ja-no-eval :group! bonelurker-charge-right-ja :num! (seek! max f30-0) :frame-num 0.0)
+          (ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self)))))
+        (ja-no-eval :group! bonelurker-charge-right-ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self))) :frame-num 0.0)
         (until (ja-done? 0)
           (suspend)
-          (ja :num! (seek! max f30-0)))
+          (ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self)))))
         (loop
           (cond
             ((or (not *target*) (< 36864.0 (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-             (ja-no-eval :group! bonelurker-charge-ja :num! (seek! max f30-0) :frame-num 0.0)
+             (ja-no-eval :group! bonelurker-charge-ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self))) :frame-num 0.0)
              (until (ja-done? 0)
                (suspend)
-               (ja :num! (seek! max f30-0))))
+               (ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self))))))
             (else
-             (ja-no-eval :group! bonelurker-charge-left-ja :num! (seek! max f30-0) :frame-num 0.0)
+             (ja-no-eval :group! bonelurker-charge-left-ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self))) :frame-num 0.0)
              (until (ja-done? 0)
                (suspend)
-               (ja :num! (seek! max f30-0)))
+               (ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self)))))
              (if (logtest? (-> self nav-enemy-flags) (nav-enemy-flags navenmf8)) (go-virtual nav-enemy-victory))
-             (ja-no-eval :group! bonelurker-charge-right-ja :num! (seek! max f30-0) :frame-num 0.0)
+             (ja-no-eval :group! bonelurker-charge-right-ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self))) :frame-num 0.0)
              (until (ja-done? 0)
                (suspend)
-               (ja :num! (seek! max f30-0)))
+               (ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self)))))
              (if (logtest? (-> self nav-enemy-flags) (nav-enemy-flags navenmf8)) (go-virtual nav-enemy-victory))
-             (ja-no-eval :group! bonelurker-charge-ja :num! (seek! max f30-0) :frame-num 0.0)
+             (ja-no-eval :group! bonelurker-charge-ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self))) :frame-num 0.0)
              (until (ja-done? 0)
                (suspend)
-               (ja :num! (seek! max f30-0)))))))))
+               (ja :num! (seek! max (* f30-0 (gauntlet-misty-pace self)))))))))))
 
 (defstate nav-enemy-stop-chase (bonelurker)
   :virtual #t
