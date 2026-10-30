@@ -42,8 +42,8 @@
 ;;
 ;; On Misty Island (level misty) the muse decides how the island behaves: caught, the island is calm, the lurkers it places and nothing
 ;; more, at their own pace and as charged as babak-charge-chance makes them; loose (not yet caught, or dropped by a hit, a bonk or a
-;; death), it is mayhem: those lurkers with their company (the horde's clones) and the mayhem's extras, faster, babaks charged. An icon of
-;; her in a corner of the hud shows which. See "the muse" and "the muse's body" below.
+;; death), it is mayhem: those lurkers with their company (the horde's clones) and the mayhem's extras, faster, babaks charged. A portrait of
+;; her face in a corner of the hud shows which. See "the muse" and "the muse's body" below.
 ;;
 ;; The bomb is the big dark eco bomb Gol and Maia's robot drops in the final
 ;; boss (darkecobomb, levels/finalboss/robotboss-weapon.gc), made available
@@ -4624,13 +4624,11 @@
 
 (deftype gauntlet-muse-world (structure)
   ((muse handle) ;; the muse this mod made, until she is caught or put away
-   (icon handle) ;; the process that drives the icon
-   (face handle))) ;; the manipy it draws her with
+   (icon handle))) ;; the process that drives the icon and owns its picture
 
 (define *gauntlet-muse-world* (new 'global 'gauntlet-muse-world))
 (set! (-> *gauntlet-muse-world* muse) (the-as handle #f))
 (set! (-> *gauntlet-muse-world* icon) (the-as handle #f))
-(set! (-> *gauntlet-muse-world* face) (the-as handle #f))
 
 (define *gauntlet-muse-entity* (the-as entity-actor #f)) ;; her actor, found while Misty is up, forgotten when it goes (its memory is the level's)
 
@@ -4716,65 +4714,105 @@
 
 ;; ---------------------------------------------------------------- the icon --
 
-;; Whether the muse is with Jak is shown on screen by her model in a corner of the hud, whenever he is on Misty: dark and pulsing while she is
-;; loose, lit while she is his, and it spins at each change (gold when she is caught, red when she is lost). It is drawn the way the
-;; hud draws its own counters and the pc port's battle counter (pc/hud-classes-pc.gc): a manipy of her art with the hud's draw function,
-;; placed in the hud's own space (x from 0 to 512, y from 0 to 448, the middle at 256 and 224) and scaled by the video's relative
-;; scales. Her art is in MIS.DGO only, so it is looked up by the symbol of her skeleton group, *muse-sg*, and only while Misty is up,
-;; and the manipy is given her actor, whose level the art is loaded from (initialize-skeleton) and which has the level's unload
-;; take it away. A model cannot be cut to her face, so she is drawn whole, small. The card behind her, a frame drawn the way the
-;; Klaww bar is, says the same as her colour in case her colour does not show.
+;; Whether the muse is with Jak is shown on screen by a portrait of her face in a corner of the hud, whenever he is on Misty: dim and
+;; pulsing while she is loose, lit while she is his, and it pops at each change (gold when she is caught, red when she is lost). It is
+;; a flat picture and is drawn the way the game draws its own flat hud icons (the health, the buzzers, the eco timers: hud-classes.gc):
+;; a screen-space sprite particle with a hud slot of its own (sprite-allocate-user-hvdf) that is moved to a point of the hud's 512 x 448
+;; space, spawned every frame, whose particle function writes its size and its colour (hud.gc, draw-particles, is the position; the
+;; part-hud-health-01-func is the function).
 ;;
-;; How big she is, worked out from her art (the joints of her bind pose): 1.3 m tall with her ears, 0.6 m across, her tail running
-;; back along -z to 1.2 m, her front +z. A hud unit is a pixel of the 512 x 448 space and a model unit a 4096th of a metre, so a model
-;; of scale s is 4096 * s pixels to the metre: at 0.0075 she is about 46 px tall of 448 (a tenth) and 31 px across (23 at 16:9),
-;; where the game's own small icons are 20 to 25 px and the battle counter's bonelurker 74. Her feet are where the model's origin
-;; is, and a negative y scale (the hud's y runs down) stands her up from there, so GAUNTLET_MUSE_ICON_BASE_Y is the ground she stands
-;; on; 232 is the battle counter's own baseline (228), on the other side of the middle.
-;; Left of the middle: the health is top left (to y 100), the buzzers bottom left (from y 360), the orbs top right and the eco timers
-;; bottom right, and the pc port's battle counter right of the middle; the left, x 40 to 110 and y 120 to 300, is free.
+;; The picture is the texture `checker` of the effects tpage, replaced by a painting of her face: custom_assets/jak1/texture_replacements/
+;; effects/checker.png, which the decompiler's level extraction bakes into GAME.fr3 (a texture replacement is the PC port's only way to
+;; a new picture, and it costs the 4 MB of VRAM nothing, because the game keeps the original 16 x 16 texture and only the GL one is new).
+;; `checker` is the one texture of that always-resident page that nothing in the game names, and the replacement is global, so
+;; nothing else may ever use it. The sprite colour is a multiplier of the texture (128 is neutral, 255 twice as bright), so the
+;; picture is painted in its lit colours and the particle function darkens it for a loose muse.
 ;;
-;; The tint she carried through color-mult and color-emissive (the world's draw path reads them) does nothing in the hud's: its draw
-;; function takes its light from a vu-lights it copies into the scratchpad and nothing else. So she has lights of her own
-;; (*gauntlet-muse-lights*, rewritten every frame) and a copy of the hud's draw function that copies them (gauntlet-muse-icon-dma).
-(defconstant GAUNTLET_MUSE_ICON_X 72) ;; the middle of her, in the hud's 512 wide space: 14% in, 20 px or more clear of the edge
-(defconstant GAUNTLET_MUSE_ICON_BASE_Y 232) ;; her feet, in its 448 high one
-(defconstant GAUNTLET_MUSE_ICON_SCALE 0.0075) ;; the hud scale of her art, times the console's misty-muse-icon-scale
-(defconstant GAUNTLET_MUSE_ICON_HEIGHT 46.0) ;; her height in the hud's 448 high space at that scale, for the frame
-(defconstant GAUNTLET_MUSE_FRAME_HALF_W 20) ;; the frame around her: half its width in the hud's 512 wide space at that scale, undone by the aspect
-(defconstant GAUNTLET_MUSE_FRAME_HALF_H 15) ;; and half its height in the 2D space of the Klaww bar (y from 0 to 224)
-(defconstant GAUNTLET_MUSE_ICON_SWAY (degrees 12)) ;; she turns this far to either side of her yaw, slowly, to be alive
-(defconstant GAUNTLET_MUSE_ICON_SWAY_PERIOD (seconds 5)) ;; a whole sway
+;; Where it stands, in the hud's own space (x from 0 to 512, y from 0 to 448, the middle at 256 and 224): the health is top left (to y 110),
+;; the buzzers bottom left (from y 360), the orbs top right and the eco timers bottom right, and the pc port's battle counter right of the
+;; middle; the left, x 40 to 110 and y 120 to 300, is free. The middle of the picture is at GAUNTLET_MUSE_ICON_X, 14% in, with the frame
+;; 20 px or more clear of the edge.
+;;
+;; How big it is, worked out from the sprite renderer and not yet measured: the hud sprite's side is its scale / 120 px of the 512 wide
+;; space (sprite3_3d.vert, with the hud matrix of sprite.gc, which the pc port scales so that widescreen does not enlarge it: the picture
+;; is as square on a wide screen as on a narrow one and needs no aspect of its own), and the hud's pixels are 7 to 6 taller than wide
+;; (512 x 448 on a 4:3 screen), so it is scale / 120 * 7 / 6 px of the 448. The pieces of the health badge, 6963.2 (1.7 m, the game's
+;; own unit), come out at 58 px wide and 68 tall by that, for their centres 37 px apart. So 4800 is a picture 40 px wide and 47 tall,
+;; the face and a little air about it. That is arithmetic from the source and no measurement of a screen: the first run is the check,
+;; and the console's misty-muse-icon-scale, which multiplies it, is the dial to find the size that is wanted before it is written here.
+(defconstant GAUNTLET_PART_GROUP_MUSE 1006) ;; the one group this icon adds to the particle tables, after the TNT's: its part is 3555
+(defconstant GAUNTLET_MUSE_ICON_X 72) ;; the middle of the picture, in the hud's 512 wide space
+(defconstant GAUNTLET_MUSE_ICON_Y 200) ;; and in its 448 high one
+(defconstant GAUNTLET_MUSE_ICON_DEPTH 1.0) ;; the z of the hud's own particles (init-pos z of the buzzers and the hearts)
+(defconstant GAUNTLET_MUSE_ICON_SCALE 4800.0) ;; the sprite's scale, which is its side in the units above, times the console's misty-muse-icon-scale
+(defconstant GAUNTLET_MUSE_ICON_POP 0.4) ;; how much bigger the picture is at the instant of a flip, settling back over the flash
+(defconstant GAUNTLET_MUSE_FRAME_HALF_W 24) ;; the frame around it: half its width in the hud's 512 wide space at that scale, undone by the aspect
+(defconstant GAUNTLET_MUSE_FRAME_HALF_H 14) ;; and half its height in the 2D space of the Klaww bar (y from 0 to 224)
 (defconstant GAUNTLET_MUSE_PULSE_PERIOD (seconds 0.5)) ;; the loose frame's pulse, 2 a second
-(defconstant GAUNTLET_MUSE_LIGHT_PERIOD (seconds 0.667)) ;; and the loose silhouette's, 1.5 a second
+(defconstant GAUNTLET_MUSE_LIGHT_PERIOD (seconds 0.667)) ;; and the loose picture's, 1.5 a second
+(defconstant GAUNTLET_MUSE_DIM_LOW 26.0) ;; the loose picture's colour multiplier at its darkest and brightest (128 is the picture as painted)
+(defconstant GAUNTLET_MUSE_DIM_HIGH 62.0)
+(defconstant GAUNTLET_MUSE_DIM_GREEN 0.55) ;; and how much of that its green and its blue keep, so it is dark red-violet and not grey
+(defconstant GAUNTLET_MUSE_DIM_BLUE 0.85)
 
-(define *gauntlet-muse-lights* (new 'global 'vu-lights)) ;; what she is lit with: the hud's own three axes, with colours of her own
-(set-vector! (-> *gauntlet-muse-lights* direction 0) 1.0 0.0 0.0 1.0)
-(set-vector! (-> *gauntlet-muse-lights* direction 1) 0.0 1.0 0.0 1.0)
-(set-vector! (-> *gauntlet-muse-lights* direction 2) 0.0 0.0 1.0 1.0)
-(set-vector! (-> *gauntlet-muse-lights* color 0) 0.75 0.75 1.0 1.0)
-(set-vector! (-> *gauntlet-muse-lights* color 1) 0.75 0.75 1.0 1.0)
-(set-vector! (-> *gauntlet-muse-lights* color 2) 0.75 0.75 1.0 1.0)
-(set-vector! (-> *gauntlet-muse-lights* ambient) 0.2 0.2 0.2 1.0)
+(define *gauntlet-muse-portrait-scale* GAUNTLET_MUSE_ICON_SCALE) ;; what the particle function writes as the sprite's size, set every frame the picture is drawn
+(define *gauntlet-muse-portrait-tint* (new 'global 'vector)) ;; and as its colour: r, g, b, a, the sprite's own units (128 neutral, 255 at most: a byte, a larger one wraps)
+(set-vector! *gauntlet-muse-portrait-tint* 128.0 128.0 128.0 128.0)
 
-(defun gauntlet-muse-icon-dma ((proc process-drawable) (draw draw-control) (arg2 symbol) (buf dma-buffer))
-  "The hud's draw function with the hud's lights (dma-add-process-drawable-hud-with-hud-lights, pc/hud-classes-pc.gc), but lit with
-   *gauntlet-muse-lights*, so that what the muse looks like is the mod's to say."
-  (logclear! (-> draw status) (draw-status was-drawn))
-  (when (zero? (logand (-> draw status) (draw-status hidden no-anim no-skeleton-update)))
-    (let ((vu-lgt (the-as vu-lights (+ 64 (scratchpad-object int))))
-          (lgt *gauntlet-muse-lights*))
-      (set! (-> vu-lgt direction 0 quad) (-> lgt direction 0 quad))
-      (set! (-> vu-lgt direction 1 quad) (-> lgt direction 1 quad))
-      (set! (-> vu-lgt direction 2 quad) (-> lgt direction 2 quad))
-      (set! (-> vu-lgt color 0 quad) (-> lgt color 0 quad))
-      (set! (-> vu-lgt color 1 quad) (-> lgt color 1 quad))
-      (set! (-> vu-lgt color 2 quad) (-> lgt color 2 quad))
-      (set! (-> vu-lgt ambient quad) (-> lgt ambient quad)))
-    (lod-set! draw 0)
-    (logior! (-> draw status) (draw-status was-drawn))
-    (draw-bones-hud draw buf))
+(defpartgroup group-gauntlet-muse-portrait
+  :id 1006
+  :flags (screen-space)
+  :bounds (static-bspherem 0 0 0 100)
+  :parts ((sp-item 3555 :flags (launch-asap))))
+
+;; One frame of life, spawned again every frame, as the hud's own: the hud keeps no particle of its own that lasts.
+(defpart 3555
+  :init-specs
+  ((:texture (checker effects))
+   (:num 1.0)
+   (:scale-x (meters 1.17))
+   (:scale-y :copy scale-x)
+   (:r 128.0)
+   (:g 128.0)
+   (:b 128.0)
+   (:a 128.0)
+   (:timer (seconds -0.005))
+   (:flags (bit2 bit9))
+   (:func 'part-gauntlet-muse-portrait-func)))
+
+(defun part-gauntlet-muse-portrait-func ((sys sparticle-system) (info sparticle-cpuinfo) (data matrix))
+  "The sprite's size and colour, as part-hud-health-01-func writes them: both scales in the w of the first two rows, the colour in
+   the third. The numbers are the process's (gauntlet-muse-portrait-look!), for the state of the muse this frame."
+  (set! (-> data vector 0 w) *gauntlet-muse-portrait-scale*)
+  (set! (-> data vector 1 w) *gauntlet-muse-portrait-scale*)
+  (set! (-> data vector 2 x) (-> *gauntlet-muse-portrait-tint* x))
+  (set! (-> data vector 2 y) (-> *gauntlet-muse-portrait-tint* y))
+  (set! (-> data vector 2 z) (-> *gauntlet-muse-portrait-tint* z))
+  (set! (-> data vector 2 w) (-> *gauntlet-muse-portrait-tint* w))
   0
+  (none))
+
+;; The process that owns the picture: its launch control is the particle's owner, and the launch control's matrix is the hud slot the
+;; picture is placed with. Both are the hud's own arrangement (hud.gc), and so are the two methods below, copied from it: a launch control is
+;; a pointer into the process that the pool moves when it compacts (relocate), and its hud slot is one of 76 for the whole game, which
+;; stays taken, with the particles still on the list, if the process goes without giving it back (deactivate).
+(deftype gauntlet-muse-portrait (process)
+  ((part sparticle-launch-control)) ;; the picture's, made with the process; its matrix is the hud slot
+  (:states
+   gauntlet-muse-portrait-run))
+
+(defmethod relocate ((this gauntlet-muse-portrait) (offset int))
+  (if (nonzero? (-> this part)) (&+! (-> this part) offset))
+  (the-as gauntlet-muse-portrait ((method-of-type process relocate) this offset)))
+
+(defmethod deactivate ((this gauntlet-muse-portrait))
+  "However the icon's process goes, ending itself with Misty or the setting, or put away by the kernel, its particles are killed and its
+   hud slot given back (kill-and-free-particles does that), and the log says it is gone."
+  (when (nonzero? (-> this part))
+    (kill-and-free-particles (-> this part))
+    (set! (-> this part matrix) -1))
+  (format 0 "GAUNTLET MUSE icon stopped~%")
+  ((method-of-type process deactivate) this)
   (none))
 
 (defun gauntlet-muse-phase ((period int))
@@ -4785,27 +4823,6 @@
 (defun gauntlet-muse-wave ((period int))
   "A wave of period ticks, from 0.0 to 1.0 and back."
   (+ 0.5 (* 0.5 (sin (* (degrees 360) (gauntlet-muse-phase period))))))
-
-(defun gauntlet-muse-lights! ((carried symbol) (flash float))
-  "Light her for the state: as the hud lights its own icons while she is his (a gold burn on top for the flash after a catch); a dark
-   silhouette, pulsing red-violet, while she is loose (a red burn on top for the flash after a loss)."
-  (let ((lgt *gauntlet-muse-lights*))
-    (cond
-      (carried
-       (set-vector! (-> lgt color 0) 0.75 0.75 1.0 1.0)
-       (set-vector! (-> lgt color 1) 0.75 0.75 1.0 1.0)
-       (set-vector! (-> lgt color 2) 0.75 0.75 1.0 1.0)
-       (set-vector! (-> lgt ambient) (+ 0.2 (* 0.5 flash)) (+ 0.2 (* 0.4 flash)) (+ 0.2 (* 0.1 flash)) 1.0))
-      (else
-       (set-vector! (-> lgt color 0) 0.2 0.07 0.09 1.0)
-       (set-vector! (-> lgt color 1) 0.2 0.07 0.09 1.0)
-       (set-vector! (-> lgt color 2) 0.2 0.07 0.09 1.0)
-       (set-vector! (-> lgt ambient)
-                    (+ 0.07 (* 0.18 (gauntlet-muse-wave GAUNTLET_MUSE_LIGHT_PERIOD)) (* 0.6 flash))
-                    0.02
-                    0.04
-                    1.0))))
-  0)
 
 (defun gauntlet-muse-rgba ((r int) (g int) (b int) (a int))
   "A colour whose alpha is not a constant (static-rgba is for those). Alpha 128 is fully opaque, as the letterbox's is."
@@ -4819,29 +4836,6 @@
   (draw-sprite2d-xy buf (+ cx half-w) (- cy half-h) thick-x (* 2 half-h) color)
   0)
 
-(defun gauntlet-muse-face ()
-  "The manipy that draws the muse's face, or #f while there is none."
-  (let ((proc (handle->process (-> *gauntlet-muse-world* face))))
-    (the-as manipy (if (and proc (type-type? (-> proc type) manipy)) proc))))
-
-(defun gauntlet-muse-face-make! ()
-  "Make the manipy: her art, drawn by her own copy of the hud's draw function, idling. It is in the entity pool with her actor as its entity, so
-   Misty's unload takes it away and so does a death, after which this makes it again. Her turn is written every frame (gauntlet-muse-icon-frame!)."
-  (let ((ent (gauntlet-muse-entity-find!))
-        (skel '*muse-sg*))
-    (when (and ent (-> skel value))
-      (let ((made (manipy-spawn (new 'static 'vector :w 1.0) ent (the-as skeleton-group (-> skel value)) #f :to *entity-pool*)))
-        (when made
-          (let ((icon (-> made 0)))
-            (set! (-> icon draw dma-add-func) gauntlet-muse-icon-dma)
-            (set-vector! (-> icon root trans) 0.0 0.0 0.0 1.0)
-            (set-vector! (-> icon root scale) GAUNTLET_MUSE_ICON_SCALE GAUNTLET_MUSE_ICON_SCALE GAUNTLET_MUSE_ICON_SCALE 1.0)
-            (logior! (-> icon mask) (process-mask pause))
-            (logclear! (-> icon mask) (process-mask menu progress))
-            (send-event icon 'art-joint-anim "muse-idle" 0))
-          (set! (-> *gauntlet-muse-world* face) (ppointer->handle made))))))
-  0)
-
 (defun gauntlet-muse-icon-shown? ()
   "True when the icon is to be seen: Jak is inside Misty and nothing else has the screen (a cutscene, the progress menu, a fade)."
   (and *target*
@@ -4851,55 +4845,93 @@
        (time-elapsed? (-> *game-info* letterbox-time) (seconds 0.1))
        (time-elapsed? (-> *game-info* blackout-time) (seconds 0.1))))
 
-(defun gauntlet-muse-icon-frame! ()
-  "One frame of the icon: the manipy, made if it is not there, shown or hidden, stood on its baseline in its corner, turned (a slow
-   sway about the console's yaw, and a whole turn over GAUNTLET_MUSE_FLASH_TIME after a flip) and lit for the state, and the frame
-   around it: a pulsing violet-red while she is loose, a steady gold while she is his, white while it flashes."
-  (if (not (gauntlet-muse-face)) (gauntlet-muse-face-make!))
-  (let ((face (gauntlet-muse-face))
-        (shown (gauntlet-muse-icon-shown?)))
-    (when face
-      (send-event face 'draw shown)
-      (when shown
-        (let* ((since (- (current-time) *gauntlet-muse-flip-time*))
-               (flash (fmax 0.0 (- 1.0 (/ (the float since) (the float GAUNTLET_MUSE_FLASH_TIME)))))
-               (size *gauntlet-misty-muse-icon-scale*)
-               (scale (* GAUNTLET_MUSE_ICON_SCALE size))
-               (sx (* scale (-> *video-parms* relative-x-scale)))
-               (sy (* scale (/ 512.0 448.0) (-> *video-parms* relative-y-scale)))
-               (sway (* GAUNTLET_MUSE_ICON_SWAY (sin (* (degrees 360) (gauntlet-muse-phase GAUNTLET_MUSE_ICON_SWAY_PERIOD))))))
-          ;; the hud's space has y running down, so her y scale is negative to stand her up, and the origin of her model, her feet, is on the baseline
-          (set-vector! (-> face root scale) sx (- sy) sx 1.0)
-          (set! (-> face root trans x) (the float (+ GAUNTLET_MUSE_ICON_X -256)))
-          (set! (-> face root trans y) (- (the float GAUNTLET_MUSE_ICON_BASE_Y) (the float (-> *video-parms* screen-sy))))
-          (set! (-> face root trans z) 2048.0)
-          ;; turned to the camera and a little aside, the way the battle counter turns its lurkers
-          (send-event face
-                      'rot-quat
-                      (quaternion-axis-angle! (new-stack-quaternion0) 0.0 1.0 0.15 (+ *gauntlet-misty-muse-icon-yaw* sway (* flash (degrees 360)))))
-          (gauntlet-muse-lights! *gauntlet-muse-carried* flash)
-          (gauntlet-mayhem-roar-poll!)
-          (let* ((aspect (-> *pc-settings* aspect-ratio-scale))
-                 (cx GAUNTLET_MUSE_ICON_X)
-                 ;; the middle of her figure, in the Klaww bar's half-height space
-                 (cy (the int (* 0.5 (- (the float GAUNTLET_MUSE_ICON_BASE_Y) (* 0.5 GAUNTLET_MUSE_ICON_HEIGHT size)))))
-                 (grow (the int (* 6.0 flash)))
-                 (half-w (+ grow (max 1 (the int (/ (* (the float GAUNTLET_MUSE_FRAME_HALF_W) size) aspect)))))
-                 (half-h (+ grow (max 1 (the int (* (the float GAUNTLET_MUSE_FRAME_HALF_H) size)))))
-                 (thick-x (max 1 (the int (/ 2.0 aspect))))
-                 (pulse (gauntlet-muse-wave GAUNTLET_MUSE_PULSE_PERIOD)))
-            (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug-no-zbuf))
-              ;; a loss flashes the whole screen violet, fading with the icon's flash (misty-mayhem-atmosphere scales it)
-              (when (and (not *gauntlet-muse-carried*) (< 0.0 flash))
-                (draw-sprite2d-xy buf 0 0 512 224
-                                  (gauntlet-muse-rgba 150 20 170 (the int (* GAUNTLET_MAYHEM_FLASH_ALPHA flash *gauntlet-misty-mayhem-atmosphere*)))))
-              (gauntlet-muse-frame-draw!
-                buf cx cy half-w half-h thick-x
-                (cond
-                  ((< 0.0 flash) (static-rgba 255 255 255 150))
-                  (*gauntlet-muse-carried* (static-rgba 255 190 50 110))
-                  (else (gauntlet-muse-rgba 200 40 120 (+ 45 (the int (* 80.0 pulse)))))))))))))
+(defun gauntlet-muse-portrait-look! ((carried symbol) (flash float) (size float))
+  "Say how the picture looks this frame, for the particle function to write: as painted while she is his, with a gold burn on top
+   (more red and green, less blue, up to the byte's end) fading with the flash after a catch; a dark red-violet breathing between
+   GAUNTLET_MUSE_DIM_LOW and _HIGH while she is loose, with a red burn after a loss. It is a little bigger at the instant of either, and
+   size is the console's multiplier."
+  (set! *gauntlet-muse-portrait-scale* (* GAUNTLET_MUSE_ICON_SCALE size (+ 1.0 (* GAUNTLET_MUSE_ICON_POP flash))))
+  (let ((tint *gauntlet-muse-portrait-tint*))
+    (cond
+      (carried
+       (set-vector! tint (lerp 128.0 255.0 flash) (lerp 128.0 205.0 flash) (lerp 128.0 90.0 flash) 128.0))
+      (else
+       (let ((dim (lerp GAUNTLET_MUSE_DIM_LOW GAUNTLET_MUSE_DIM_HIGH (gauntlet-muse-wave GAUNTLET_MUSE_LIGHT_PERIOD))))
+         (set-vector! tint
+                      (lerp dim 255.0 flash)
+                      (lerp (* dim GAUNTLET_MUSE_DIM_GREEN) 40.0 flash)
+                      (lerp (* dim GAUNTLET_MUSE_DIM_BLUE) 40.0 flash)
+                      128.0)))))
   0)
+
+(defbehavior gauntlet-muse-portrait-place! gauntlet-muse-portrait ()
+  "Move the picture's hud slot to (GAUNTLET_MUSE_ICON_X, GAUNTLET_MUSE_ICON_Y) as the hud moves its own particles (hud.gc, draw-particles):
+   the point in the middle-based space of the screen, offset by 2048 into the sprite renderer's, and the depth from the camera's."
+  (let ((x (+ -256.0 (the float GAUNTLET_MUSE_ICON_X)))
+        (y (* 0.5 (- (* (-> *video-parms* relative-y-scale) (the float GAUNTLET_MUSE_ICON_Y)) (the float (-> *video-parms* screen-sy))))))
+    (set-vector! (sprite-get-user-hvdf (-> self part matrix))
+                 (the float (+ (the int x) 2048))
+                 (the float (+ (the int y) 2048))
+                 (- (-> *math-camera* hvdf-off z) (* 1024.0 GAUNTLET_MUSE_ICON_DEPTH))
+                 (-> *math-camera* hvdf-off w)))
+  0)
+
+(defbehavior gauntlet-muse-icon-frame! gauntlet-muse-portrait ()
+  "One frame of the icon, when it is to be seen: the picture, looking as the state says, put in its corner and spawned (nothing is
+   spawned otherwise, and a particle lives a frame, so it goes at once), and the frame around it: a pulsing violet-red while she is
+   loose, a steady gold while she is his, white while it flashes."
+  (when (gauntlet-muse-icon-shown?)
+    (let* ((since (- (current-time) *gauntlet-muse-flip-time*))
+           (flash (fmax 0.0 (- 1.0 (/ (the float since) (the float GAUNTLET_MUSE_FLASH_TIME)))))
+           (size *gauntlet-misty-muse-icon-scale*))
+      (gauntlet-muse-portrait-look! *gauntlet-muse-carried* flash size)
+      (when (> (-> self part matrix) 0)
+        (gauntlet-muse-portrait-place!)
+        (spawn (-> self part) *null-vector*))
+      (gauntlet-mayhem-roar-poll!)
+      (let* ((aspect (-> *pc-settings* aspect-ratio-scale))
+             (cx GAUNTLET_MUSE_ICON_X)
+             ;; the middle of the picture, in the Klaww bar's half-height space
+             (cy (the int (* 0.5 (the float GAUNTLET_MUSE_ICON_Y))))
+             (grow (the int (* 6.0 flash)))
+             (half-w (+ grow (max 1 (the int (/ (* (the float GAUNTLET_MUSE_FRAME_HALF_W) size) aspect)))))
+             (half-h (+ grow (max 1 (the int (* (the float GAUNTLET_MUSE_FRAME_HALF_H) size)))))
+             (thick-x (max 1 (the int (/ 2.0 aspect))))
+             (pulse (gauntlet-muse-wave GAUNTLET_MUSE_PULSE_PERIOD)))
+        (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug-no-zbuf))
+          ;; a loss flashes the whole screen violet, fading with the icon's flash (misty-mayhem-atmosphere scales it)
+          (when (and (not *gauntlet-muse-carried*) (< 0.0 flash))
+            (draw-sprite2d-xy buf 0 0 512 224
+                              (gauntlet-muse-rgba 150 20 170 (the int (* GAUNTLET_MAYHEM_FLASH_ALPHA flash *gauntlet-misty-mayhem-atmosphere*)))))
+          (gauntlet-muse-frame-draw!
+            buf cx cy half-w half-h thick-x
+            (cond
+              ((< 0.0 flash) (static-rgba 255 255 255 150))
+              (*gauntlet-muse-carried* (static-rgba 255 190 50 110))
+              (else (gauntlet-muse-rgba 200 40 120 (+ 45 (the int (* 80.0 pulse)))))))))))
+  0)
+
+(defstate gauntlet-muse-portrait-run (gauntlet-muse-portrait)
+  :code
+    (behavior ()
+      (loop
+        (cond
+          ((and *gauntlet-misty-muse-enabled* (gauntlet-misty-active?))
+           (gauntlet-muse-icon-frame!)
+           (gauntlet-mayhem-music-poll!))
+          (else
+           (gauntlet-mayhem-music-off!)
+           (deactivate self)))
+        (suspend))))
+
+(defbehavior gauntlet-muse-portrait-init-by-other gauntlet-muse-portrait ()
+  "Make the picture's particle and take its hud slot (0 is what the allocator answers when all 76 are taken, and then nothing is drawn),
+   say so in the log, and run."
+  (set! (-> self part) (create-launch-control (get-part-group GAUNTLET_PART_GROUP_MUSE) self))
+  (set! (-> self part matrix) (sprite-allocate-user-hvdf))
+  (format 0 "GAUNTLET MUSE icon started (hud slot ~D)~%" (-> self part matrix))
+  (go gauntlet-muse-portrait-run)
+  (none))
 
 (defun gauntlet-muse-icon-ensure! ()
   "Keep one process alive that drives the icon for as long as Misty is up. It ends itself when Misty goes or the setting is turned
@@ -4911,19 +4943,7 @@
     (set! *gauntlet-mayhem-music* #f) ;; a process that is gone took its settings with it
     (set! (-> *gauntlet-muse-world* icon)
           (ppointer->handle
-            (process-spawn-function process
-                                    (lambda :behavior process ()
-                                      (loop
-                                        (cond
-                                          ((and *gauntlet-misty-muse-enabled* (gauntlet-misty-active?))
-                                           (gauntlet-muse-icon-frame!)
-                                           (gauntlet-mayhem-music-poll!))
-                                          (else
-                                           (gauntlet-mayhem-music-off!)
-                                           (deactivate self)))
-                                        (suspend)))
-                                    :to *active-pool*
-                                    :name 'gauntlet-muse-icon))))
+            (process-spawn gauntlet-muse-portrait :init gauntlet-muse-portrait-init-by-other :to *active-pool*))))
   0)
 
 (defun gauntlet-muse-poll! ()
@@ -5015,7 +5035,6 @@
      (,row "misty-mayhem-music" flag *gauntlet-misty-mayhem-music* GAUNTLET_MISTY_MAYHEM_MUSIC_DEFAULT 0 0)
      (,row "misty-mayhem-voice" flag *gauntlet-misty-mayhem-voice* GAUNTLET_MISTY_MAYHEM_VOICE_DEFAULT 0 0)
      (,row "misty-mayhem-atmosphere" ratio *gauntlet-misty-mayhem-atmosphere* GAUNTLET_MISTY_MAYHEM_ATMOSPHERE_DEFAULT 0.0 1.0)
-     (,row "misty-muse-icon-yaw" degrees *gauntlet-misty-muse-icon-yaw* GAUNTLET_MUSE_ICON_YAW_DEFAULT 0.0 360.0)
      (,row "misty-muse-icon-scale" ratio *gauntlet-misty-muse-icon-scale* GAUNTLET_MUSE_ICON_SCALE_DEFAULT 0.5 3.0)
      (,row "worm-cubes-enabled" flag *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT 0 0)
      (,row "worm-cube-count" count *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT 0.0 8.0)

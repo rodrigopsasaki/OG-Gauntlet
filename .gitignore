@@ -60,6 +60,8 @@ node_modules/
 
 # texture replacements
 custom_assets/jak1/texture_replacements/*
+# gauntlet: the muse face on the HUD rides on effects/checker (pc/features/gauntlet.gc, "the icon")
+!custom_assets/jak1/texture_replacements/effects/
 custom_assets/jak2/texture_replacements/*
 custom_assets/jak3/texture_replacements/*
 
