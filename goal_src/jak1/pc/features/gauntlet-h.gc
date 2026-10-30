@@ -120,7 +120,7 @@
 ;; Misty Island's muse: with her caught the island is the mod's usual, without her (not yet caught, or dropped by a hit, a bonk or a death) it is mayhem.
 (defconstant GAUNTLET_MISTY_MUSE_ENABLED_DEFAULT #t) ;; the muse is a state of the island, shown by an icon, and a loose one brings the mayhem below
 (defconstant GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT 2) ;; every lurker Misty places has this many more clones while the muse is loose, on top of lurker-multiplier's
-(defconstant GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT 1.5) ;; Misty's babaks and bonelurkers run this many times faster while she is loose
+(defconstant GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT 1.8) ;; Misty's babaks and bonelurkers run this many times faster while she is loose; 1.5 was a pace nobody noticed against the calm one
 (defconstant GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT 1.0) ;; the chance a Misty babak is born charged while she is loose, instead of babak-charge-chance
 (defconstant GAUNTLET_MISTY_MAYHEM_ATMOSPHERE_DEFAULT 1.0) ;; how far the world is tinted dark-eco violet while she is loose, from 0 (not at all) to 1 (as far as it goes)
 (defconstant GAUNTLET_MISTY_MAYHEM_MUSIC_DEFAULT #t) ;; Misty's battle music (its sound-flava misty-battle) plays while she is loose
