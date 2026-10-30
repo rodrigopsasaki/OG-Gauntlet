@@ -36,6 +36,7 @@ type SettingGroup =
   | "Stampede"
   | "Charged lurkers"
   | "Desperation"
+  | "Misty muse"
   | "Beach worms"
   | "Horde"
   | "Klaww"
@@ -314,6 +315,15 @@ const SETTINGS: readonly SettingSpec[] = [
     [10, 200, 5],
     "live",
     "How far Jak has to walk away from the Sandover spot before the herd can charge again.",
+  ),
+  num(
+    "stampede-launch-up",
+    "Stampede",
+    "Launch height",
+    "m",
+    [0, 100, 1],
+    "live",
+    "How high a yakow's hit throws Jak into the sky, the top of his arc above where he stood. He goes mostly up, not sideways. A red yakow adds half again as much at full health and up to twice that at one hit (the desperation). Landing on a platform or an enemy from this high is a hard landing, which drops Misty's muse.",
   ),
   num(
     "stampede-red-count",
@@ -749,8 +759,11 @@ function parseGauntletState(raw: unknown): GauntletState {
               buttons: needNumber(klaww, "buttons", "state.klaww"),
               rage: klaww.rage === undefined ? null : needNumber(klaww, "rage", "state.klaww"),
               throwEvery:
-                klaww.throwEvery === undefined ? null : needNumber(klaww, "throwEvery", "state.klaww"),
-              radius: klaww.radius === undefined ? null : needNumber(klaww, "radius", "state.klaww"),
+                klaww.throwEvery === undefined
+                  ? null
+                  : needNumber(klaww, "throwEvery", "state.klaww"),
+              radius:
+                klaww.radius === undefined ? null : needNumber(klaww, "radius", "state.klaww"),
             };
           }),
     horde:
@@ -765,8 +778,7 @@ function parseGauntletState(raw: unknown): GauntletState {
               multiplier: needNumber(horde, "multiplier", "state.horde"),
             };
           }),
-    muse:
-      root.muse === "carried" || root.muse === "loose" ? root.muse : null,
+    muse: root.muse === "carried" || root.muse === "loose" ? root.muse : null,
     effects: {
       enabled: needBoolean(needRecord(root.effects, "state.effects"), "enabled", "state.effects"),
     },
