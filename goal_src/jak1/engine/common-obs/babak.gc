@@ -10,11 +10,18 @@
 ;; hits twice as hard and throws him far, the same as the stampede's red yakows. Which one is rolled once, in
 ;; nav-enemy-method-48, and kept here. See "the eco charge" in pc/features/gauntlet-h.gc.
 ;; The eco is stronger the weaker Jak is (gauntlet-desperation), so a charged babak re-reads its strength every frame
-;; (babak-burn!): blue-pace is the speed it was born with at Jak's full health, run-pace the speed it runs at now.
+;; (babak-burn!): blue-pace is the speed it has at Jak's full health, run-pace the speed it runs at now.
+;; The charge a babak wears is not fixed at birth any more, because on Misty Island it follows the muse (see "the muse" in gauntlet.gc): a babak
+;; rolls two charges when it is born, born-charge (the chance babak-charge-chance) and mayhem-charge (the island's own chance, for a babak
+;; that Misty placed), and wears the second while the muse is loose and the first otherwise. charge is the one it wears now. A babak that may
+;; ever wear a charge has an info of its own (own-info), made once, at birth: the writes of babak-burn! go in it, and the shared one is never touched.
 (deftype babak (nav-enemy)
-  ((charge    gauntlet-eco)
-   (blue-pace float)
-   (run-pace  float))
+  ((charge        gauntlet-eco)
+   (born-charge   gauntlet-eco)
+   (mayhem-charge gauntlet-eco)
+   (own-info      symbol)
+   (blue-pace     float)
+   (run-pace      float))
   (:states
    babak-run-to-cannon))
 
@@ -241,55 +248,106 @@
   0
   (none))
 
+;; gauntlet: the charge a babak should wear now: the mayhem's while the muse is loose and the babak is Misty's, else the one it was born with.
+(defun babak-charge-want ((this babak))
+  (if (gauntlet-mayhem-for? this) (-> this mayhem-charge) (-> this born-charge)))
+
+(defun babak-charge-word ((charge gauntlet-eco))
+  "The word for a charge, in the logs."
+  (case charge
+    (((gauntlet-eco blue)) "blue")
+    (((gauntlet-eco red)) "red")
+    (else "plain")))
+
+;; gauntlet: bring the charge a babak wears to the one it should wear, if they differ: the pace it has at full health (blue is the blue speed, the others
+;; the game's own), the glow (the eco's, or the game's plain look), and a word in the log. Called every frame it is posted and when a hit is dealt, and
+;; by gauntlet-babak-sync for the babaks asleep, which are not posted.
+(defun babak-charge-sync! ((this babak))
+  (let ((want (babak-charge-want this)))
+    (when (!= want (-> this charge))
+      (set! (-> this charge) want)
+      (set! (-> this blue-pace) (if (= want (gauntlet-eco blue)) *gauntlet-babak-blue-speed* 1.0))
+      (cond
+        ((= want (gauntlet-eco none))
+         (set-vector! (-> this draw color-mult) 1.0 1.0 1.0 1.0)
+         (set-vector! (-> this draw color-emissive) 0.0 0.0 0.0 0.0))
+        (else (gauntlet-eco-glow! this want)))
+      (format 0 "GAUNTLET CHARGE babak ~S now ~S~%" (-> this name) (babak-charge-word want))))
+  0)
+
 ;; gauntlet: one frame of the babak's strength and pace. A blue one runs blue-pace times the desperation faster than a
 ;; plain one (the multiplier itself is scaled), and the info says the same of its run speed and acceleration, which the
 ;; rest of nav-enemy reads (an align babak does not move by them); a red one throws Jak the red distance times the
-;; desperation. Only a charged babak has an info of its own to write in (see nav-enemy-method-48), the shared one is never touched.
+;; desperation, and any other the game's own distance, so a babak that has been calmed is plain again. Only a babak with an info of its
+;; own (see nav-enemy-method-48) has one to write in, the shared one is never touched.
 ;; On Misty Island, while the muse is loose, every babak (a plain one too: its run cycle is all it has) runs misty-pace times
 ;; faster again, on top of whatever the eco and the desperation make of it: they compose by multiplication. The cannon babak
 ;; is left as the game made it.
 (defun babak-burn! ((this babak))
+  (babak-charge-sync! this)
   (let ((strength (gauntlet-desperation))
         (mayhem (if (= (-> this type) babak) (gauntlet-misty-pace this) 1.0)))
     (set! (-> this run-pace) (* (-> this blue-pace) mayhem))
     (case (-> this charge)
       (((gauntlet-eco blue))
        (set! (-> this run-pace) (* (-> this run-pace) strength))))
-    (when (!= (-> this charge) (gauntlet-eco none))
+    (when (-> this own-info)
       (set! (-> this nav-info run-travel-speed) (* (-> *babak-nav-enemy-info* run-travel-speed) (-> this run-pace)))
-      (set! (-> this nav-info run-acceleration) (* (-> *babak-nav-enemy-info* run-acceleration) (-> this run-pace))))
-    (case (-> this charge)
-      (((gauntlet-eco red))
-       (set! (-> this nav-info attack-shove-back) (* GAUNTLET_ECO_RED_SHOVE_BACK strength))
-       (set! (-> this nav-info attack-shove-up) (* GAUNTLET_ECO_RED_SHOVE_UP strength)))))
+      (set! (-> this nav-info run-acceleration) (* (-> *babak-nav-enemy-info* run-acceleration) (-> this run-pace)))
+      (case (-> this charge)
+        (((gauntlet-eco red))
+         (set! (-> this nav-info attack-shove-back) (* GAUNTLET_ECO_RED_SHOVE_BACK strength))
+         (set! (-> this nav-info attack-shove-up) (* GAUNTLET_ECO_RED_SHOVE_UP strength)))
+        (else
+         (set! (-> this nav-info attack-shove-back) (-> *babak-nav-enemy-info* attack-shove-back))
+         (set! (-> this nav-info attack-shove-up) (-> *babak-nav-enemy-info* attack-shove-up))))))
   0)
 
+(defun babak-roll-charge ((chance float))
+  "A charge for a babak being born: with the chance given, red or blue by the toss of a coin, else none."
+  (if (rand-vu-percent? chance)
+    (if (rand-vu-percent? 0.5) (gauntlet-eco blue) (gauntlet-eco red))
+    (gauntlet-eco none)))
+
+;; gauntlet: the muse tells every babak in the pool that her state has changed, so that the ones asleep (which are not posted, and so would
+;; keep the colour they had) change with the rest.
+(defun gauntlet-babak-sync ((proc process))
+  (let ((babak (as-type proc babak)))
+    (if babak (babak-burn! babak)))
+  (none))
+
+;; gauntlet: whether proc is a babak that wears an eco now, for the mod's tint of Misty's lurkers (which leaves a charged one to its own glow)
+(defun gauntlet-babak-charged? ((proc process))
+  (let ((babak (as-type proc babak)))
+    (and babak (!= (-> babak charge) (gauntlet-eco none)))))
+
 ;; gauntlet: only a plain babak, the type itself, is charged. babak-with-cannon shares this method but is left as the game
-;; made it: never charged, its run-pace 1.0. The chance is the island's mayhem one while the muse is loose on Misty, else babak-charge-chance.
+;; made it: never charged, its run-pace 1.0. Both charges are rolled here, once, and the info is copied here, once: a copy made later,
+;; in some other process's turn, would take memory from a heap that is full by then. A babak the island placed rolls the island's chance
+;; as well as babak-charge-chance (with the muse's setting off the island has none, and the second is the first).
 (defmethod nav-enemy-method-48 ((this babak))
   (initialize-skeleton this *babak-sg* '())
   (set! (-> this charge) (gauntlet-eco none))
+  (set! (-> this born-charge) (gauntlet-eco none))
+  (set! (-> this mayhem-charge) (gauntlet-eco none))
+  (set! (-> this own-info) #f)
   (set! (-> this run-pace) 1.0)
   (set! (-> this blue-pace) 1.0)
-  ;; a charged babak has an info of its own, a copy on its own heap, so the shared one the others read is never touched
+  ;; a babak that may wear a charge has an info of its own, a copy on its own heap, so the shared one the others read is never touched
   (let ((info *babak-nav-enemy-info*))
-    (when (and *gauntlet-babak-charge-enabled*
-               (= (-> this type) babak)
-               (rand-vu-percent? (gauntlet-babak-charge-chance this)))
-      (set! (-> this charge) (if (rand-vu-percent? 0.5) (gauntlet-eco blue) (gauntlet-eco red)))
-      (set! info (copy info 'process))
-      (case (-> this charge)
-        ;; blue is speed: the run cycle plays faster (run-pace), and the info says the same of its run speed and
-        ;; acceleration, which the rest of nav-enemy reads (an align babak does not move by them). The speed it is
-        ;; born with is kept as its base, and babak-burn! scales it by the desperation every frame
-        (((gauntlet-eco blue))
-         (set! (-> this blue-pace) *gauntlet-babak-blue-speed*)
-         (set! (-> this run-pace) *gauntlet-babak-blue-speed*)))
-      ;; red is strength: it throws Jak as far as a red yakow does, and its touch costs a second hit
-      ;; (nav-enemy-touch-handler and touch-handler below); babak-burn! sets the throw
-      (gauntlet-eco-glow! this (-> this charge))
-      (format 0 "GAUNTLET CHARGE babak ~S ~S~%" (-> this name) (if (= (-> this charge) (gauntlet-eco blue)) "blue" "red")))
+    (when (and *gauntlet-babak-charge-enabled* (= (-> this type) babak))
+      (set! (-> this born-charge) (babak-roll-charge *gauntlet-babak-charge-chance*))
+      (set! (-> this mayhem-charge)
+            (if (and *gauntlet-misty-muse-enabled* (-> this entity) (= (-> this entity extra level name) 'misty))
+              (babak-roll-charge *gauntlet-misty-mayhem-charge-chance*)
+              (-> this born-charge)))
+      (when (or (!= (-> this born-charge) (gauntlet-eco none)) (!= (-> this mayhem-charge) (gauntlet-eco none)))
+        (set! info (copy info 'process))
+        (set! (-> this own-info) #t)))
     (init-defaults! this info)
+    ;; the charge it wears now, and so its glow, its speed and its shove: red is strength (it throws Jak as far as a red yakow does, and its touch
+    ;; costs a second hit: nav-enemy-touch-handler and touch-handler below), blue is speed (the run cycle plays faster, run-pace, and the info says the same of
+    ;; its run speed and acceleration, which the rest of nav-enemy reads; an align babak does not move by them)
     (babak-burn! this))
   (set! (-> this neck up) (the-as uint 0))
   (set! (-> this neck nose) (the-as uint 1))
@@ -307,10 +365,10 @@
   0
   (none))
 
-;; gauntlet: the info a charged babak copied lives on its own heap, so when the process moves (nav-enemy's relocate does
+;; gauntlet: the info a babak copied for itself lives on its own heap, so when the process moves (nav-enemy's relocate does
 ;; the same for the neck joint-mod and the random generator) the pointer to it moves with it. The shared info is static.
 (defmethod relocate ((this babak) (offset int))
-  (if (!= (-> this charge) (gauntlet-eco none))
+  (if (-> this own-info)
     (set! (-> this nav-info) (the-as nav-enemy-info (+ (the-as int (-> this nav-info)) offset))))
   (call-parent-method this offset))
 

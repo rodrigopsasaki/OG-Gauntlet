@@ -568,7 +568,9 @@
 ;;                  her takes only those away, with a puff
 ;;   faster         babaks and bonelurkers run misty-mayhem-speed times faster (babak.gc, bonelurker.gc): live, and it composes
 ;;                  with the desperation by multiplication, a blue babak at one hit running both
-;;   stronger       a babak is born charged with the chance misty-mayhem-charge-chance instead of babak-charge-chance
+;;   stronger       a babak wears a charge by the chance misty-mayhem-charge-chance instead of babak-charge-chance. It rolls both when it is born and
+;;                  wears the island's while she is loose and its own otherwise, so a drop charges the babaks already standing (awake or asleep)
+;;                  and a catch calms them, their glow going plain (babak.gc, babak-charge-sync!)
 ;; The muse herself, the sharkey and the lurkers that are not nav enemies (the balloon lurkers, the quicksand ones) are not
 ;; reached; the first has no use for it and the rest have no pace or charge to scale.
 
@@ -596,10 +598,6 @@
 (defun gauntlet-misty-pace ((proc process))
   "How many times faster than its own pace proc moves now: *gauntlet-misty-mayhem-speed* in the mayhem, else 1.0."
   (if (gauntlet-mayhem-for? proc) *gauntlet-misty-mayhem-speed* 1.0))
-
-(defun gauntlet-babak-charge-chance ((proc process))
-  "The chance the babak proc, being born, is charged with eco: the mayhem's in the mayhem, else babak-charge-chance."
-  (if (gauntlet-mayhem-for? proc) *gauntlet-misty-mayhem-charge-chance* *gauntlet-babak-charge-chance*))
 
 ;; The beat of a change: the moment the muse is lost or caught has to be a moment, and not only a state that is different afterwards. On a loss the
 ;; screen flashes violet (drawn by the icon's process, below, over the flash's GAUNTLET_MUSE_FLASH_TIME), the camera shakes at half the strength of a
@@ -701,6 +699,8 @@
       (if carried
         (sound-play "g-eco-pickup" :position #f)
         (sound-play "robo-warning" :position #f)))
+    ;; the babaks wear the charge that goes with the state: the ones awake as they are posted, the ones asleep because they are told now
+    (iterate-process-tree *entity-pool* (lambda ((proc process)) (gauntlet-babak-sync proc) (none)) *null-kernel-context*)
     (if carried (gauntlet-mayhem-relief!) (gauntlet-mayhem-onset!)))
   0)
 

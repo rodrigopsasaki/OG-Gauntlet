@@ -25,11 +25,14 @@
 (define-extern gauntlet-stampede-yakow-hit! (function process-drawable int))
 
 ;; Misty Island's muse (pc/features/gauntlet.gc, "the muse"). Catching her calms the island, losing her (a hit, a bonk, a death) starts the
-;; mayhem. babak.gc (GAME.CGO) and bonelurker.gc (MIS.DGO) ask these what their pace and their charge chance are, both for the process
-;; that asks (the answer is only not the plain one for something Misty placed, while the muse is loose), and muse.gc (MIS.DGO) tells
+;; mayhem. babak.gc (GAME.CGO) and bonelurker.gc (MIS.DGO) ask these what their pace is and whether the mayhem is on for them, both for the process
+;; that asks (the answer is only not the plain one for something Misty placed, while the muse is loose; a babak asks every frame and wears
+;; the charge that goes with the answer: the one it was born with in the calm, the island's in the mayhem), and muse.gc (MIS.DGO) tells
 ;; the mod of a catch. All are defined in gauntlet.gc and only called once a level is running.
 (define-extern gauntlet-misty-pace (function process float))
-(define-extern gauntlet-babak-charge-chance (function process float))
+(define-extern gauntlet-mayhem-for? (function process basic))
+(define-extern gauntlet-babak-sync (function process none)) ;; babak.gc defines it: the muse's change, told to a babak asleep
+(define-extern gauntlet-babak-charged? (function process basic)) ;; babak.gc defines it: whether a babak wears an eco now
 (define-extern gauntlet-muse-caught! (function symbol none))
 
 ;; Where a muse that Jak dropped starts. muse.gc reads it as a muse is born (levels/misty/muse.gc, muse-path-point-nearest): with w at
