@@ -2,13 +2,24 @@
 //
 //   node gauntlet-voices/voices.ts
 //
-// Full-screen list, vim keys, no dependencies. Playback is macOS afplay, one clip at a time.
+// Full-screen list grouped by actor, vim keys, no dependencies. Playback is macOS afplay, one clip at a time.
 // Picks are written to picks.json beside this file on every toggle, so closing the terminal loses nothing.
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ENGLISH_DIR, hasAudio, loadCatalog, RIP_HINT, type Voice } from "./catalog.ts";
+import {
+  actorCounts,
+  actorLabel,
+  actorOf,
+  ENGLISH_DIR,
+  groupByActor,
+  hasAudio,
+  loadCatalog,
+  RIP_HINT,
+  SFX,
+  type Voice,
+} from "./catalog.ts";
 
 const PICKS_FILE = join(import.meta.dirname, "picks.json");
 
@@ -113,6 +124,9 @@ function decodeKeys(chunk: string): string[] {
 
 type Search = { voice: Voice; haystack: string };
 
+/** One drawn line of the list: an actor's header, or a clip (as its index in the view). */
+type Line = { header: { actor: string; shown: number } } | { clip: number };
+
 function main(): void {
   if (!hasAudio()) {
     console.error(`No voice clips at ${ENGLISH_DIR}. ${RIP_HINT}`);
@@ -123,19 +137,24 @@ function main(): void {
     process.exit(1);
   }
 
-  const catalog = loadCatalog();
+  const catalog = groupByActor(loadCatalog());
+  const totals = actorCounts(catalog);
   const searchable: Search[] = catalog.map((voice) => ({
     voice,
-    haystack: `${voice.name} ${voice.scene} ${voice.speaker} ${voice.text}`.toLowerCase(),
+    haystack: `${voice.name} ${voice.scene} ${actorLabel(voice)} ${voice.text}`.toLowerCase(),
   }));
   const picks = loadPicks();
 
+  // `view` holds only clips, so the cursor can never rest on a header; `lines` is the view as drawn.
   let view: Voice[] = catalog;
+  let lines: Line[] = [];
+  let lineOfClip: number[] = [];
   let cursor = 0;
   let top = 0;
   let filter = "";
   let typing = false;
   let pickedOnly = false;
+  let onlyActor: string | undefined;
   let pendingG = false;
   let status = "";
   let playing: { voice: Voice; child: ChildProcess } | undefined;
@@ -143,7 +162,8 @@ function main(): void {
   const columns = () => process.stdout.columns || 80;
   const rows = () => process.stdout.rows || 24;
   const DETAIL_LINES = 3;
-  const listHeight = () => Math.max(1, rows() - 2 - DETAIL_LINES);
+  const FOOTER_LINES = 2;
+  const listHeight = () => Math.max(1, rows() - 1 - DETAIL_LINES - FOOTER_LINES);
   const selected = (): Voice | undefined => view[cursor];
 
   function refilter(keep: Voice | undefined): void {
@@ -151,9 +171,24 @@ function main(): void {
     view = searchable
       .filter(
         ({ voice, haystack }) =>
-          (!pickedOnly || picks.has(voice.name)) && terms.every((term) => haystack.includes(term)),
+          (!pickedOnly || picks.has(voice.name)) &&
+          (onlyActor === undefined || actorOf(voice) === onlyActor) &&
+          terms.every((term) => haystack.includes(term)),
       )
       .map(({ voice }) => voice);
+    lines = [];
+    lineOfClip = [];
+    let group: { actor: string; shown: number } | undefined;
+    for (const [clip, voice] of view.entries()) {
+      const actor = actorOf(voice);
+      if (group === undefined || group.actor !== actor) {
+        group = { actor, shown: 0 };
+        lines.push({ header: group });
+      }
+      group.shown += 1;
+      lineOfClip.push(lines.length);
+      lines.push({ clip });
+    }
     const kept = keep === undefined ? -1 : view.indexOf(keep);
     cursor = kept >= 0 ? kept : 0;
     top = 0;
@@ -197,6 +232,43 @@ function main(): void {
     cursor = Math.max(0, Math.min(view.length - 1, next));
   }
 
+  const actorAt = (at: number): string | undefined => {
+    const voice = view[at];
+    return voice === undefined ? undefined : actorOf(voice);
+  };
+
+  /** Groups are contiguous in the view, so walking back while the actor holds finds a group's first clip. */
+  function firstOfGroup(at: number): number {
+    let first = at;
+    while (first > 0 && actorAt(first - 1) === actorAt(at)) first -= 1;
+    return first;
+  }
+
+  /** After a group jump, put the cursor's group at the top of the list, header included. */
+  function showGroupHeader(): void {
+    top = Math.max(0, (lineOfClip[firstOfGroup(cursor)] ?? 1) - 1);
+  }
+
+  /** `}`: the next actor's first clip; inside the last group, its last clip, as vim does at the end. */
+  function nextGroup(): void {
+    let next = cursor;
+    while (next < view.length && actorAt(next) === actorAt(cursor)) next += 1;
+    moveTo(next);
+    showGroupHeader();
+  }
+
+  /** `{`: the start of this group, or of the previous one when already there, as vim does for paragraphs. */
+  function previousGroup(): void {
+    const start = firstOfGroup(cursor);
+    moveTo(cursor > start ? start : firstOfGroup(start - 1));
+    showGroupHeader();
+  }
+
+  function toggleOnlyActor(voice: Voice | undefined): void {
+    onlyActor = onlyActor === undefined && voice !== undefined ? actorOf(voice) : undefined;
+    refilter(voice);
+  }
+
   // -- drawing ---------------------------------------------------------------
 
   function headerLine(width: number): string {
@@ -208,7 +280,15 @@ function main(): void {
       `${view.length} shown`,
     ];
     if (pickedOnly) parts.push("picked only");
+    if (onlyActor !== undefined) parts.push(`only ${onlyActor}`);
     return `${BOLD}${fit(parts.join("  |  "), width)}${RESET}`;
+  }
+
+  function actorHeaderLine(actor: string, shown: number, width: number): string {
+    const total = totals.get(actor) ?? shown;
+    const count = shown === total ? `${total}` : `${shown} of ${total}`;
+    const title = `== ${actor}  ${count} ${total === 1 ? "clip" : "clips"} `;
+    return `${BOLD}${fit(title.padEnd(width, "="), width)}${RESET}`;
   }
 
   function rowLine(voice: Voice, isCursor: boolean, width: number, nameWidth: number): string {
@@ -218,7 +298,8 @@ function main(): void {
     const playMark = isPlaying ? ">" : " ";
     const name = fit(voice.name, nameWidth);
     const seconds = `${voice.seconds.toFixed(1)}s`.padStart(6);
-    const speaker = fit(voice.speaker, 20);
+    const label = actorLabel(voice);
+    const speaker = fit(label, 20);
     const text = fit(
       voice.text,
       Math.max(0, width - (3 + 1 + 1 + 1 + nameWidth + 1 + 6 + 1 + 20 + 1)),
@@ -227,17 +308,21 @@ function main(): void {
     if (isCursor) return `${REVERSE}${fit(plain, width)}${RESET}`;
     const styledMark = isPicked ? `${GREEN}${mark}${RESET}` : mark;
     const styledPlay = isPlaying ? `${YELLOW}${playMark}${RESET}` : playMark;
-    const body = `${name} ${DIM}${seconds}${RESET} ${CYAN}${speaker}${RESET} ${text}`;
+    const labelStyle = label === SFX ? DIM : CYAN;
+    const body = `${name} ${DIM}${seconds}${RESET} ${labelStyle}${speaker}${RESET} ${text}`;
     return `${styledMark} ${styledPlay} ${body}`;
   }
 
   function detailLines(width: number): string[] {
     const voice = selected();
     if (voice === undefined) return [fit("no clip matches", width), "", ""];
-    const origin = voice.source === "none" ? "no subtitle" : voice.scene || "hint";
+    const subtitled = voice.source === "none" ? "no subtitle" : voice.scene || "hint";
+    const origin =
+      voice.inferredSpeaker === "" ? subtitled : `${subtitled}, speaker inferred from clip name`;
     const flags = `${picks.has(voice.name) ? " PICKED" : ""}${playing?.voice === voice ? " PLAYING" : ""}`;
     const title = `${voice.name}  ${voice.seconds.toFixed(1)}s  ${origin}${flags}`;
-    const body = `${voice.speaker === "" ? "" : `${voice.speaker}: `}${voice.text}`;
+    const who = actorLabel(voice) === SFX ? "" : `${actorLabel(voice)}: `;
+    const body = voice.text === "" ? "" : `${who}${voice.text}`;
     return [
       `${BOLD}${fit(title, width)}${RESET}`,
       fit(body.slice(0, width), width),
@@ -245,30 +330,46 @@ function main(): void {
     ];
   }
 
-  function footerLine(width: number): string {
-    if (typing) return fit(`/${filter}_   Enter applies   Esc clears`, width);
-    if (status !== "") return `${YELLOW}${fit(status, width)}${RESET}`;
-    const keys =
-      "j/k move  C-d/C-u page  gg/G ends  / filter  l/Enter play  s/h stop  space pick  p picked only  q quit";
-    return `${DIM}${fit(keys, width)}${RESET}`;
+  function footerLines(width: number): string[] {
+    const moving = "j/k move  C-d/C-u page  gg/G ends  {/} actor groups  / filter  q quit";
+    const acting = "l/Enter play  s/h stop  space pick  p picked only  a actor only (a/Esc widens)";
+    const first = typing
+      ? fit(`/${filter}_   Enter applies   Esc clears`, width)
+      : status !== ""
+        ? `${YELLOW}${fit(status, width)}${RESET}`
+        : `${DIM}${fit(moving, width)}${RESET}`;
+    return [first, `${DIM}${fit(acting, width)}${RESET}`];
   }
 
   function render(): void {
     const width = columns();
     const height = listHeight();
-    if (cursor < top) top = cursor;
-    if (cursor >= top + height) top = cursor - height + 1;
+    // `top` counts drawn lines; a group's first clip drags its header into view with it.
+    const cursorLine = lineOfClip[cursor] ?? 0;
+    const above = lines[cursorLine - 1];
+    const anchor = above !== undefined && "header" in above ? cursorLine - 1 : cursorLine;
+    if (anchor < top) top = anchor;
+    if (cursorLine >= top + height) top = cursorLine - height + 1;
+    const shown = lines.slice(top, top + height);
     const nameWidth = Math.min(
       12,
-      Math.max(8, ...view.slice(top, top + height).map((voice) => voice.name.length)),
+      Math.max(
+        8,
+        ...shown.map((line) => ("clip" in line ? (view[line.clip]?.name.length ?? 0) : 0)),
+      ),
     );
-    const lines = [headerLine(width)];
+    const screen = [headerLine(width)];
     for (let row = 0; row < height; row += 1) {
-      const voice = view[top + row];
-      lines.push(voice === undefined ? "" : rowLine(voice, top + row === cursor, width, nameWidth));
+      const line = shown[row];
+      const voice = line !== undefined && "clip" in line ? view[line.clip] : undefined;
+      if (line !== undefined && "header" in line) {
+        screen.push(actorHeaderLine(line.header.actor, line.header.shown, width));
+      } else if (line !== undefined && voice !== undefined) {
+        screen.push(rowLine(voice, "clip" in line && line.clip === cursor, width, nameWidth));
+      } else screen.push("");
     }
-    lines.push(...detailLines(width), footerLine(width));
-    process.stdout.write(`${ESC}[H${lines.map((line) => `${line}${ESC}[K`).join("\r\n")}${ESC}[J`);
+    screen.push(...detailLines(width), ...footerLines(width));
+    process.stdout.write(`${ESC}[H${screen.map((row) => `${row}${ESC}[K`).join("\r\n")}${ESC}[J`);
   }
 
   // -- keys ------------------------------------------------------------------
@@ -327,8 +428,19 @@ function main(): void {
       case "/":
         typing = true;
         break;
+      case "{":
+        previousGroup();
+        break;
+      case "}":
+        nextGroup();
+        break;
+      case "a":
+        toggleOnlyActor(voice);
+        break;
       case "escape":
-        if (filter !== "") {
+        // Layered: the actor narrowing goes first, then the filter.
+        if (onlyActor !== undefined) toggleOnlyActor(voice);
+        else if (filter !== "") {
           filter = "";
           refilter(voice);
         }

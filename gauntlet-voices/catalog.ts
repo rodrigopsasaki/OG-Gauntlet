@@ -9,6 +9,9 @@
 //             assistant-village2-introduction-flutflut), shortest scene first.
 // Speakers come from the subtitle meta file: one entry per spoken line, plus "clear" entries that only
 // blank the screen and carry no text.
+// Clips the subtitles do not know (about a third of them) get no speaker from the join. Some are voice
+// the game simply never subtitled (Daxter's quips, Keira's and Samos's lip-flap lines); the rest are sound
+// effects and music stingers. Name families tell the two apart, see familySpeakers.
 
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync } from "node:fs";
 import { join } from "node:path";
@@ -29,6 +32,8 @@ export type Voice = {
   file: string;
   /** Distinct speakers in order of appearance, joined with "+". Empty when unknown. */
   speaker: string;
+  /** Speaker guessed from the clip's name family when no subtitle names one. Empty otherwise. */
+  inferredSpeaker: string;
   /** Every subtitle line joined into one string. Empty when the clip has no subtitle. */
   text: string;
   /** Where the subtitle came from, or "none". */
@@ -144,6 +149,70 @@ function describe(lines: string[], entries: MetaEntry[]): { speaker: string; tex
   return { speaker: distinct.join("+"), text: lines.join(" ") };
 }
 
+/** The clip name up to its first digit: ASSTVB01 is "ASSTVB", BIR-LO2A is "BIR-LO", BIR1 is "BIR". */
+function familyOf(name: string): string {
+  const upper = name.toUpperCase();
+  return /^[A-Z]+(?:-[A-Z]+)?/.exec(upper)?.[0] ?? upper;
+}
+
+function firstSpeaker(speaker: string): string {
+  return speaker.split("+")[0] ?? "";
+}
+
+/**
+ * The game names a clip's family after who talks in it and where: SAGELP and SAGEVB are Samos (41 for 41
+ * subtitled), ASSTLP and ASSTVB are Keira, SKSP is Daxter (254 for 254), BIR-LO is the bird watcher, and
+ * BIL-TA is Billy, whose BIL-TA6A is the "A" take of BIL-TA06. A family whose subtitled clips all open
+ * with one speaker lends that speaker to its unsubtitled siblings. A family with no subtitled clip at all
+ * (GAMCAM, FUCV, ST-WIN) or with mixed speakers lends nothing, and its clips stay sound effects.
+ */
+function familySpeakers(voices: Voice[]): Map<string, string> {
+  const openers = new Map<string, Set<string>>();
+  for (const voice of voices) {
+    if (voice.speaker === "") continue;
+    const family = familyOf(voice.name);
+    openers.set(family, (openers.get(family) ?? new Set()).add(firstSpeaker(voice.speaker)));
+  }
+  const lent = new Map<string, string>();
+  for (const [family, speakers] of openers) {
+    const [only] = speakers;
+    if (only !== undefined && speakers.size === 1) lent.set(family, only);
+  }
+  return lent;
+}
+
+/** What the actor column says for clips nobody speaks in: sound effects, jingles, music stingers. */
+export const SFX = "sfx";
+
+/** The full "a+b" speaker label of a clip, its inferred speaker, or "sfx". */
+export function actorLabel(voice: Voice): string {
+  if (voice.speaker !== "") return voice.speaker;
+  return voice.inferredSpeaker === "" ? SFX : voice.inferredSpeaker;
+}
+
+/** The actor a clip is filed under: the first of its speakers. */
+export function actorOf(voice: Voice): string {
+  return firstSpeaker(actorLabel(voice));
+}
+
+export function actorCounts(voices: Voice[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const voice of voices) counts.set(actorOf(voice), (counts.get(actorOf(voice)) ?? 0) + 1);
+  return counts;
+}
+
+/** Group clips by actor, biggest group first and sfx last; clips keep their order within a group. */
+export function groupByActor(voices: Voice[]): Voice[] {
+  const counts = actorCounts(voices);
+  const size = (actor: string) => (actor === SFX ? -1 : (counts.get(actor) ?? 0));
+  return [...voices].sort((a, b) => {
+    const left = actorOf(a);
+    const right = actorOf(b);
+    if (left === right) return 0;
+    return size(right) - size(left) || (left < right ? -1 : 1);
+  });
+}
+
 function readJson<T>(file: string): T {
   return JSON.parse(readFileSync(file, "utf8")) as T;
 }
@@ -180,6 +249,7 @@ export function loadCatalog(): Voice[] {
         name,
         file,
         ...describe(hintLines, hintMeta ?? []),
+        inferredSpeaker: "",
         source: "hint",
         scene: "",
         seconds,
@@ -193,6 +263,7 @@ export function loadCatalog(): Voice[] {
         name,
         file,
         ...describe(sceneLines, meta.cutscenes[scene] ?? []),
+        inferredSpeaker: "",
         source: "cutscene",
         scene,
         seconds,
@@ -203,11 +274,18 @@ export function loadCatalog(): Voice[] {
       name,
       file,
       speaker: "",
+      inferredSpeaker: "",
       text: "",
       source: "none",
       scene: "",
       seconds,
     });
   }
-  return voices.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  voices.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const speakerOfFamily = familySpeakers(voices);
+  return voices.map((voice) =>
+    voice.speaker === ""
+      ? { ...voice, inferredSpeaker: speakerOfFamily.get(familyOf(voice.name)) ?? "" }
+      : voice,
+  );
 }
