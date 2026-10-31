@@ -1227,7 +1227,7 @@
   (set! (-> self paddle) (fmax 0.0 (fmin 1.0 (-> self paddle))))
   (vector-lerp! (-> self paddle-pos) (-> self paddle-end 0) (the-as vector (&-> self stack 288)) (-> self paddle))
   ;; gauntlet: X lifts the net to the flying fish, and the flying fish is sent now and then (pc/features/gauntlet.gc)
-  (gauntlet-fisher-update! self (-> self paddle-pos) (-> *FISHER-bank* width) (-> *FISHER-bank* net-radius))
+  (gauntlet-fisher-update! self (-> self paddle-pos) (-> *FISHER-bank* width) (-> *FISHER-bank* net-radius) (-> self missed) (-> *FISHER-bank* max-missed))
   0
   (none))
 

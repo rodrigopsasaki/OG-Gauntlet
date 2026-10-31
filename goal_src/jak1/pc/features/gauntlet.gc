@@ -4981,7 +4981,8 @@
 ;; zoomer, flies down the river well above the water. The net cannot reach it from where it is. Holding X lifts the net to its height
 ;; (a quick ease up, and back down on letting go), and then it is caught if the net is lined up under it, for GAUNTLET_FISHER_FLYER_POUNDS
 ;; pounds. The price is that, with the net up, the river's fish cannot be caught: they pass it and count as missed exactly as the game
-;; counts any it fails to catch. The flying fish itself costs nothing to miss.
+;; counts any it fails to catch. Missing the flying fish loses the game, as too many misses do (fisher-fish-die with the misses it takes to
+;; reach the limit); a console flag makes it cost nothing instead.
 ;;
 ;; The river's own fish leap, too: any of them, the eels with them, with a chance the console sets, once on its way down, in an arc that is at the
 ;; net's raised height over the net's line. A fish is caught by the net that is where it is: a lowered one in the water, a raised one in the
@@ -5031,6 +5032,8 @@
    (net        vector :inline) ;; where the net is on the river, at the water (the fisher's paddle-pos), told every frame
    (width      float) ;; the river's lane width and the net's radius, which fisher.gc owns
    (net-radius float)
+   (missed     int) ;; the pounds that got past the net, and how many the game allows before it is lost, which fisher.gc owns, told every frame
+   (max-missed int)
    (rise       float) ;; 0 net down, 1 net up; linear in time, see gauntlet-fisher-ease
    (held       symbol))) ;; whether X is held, for the log
 
@@ -5039,6 +5042,8 @@
 (set! (-> *gauntlet-fisher* next-flyer) 0)
 (set! (-> *gauntlet-fisher* rise) 0.0)
 (set! (-> *gauntlet-fisher* held) #f)
+(set! (-> *gauntlet-fisher* missed) 0)
+(set! (-> *gauntlet-fisher* max-missed) 0)
 
 ;; The racer's exploded model, which is the whole bike in pieces posed together (the game swaps it for the bike when it blows up, see
 ;; *racer-explode-sg* in racer.gc), not the bike's own racer-geo. The disc's racer-ag has every animation of racer-geo stripped: elements 3
@@ -5272,9 +5277,16 @@
            ;; the fish goes into the net; the zoomer is gone
            (if rider (send-event rider 'caught))
            (go gauntlet-flyer-gone)))
-        ;; past the end of the river: missed, which costs nothing
+        ;; past the end of the river: missed, which loses the game the way too many misses do, unless the console says it costs nothing
         ((>= (-> self pos) GAUNTLET_FLYER_END_POS)
-         (format 0 "GAUNTLET FLYER missed~%")
+         (cond
+           (*gauntlet-fisher-flyer-miss-loses*
+            (format 0 "GAUNTLET FLYER missed, game lost~%")
+            ;; the misses it takes to reach the limit: the fisher counts them as it counts any fish that got by, then ends the game
+            (send-event (ppointer->process (-> self parent))
+                        'fisher-fish-die
+                        (max 1 (- (-> *gauntlet-fisher* max-missed) (-> *gauntlet-fisher* missed)))))
+           (else (format 0 "GAUNTLET FLYER missed~%")))
          (gauntlet-flyer-poof! (-> self root trans))
          (go gauntlet-flyer-gone)))
       (none))
@@ -5340,12 +5352,14 @@
   (format 0 "GAUNTLET FLYER fishing game over~%")
   0)
 
-(defun gauntlet-fisher-update! ((fisher process-drawable) (net vector) (width float) (net-radius float))
+(defun gauntlet-fisher-update! ((fisher process-drawable) (net vector) (width float) (net-radius float) (missed int) (max-missed int))
   "One frame of the fishing game: X held lifts the net, letting go lowers it, and a flying fish is sent when one is due."
   (let ((world *gauntlet-fisher*))
     (set! (-> world net quad) (-> net quad))
     (set! (-> world width) width)
     (set! (-> world net-radius) net-radius)
+    (set! (-> world missed) missed)
+    (set! (-> world max-missed) max-missed)
     (let ((held (and *gauntlet-fisher-flyer-enabled* (cpad-hold? 0 x))))
       (when (!= held (-> world held))
         (set! (-> world held) held)
@@ -5455,6 +5469,7 @@
      (,row "fisher-flyer-enabled" flag *gauntlet-fisher-flyer-enabled* GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT 0 0)
      (,row "fisher-flyer-interval" seconds *gauntlet-fisher-flyer-interval* GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT 5.0 120.0)
      (,row "fisher-flyer-pounds" count *gauntlet-fisher-flyer-pounds* GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT 1.0 100.0)
+     (,row "fisher-flyer-miss-loses" flag *gauntlet-fisher-flyer-miss-loses* GAUNTLET_FISHER_FLYER_MISS_LOSES_DEFAULT 0 0)
      (,row "fisher-jump-chance" count *gauntlet-fisher-jump-chance* GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT 0.0 100.0)
      (,row "fisher-flyer-height" meters *gauntlet-fisher-flyer-height* GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT 1.0 8.0)))
 

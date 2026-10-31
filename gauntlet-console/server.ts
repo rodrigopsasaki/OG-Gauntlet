@@ -578,7 +578,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "Fishing",
     "Flying fish",
     "live",
-    "In the Forbidden Jungle's fishing game a big fish riding a zoomer now and then flies down the river, well above the water. Holding X raises the net to its height (it eases up, and back down when X is let go), and the fish is caught if the net is lined up under it. With the net up the river's fish cannot be caught: they pass it and count as missed, as any the game fails to catch does, unless they leapt out of the water to the net's height (see the leap chance below). Missing the flying fish costs nothing. Off is the game's own fishing: no flying fish, no leaping fish, and X does nothing.",
+    "In the Forbidden Jungle's fishing game a big fish riding a zoomer now and then flies down the river, well above the water. Holding X raises the net to its height (it eases up, and back down when X is let go), and the fish is caught if the net is lined up under it. With the net up the river's fish cannot be caught: they pass it and count as missed, as any the game fails to catch does, unless they leapt out of the water to the net's height (see the leap chance below). Missing the flying fish loses the game (see below). Off is the game's own fishing: no flying fish, no leaping fish, and X does nothing.",
   ),
   num(
     "fisher-flyer-interval",
@@ -596,8 +596,15 @@ const SETTINGS: readonly SettingSpec[] = [
     "",
     [1, 100, 1],
     "next catch",
-    "What catching the flying fish adds to the pounds caught. A river fish is worth 1 and a big one 5; the game is won at 200.",
+    "What catching the flying fish adds to the pounds caught. A river fish is worth 1 and a big one 5; the game is won at 200. A big prize with a price: with the flag below on, letting it get away loses the game.",
     true,
+  ),
+  flag(
+    "fisher-flyer-miss-loses",
+    "Fishing",
+    "Missing the flying fish loses",
+    "next flying fish",
+    "When the flying fish gets past the net, the game of fishing is lost on the spot, as if the misses had run out: the fisherman calls it off and says so. Off makes missing it cost nothing.",
   ),
   num(
     "fisher-jump-chance",
