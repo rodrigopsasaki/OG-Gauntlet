@@ -586,6 +586,9 @@
 
 (define-extern pc-set-game-resolution (function int int none))
 
+;; the size the game renders at when fullscreen, so exclusive fullscreen can ask the monitor for the mode nearest to it
+(define-extern pc-set-fullscreen-size (function int int none))
+
 (define-extern pc-set-brightness-contrast (function int int none))
 
 (define-extern pc-set-msaa (function int none))

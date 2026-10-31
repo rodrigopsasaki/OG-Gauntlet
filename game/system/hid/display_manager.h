@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <mutex>
 #include <optional>
 #include <queue>
@@ -46,7 +47,12 @@ struct Resolution {
 /// Manages display related operations and querying
 class DisplayManager {
  private:
-  enum class EEDisplayEventType { SET_WINDOW_SIZE, SET_DISPLAY_MODE, SET_DISPLAY_ID };
+  enum class EEDisplayEventType {
+    SET_WINDOW_SIZE,
+    SET_DISPLAY_MODE,
+    SET_DISPLAY_ID,
+    SET_FULLSCREEN_GAME_SIZE
+  };
   game_settings::DisplaySettings::DisplayMode m_previous_fullscreen_display_mode =
       game_settings::DisplaySettings::DisplayMode::Fullscreen;
   struct EEDisplayEvent {
@@ -94,6 +100,10 @@ class DisplayManager {
                                        const int window_height);
   void toggle_display_mode();
   void enqueue_set_display_id(int display_id);
+  /// The size the game renders at when it is fullscreen (the "game-size" setting). Exclusive
+  /// fullscreen asks the monitor for the real mode closest to it. Called every frame by the
+  /// game, so only a change is queued.
+  void enqueue_set_fullscreen_game_size(int width, int height);
 
   void set_game_size(int width, int height) {
     m_window_game_width = width;
@@ -110,6 +120,15 @@ class DisplayManager {
   std::optional<std::shared_ptr<InputManager>> m_input_manager;
 
   std::mutex event_queue_mtx;
+  // the last fullscreen game size the EE reported (width << 32 | height), to queue only a change
+  std::atomic<u64> m_reported_fullscreen_size{0};
+  // and what the graphics thread works from
+  int m_fullscreen_game_width = 0;
+  int m_fullscreen_game_height = 0;
+  // the monitor mode exclusive fullscreen last asked for, to skip asking again for the same one
+  int m_fullscreen_mode_width = 0;
+  int m_fullscreen_mode_height = 0;
+  float m_fullscreen_mode_refresh = 0;
   std::queue<EEDisplayEvent> ee_event_queue;
 
   int m_window_xpos = 0;
@@ -141,4 +160,7 @@ class DisplayManager {
                         const int window_width,
                         const int window_height);
   void set_display_id(int display_id);
+  bool set_fullscreen_mode();
+  bool choose_fullscreen_mode(SDL_DisplayID display_id, SDL_DisplayMode* chosen);
+  void set_fullscreen_game_size(int width, int height);
 };

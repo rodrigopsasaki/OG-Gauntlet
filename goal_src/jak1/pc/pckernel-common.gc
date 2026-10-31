@@ -121,6 +121,8 @@
                      (or (= 'fullscreen (pc-get-display-mode)) (>= (pc-get-active-display-refresh-rate) (-> obj target-fps)))))
   (when (!= 'fullscreen (pc-get-display-mode))
     (pc-set-frame-rate (-> obj target-fps)))
+  ;; the fullscreen game size is told in every mode, so a switch to fullscreen already knows it
+  (pc-set-fullscreen-size (-> obj width) (-> obj height))
   ;; do game resolution
   (if (= (pc-get-display-mode) 'windowed)
     (pc-set-game-resolution (-> obj framebuffer-scissor-width) (-> obj framebuffer-scissor-height))

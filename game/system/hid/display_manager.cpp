@@ -7,6 +7,8 @@
 
 #include "common/global_profiler/GlobalProfiler.h"
 
+#include "game/graphics/gfx.h"
+
 #include "fmt/format.h"
 
 DisplayManager::DisplayManager(SDL_Window* window) : m_window(window) {
@@ -148,6 +150,9 @@ void DisplayManager::process_ee_events() {
       case EEDisplayEventType::SET_DISPLAY_ID:
         set_display_id(std::get<int>(evt.param1));
         break;
+      case EEDisplayEventType::SET_FULLSCREEN_GAME_SIZE:
+        set_fullscreen_game_size(std::get<int>(evt.param1), std::get<int>(evt.param2));
+        break;
     }
     ee_event_queue.pop();
   }
@@ -254,19 +259,7 @@ void DisplayManager::set_display_mode(game_settings::DisplaySettings::DisplayMod
       }
       break;
     case game_settings::DisplaySettings::DisplayMode::Fullscreen: {
-      if (m_current_display_modes.size() <= get_active_display_index()) {
-        lg::error("Display index out of range, cannot switch to fullscreen");
-        break;
-      }
-      const auto current_display_mode = SDL_GetDesktopDisplayMode(
-          m_current_display_modes.at(get_active_display_index()).sdl_display_id);
-      if (!current_display_mode) {
-        sdl_util::log_error(fmt::format("unable to get current display mode for display index {}",
-                                        get_active_display_index()));
-        break;
-      }
-      if (!SDL_SetWindowFullscreenMode(m_window, current_display_mode)) {
-        sdl_util::log_error(fmt::format("unable to set fullscreen display mode"));
+      if (!set_fullscreen_mode()) {
         break;
       }
       if (!SDL_SetWindowFullscreen(m_window, true)) {
@@ -314,6 +307,135 @@ void DisplayManager::set_display_mode(game_settings::DisplaySettings::DisplayMod
     m_display_settings.display_mode = mode;
     m_display_settings.save_settings();
   }
+}
+
+/// Which monitor mode exclusive fullscreen should ask for. The desktop mode is the fallback, and
+/// it is what fullscreen always used: on a HiDPI Mac that leaves the monitor at its scaled
+/// "looks like" mode, so the compositor and anything capturing the screen keep working at the
+/// panel's full pixel count however small the game renders.
+///
+/// On macOS the choice is instead the real mode closest to the game's size at pixel density 1,
+/// so a 1920x1080 game puts the monitor at 1920x1080. The refresh rate is the highest one the
+/// monitor offers at that size that does not exceed the desktop's and is a whole multiple of the
+/// frame rate the game runs at (60 fps on a 144 Hz desktop gives 120 Hz, two refreshes per frame
+/// where 144 gives two and a bit, which is uneven pacing).
+bool DisplayManager::choose_fullscreen_mode(SDL_DisplayID display_id, SDL_DisplayMode* chosen) {
+  const auto desktop = SDL_GetDesktopDisplayMode(display_id);
+  if (!desktop) {
+    sdl_util::log_error(fmt::format("unable to get the desktop display mode for display id {}",
+                                    display_id));
+    return false;
+  }
+  *chosen = *desktop;
+#ifdef __APPLE__
+  if (m_fullscreen_game_width <= 0 || m_fullscreen_game_height <= 0) {
+    lg::info("[DISPLAY] fullscreen game size not reported yet, using the desktop mode for now");
+    return true;
+  }
+  SDL_DisplayMode size_match;
+  if (!SDL_GetClosestFullscreenDisplayMode(display_id, m_fullscreen_game_width,
+                                           m_fullscreen_game_height, desktop->refresh_rate, false,
+                                           &size_match)) {
+    sdl_util::log_error(fmt::format("no display mode near {}x{}, using the desktop mode",
+                                    m_fullscreen_game_width, m_fullscreen_game_height));
+    return true;
+  }
+  int count = 0;
+  SDL_DisplayMode** modes = SDL_GetFullscreenDisplayModes(display_id, &count);
+  if (!modes) {
+    return true;
+  }
+  const float fps = Gfx::g_global_settings.target_fps > 0 ? Gfx::g_global_settings.target_fps : 60.f;
+  const SDL_DisplayMode* best = nullptr;
+  bool best_is_multiple = false;
+  for (int i = 0; i < count; i++) {
+    const SDL_DisplayMode* mode = modes[i];
+    if (!mode || mode->w != size_match.w || mode->h != size_match.h ||
+        mode->pixel_density > 1.0f) {
+      continue;
+    }
+    if (mode->refresh_rate > desktop->refresh_rate + 0.5f) {
+      continue;
+    }
+    const float ratio = mode->refresh_rate / fps;
+    const bool is_multiple = ratio >= 0.99f && std::fabs(ratio - std::round(ratio)) < 0.01f;
+    const bool better =
+        !best || (is_multiple && !best_is_multiple) ||
+        (is_multiple == best_is_multiple && mode->refresh_rate > best->refresh_rate);
+    if (better) {
+      best = mode;
+      best_is_multiple = is_multiple;
+    }
+  }
+  if (best) {
+    *chosen = *best;
+  } else {
+    *chosen = size_match;
+  }
+  SDL_free(modes);
+#endif
+  return true;
+}
+
+/// Sets the window's fullscreen mode, which is what the monitor is switched to when the window
+/// goes fullscreen. A mode that is not the desktop's is an exclusive one: SDL then does not use
+/// a macOS Space for it, switches the monitor itself when the window enters fullscreen, and puts
+/// the desktop mode back when it leaves (and when the process ends).
+bool DisplayManager::set_fullscreen_mode() {
+  if (m_current_display_modes.size() <= get_active_display_index()) {
+    lg::error("Display index out of range, cannot switch to fullscreen");
+    return false;
+  }
+  const auto display_id = m_current_display_modes.at(get_active_display_index()).sdl_display_id;
+  SDL_DisplayMode mode;
+  if (!choose_fullscreen_mode(display_id, &mode)) {
+    return false;
+  }
+  if (!SDL_SetWindowFullscreenMode(m_window, &mode)) {
+    sdl_util::log_error(fmt::format("unable to set fullscreen display mode"));
+    return false;
+  }
+  m_fullscreen_mode_width = mode.w;
+  m_fullscreen_mode_height = mode.h;
+  m_fullscreen_mode_refresh = mode.refresh_rate;
+  const auto desktop = SDL_GetDesktopDisplayMode(display_id);
+  lg::info("[DISPLAY] fullscreen mode {}x{}@{:.0f}Hz density {} (desktop {}x{}@{:.0f}Hz, game size "
+           "{}x{})",
+           mode.w, mode.h, mode.refresh_rate, mode.pixel_density, desktop ? desktop->w : 0,
+           desktop ? desktop->h : 0, desktop ? desktop->refresh_rate : 0.f,
+           m_fullscreen_game_width, m_fullscreen_game_height);
+  return true;
+}
+
+void DisplayManager::enqueue_set_fullscreen_game_size(int width, int height) {
+  // Called every frame, so the common case (nothing changed) must not touch the queue's mutex.
+  const u64 packed = (static_cast<u64>(static_cast<u32>(width)) << 32) | static_cast<u32>(height);
+  if (m_reported_fullscreen_size.exchange(packed) == packed) {
+    return;
+  }
+  const std::lock_guard<std::mutex> lock(event_queue_mtx);
+  ee_event_queue.push({EEDisplayEventType::SET_FULLSCREEN_GAME_SIZE, width, height});
+}
+
+void DisplayManager::set_fullscreen_game_size(int width, int height) {
+  m_fullscreen_game_width = width;
+  m_fullscreen_game_height = height;
+  // A window that is already fullscreen follows the size, so the monitor is never left at a mode
+  // chosen before the game said what it renders at.
+  if (m_display_settings.display_mode != game_settings::DisplaySettings::DisplayMode::Fullscreen ||
+      !(SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN)) {
+    return;
+  }
+  const auto before_w = m_fullscreen_mode_width;
+  const auto before_h = m_fullscreen_mode_height;
+  const auto before_refresh = m_fullscreen_mode_refresh;
+  SDL_DisplayMode mode;
+  const auto display_id = m_current_display_modes.at(get_active_display_index()).sdl_display_id;
+  if (choose_fullscreen_mode(display_id, &mode) && mode.w == before_w && mode.h == before_h &&
+      mode.refresh_rate == before_refresh) {
+    return;
+  }
+  set_fullscreen_mode();
 }
 
 void DisplayManager::toggle_display_mode() {

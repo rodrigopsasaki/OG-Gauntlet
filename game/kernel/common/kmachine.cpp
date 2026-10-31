@@ -1006,6 +1006,12 @@ void pc_set_game_resolution(int w, int h) {
   Gfx::g_global_settings.game_res_h = h;
 }
 
+void pc_set_fullscreen_size(int w, int h) {
+  if (Display::GetMainDisplay()) {
+    Display::GetMainDisplay()->get_display_manager()->enqueue_set_fullscreen_game_size(w, h);
+  }
+}
+
 void pc_set_letterbox(int w, int h) {
   Gfx::g_global_settings.lbox_w = w;
   Gfx::g_global_settings.lbox_h = h;
@@ -1227,6 +1233,7 @@ void init_common_pc_port_functions(
   make_func_symbol_func("pc-set-game-resolution", (void*)pc_set_game_resolution);
   make_func_symbol_func("pc-set-brightness-contrast", (void*)pc_set_brightness_contrast);
   make_func_symbol_func("pc-set-letterbox", (void*)pc_set_letterbox);
+  make_func_symbol_func("pc-set-fullscreen-size", (void*)pc_set_fullscreen_size);
   make_func_symbol_func("pc-renderer-tree-set-lod", (void*)pc_renderer_tree_set_lod);
   make_func_symbol_func("pc-set-collision-mode", (void*)Gfx::CollisionRendererSetMode);
   make_func_symbol_func("pc-set-collision-mask", (void*)pc_set_collision_mask);
