@@ -5049,7 +5049,19 @@
 ;; How fast it flies is a console setting (*gauntlet-fisher-flyer-speed*, in path positions a second, 3.6 m to a position or so). A river fish crosses at
 ;; 2.6 to 4.1 (fish-vel 1.4 to 2.2 times 1.85). It was 1.1 and is 2.2, which is still slower than any of them, and the catch test (see the zoomer's
 ;; flying state) looks at everywhere the zoomer went in a frame, so no speed the console allows can carry it over the net unseen.
-(defconstant GAUNTLET_FLYER_START_POS 1.0) ;; where a river fish starts on the path (fisher-fish-init-by-other)
+;;
+;; Where it comes from: a river fish starts at position 1 of the path (fisher-fish-init-by-other), about 29 m up the river from the camera
+;; at the river's mouth, and is small, low and dim, so it is a speck that is not seen until it is well on its way. The zoomer is a big
+;; bike in the air and was whole and plain to see the moment it started there, which read as appearing close to the net. So it starts
+;; GAUNTLET_FLYER_START_POS, which is upstream of the river's first point (the path's first segment, carried on backwards), crosses
+;; that stretch at GAUNTLET_FLYER_LEAD_SPEED so the way in does not take longer than it has to, and grows from a speck to its size as it
+;; comes down the river, until GAUNTLET_FLYER_GROW_END_POS: small where it is far, as the fish are. The net and the jump see none of this.
+(defconstant GAUNTLET_FLYER_START_POS -2.0) ;; where it starts: 6.6 m up the river from where a river fish starts, nearly 36 m from the camera
+(defconstant GAUNTLET_FLYER_RIVER_POS 1.0) ;; where a river fish starts on the path, and where the zoomer slows to the console's speed
+(defconstant GAUNTLET_FLYER_LEAD_SPEED 4.0) ;; positions a second until then
+(defconstant GAUNTLET_FLYER_LEAD_UNIT (meters 3.3)) ;; what a position is worth upstream of the path's first point: what the first one is worth on it
+(defconstant GAUNTLET_FLYER_GROW_END_POS 4.5) ;; whole size from here on, about 18 m from the camera
+(defconstant GAUNTLET_FLYER_GROW_MIN 0.03) ;; and never quite nothing, a zero scale is a matrix that cannot be inverted
 (defconstant GAUNTLET_FLYER_END_POS 7.2) ;; and where it is gone (fisher-fish-fall)
 (defconstant GAUNTLET_FLYER_SIZE (meters 1.0)) ;; added to the net's radius for the flying fish, as a river fish adds its own size (1.3 m for the big one): 1.7 m in all, a lane of 6.6 m across
 (defconstant GAUNTLET_FLYER_REACH 0.2) ;; the net is "up" in this fraction of its rise short of the top (0.7 m at the default height) and "down" in the same fraction above the bottom
@@ -5212,6 +5224,12 @@
   (and (> *gauntlet-fisher-flyer-eel-chance* 0)
        (rand-vu-percent? (* 0.01 (the float *gauntlet-fisher-flyer-eel-chance*)))))
 
+(defun gauntlet-flyer-grown ((pos float))
+  "How much of its size the flying fish has at pos on the river: from nearly nothing where it starts to all of it at GAUNTLET_FLYER_GROW_END_POS,
+   slowly at first (the square of how far along), so it is a speck for as long as a river fish is."
+  (let ((along (fmax 0.0 (fmin 1.0 (/ (- pos GAUNTLET_FLYER_START_POS) (- GAUNTLET_FLYER_GROW_END_POS GAUNTLET_FLYER_START_POS))))))
+    (fmax GAUNTLET_FLYER_GROW_MIN (* along along))))
+
 (deftype gauntlet-flyer (process-drawable)
   ((rider  handle) ;; what is on it
    (kind   symbol) ;; 'fish, to be caught, or 'eel, to be dodged
@@ -5249,6 +5267,10 @@
           (zoomer
            (set! (-> self root trans quad) (-> (the-as gauntlet-flyer zoomer) root trans quad))
            (+! (-> self root trans y) GAUNTLET_FLYER_SEAT)
+           (let ((grown (gauntlet-flyer-grown (-> (the-as gauntlet-flyer zoomer) pos))))
+             (if (= (-> self kind) 'eel)
+               (set-vector! (-> self root scale) (* GAUNTLET_FLYER_EEL_SCALE grown) (* GAUNTLET_FLYER_EEL_SCALE grown) (* GAUNTLET_FLYER_EEL_LENGTH grown) 1.0)
+               (set-vector! (-> self root scale) (* GAUNTLET_FLYER_FISH_SCALE grown) (* GAUNTLET_FLYER_FISH_SCALE grown) (* GAUNTLET_FLYER_FISH_SCALE grown) 1.0)))
            (quaternion-copy! (-> self root quat) (-> (the-as gauntlet-flyer zoomer) root quat))
            ;; an eel leaves its puffs behind it as the river's do
            (if (and (= (-> self kind) 'eel) (nonzero? (-> self part))) (spawn (-> self part) (-> self root trans))))
@@ -5314,8 +5336,14 @@
   (let* ((fisher (the-as process-drawable (-> self parent 0)))
          (dir (new 'stack-no-clear 'vector))
          (side (new 'stack-no-clear 'vector)))
-    (eval-path-curve-div! (-> fisher path) (-> self root trans) (-> self pos) 'interp)
+    (eval-path-curve-div! (-> fisher path) (-> self root trans) (fmax 0.0 (-> self pos)) 'interp)
     (path-control-method-12 (-> fisher path) dir (-> self pos))
+    ;; upstream of the path's first point (a negative position the path would hold at that point): carry its first segment on backwards
+    (when (< (-> self pos) 0.0)
+      (vector-normalize! dir 1.0)
+      (vector-float*! dir dir (* (-> self pos) GAUNTLET_FLYER_LEAD_UNIT))
+      (vector+! (-> self root trans) (-> self root trans) dir)
+      (path-control-method-12 (-> fisher path) dir (-> self pos)))
     (let ((turn (+ 16384.0 (vector-y-angle dir))))
       (set! (-> side x) (sin turn))
       (set! (-> side y) 0.0)
@@ -5327,7 +5355,13 @@
           (+ (-> *gauntlet-fisher* net y)
              *gauntlet-fisher-flyer-height*
              (* GAUNTLET_FLYER_BOB (sin (+ (-> self phase) (* (-> self pos) GAUNTLET_FLYER_BOB_PER_POS))))))
-    (quaternion-vector-angle! (-> self root quat) (new 'static 'vector :y 1.0 :w 1.0) (vector-y-angle dir)))
+    (quaternion-vector-angle! (-> self root quat) (new 'static 'vector :y 1.0 :w 1.0) (vector-y-angle dir))
+    (let ((grown (gauntlet-flyer-grown (-> self pos))))
+      (set-vector! (-> self root scale)
+                   (* GAUNTLET_FLYER_ZOOMER_SCALE grown)
+                   (* GAUNTLET_FLYER_ZOOMER_SCALE grown)
+                   (* GAUNTLET_FLYER_ZOOMER_SCALE grown)
+                   1.0)))
   0)
 
 (defun gauntlet-flyer-poof! ((at vector))
@@ -5358,7 +5392,8 @@
     (behavior ()
       (set! (-> self prev-x) (-> self root trans x))
       (set! (-> self prev-z) (-> self root trans z))
-      (+! (-> self pos) (* *gauntlet-fisher-flyer-speed* (seconds-per-frame)))
+      (+! (-> self pos)
+          (* (if (< (-> self pos) GAUNTLET_FLYER_RIVER_POS) GAUNTLET_FLYER_LEAD_SPEED *gauntlet-fisher-flyer-speed*) (seconds-per-frame)))
       (gauntlet-flyer-place)
       (cond
         ;; the net is up and under it: caught. A fish is for the pounds the console says, with the game's own feedback for a big fish
@@ -5439,6 +5474,7 @@
   (set! (-> *gauntlet-fisher* flyer) (process->handle self))
   (set! (-> self rider)
         (ppointer->handle (process-spawn gauntlet-flyer-rider (-> self kind) :init gauntlet-flyer-rider-init-by-other :to (ppointer->process (-> self parent)))))
+  (format 0 "GAUNTLET FLYER starts at position ~F, at ~M, ~M~%" (-> self pos) (-> self root trans x) (-> self root trans z))
   (format 0 "GAUNTLET FLYER spawned, rider ~S, on lane ~F, ~M m up, ~F positions a second~%"
           (if (= (-> self kind) 'eel) "eel" "fish")
           (-> self offset)
