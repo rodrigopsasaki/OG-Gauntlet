@@ -4984,6 +4984,10 @@
 ;; counts any it fails to catch. Missing the flying fish loses the game, as too many misses do (fisher-fish-die with the misses it takes to
 ;; reach the limit); a console flag makes it cost nothing instead.
 ;;
+;; Now and then the thing on the zoomer is an eel instead (the console sets the chance), the same catch-fishc the river's eels are. It is to
+;; be dodged: letting it by costs nothing and does not lose the game, and netting it does what netting a river eel does (fisher-fish-caught
+;; in fisher.gc: the eel's sound and hint, then 'deadly to the fisher, which ends the game as an eel does).
+;;
 ;; The river's own fish leap, too: any of them, the eels with them, with a chance the console sets, once on its way down, in an arc that is at the
 ;; net's raised height over the net's line. A fish is caught by the net that is where it is: a lowered one in the water, a raised one in the
 ;; air. So a leaping fish is a miss for a net that stayed down, and a leaping eel is dodged by keeping the net down.
@@ -5000,7 +5004,9 @@
 ;; puts all its children away) puts them away too. The river is the fisher's path, and a lane across it is where a river fish
 ;; with the same offset would fly: the same two formulas as fisher-fish-move, so a flyer at lane x is over the net when the net is at x.
 
-(defconstant GAUNTLET_FLYER_SPEED 1.1) ;; path positions a second. A river fish crosses at 2.6 to 4.1 (fish-vel 1.4 to 2.2 times 1.85); this is slow enough to see coming and hold X for, about 4 m a second
+;; How fast it flies is a console setting (*gauntlet-fisher-flyer-speed*, in path positions a second, 3.6 m to a position or so). A river fish crosses at
+;; 2.6 to 4.1 (fish-vel 1.4 to 2.2 times 1.85). It was 1.1 and is 2.2, which is still slower than any of them, and the catch test (see the zoomer's
+;; flying state) looks at everywhere the zoomer went in a frame, so no speed the console allows can carry it over the net unseen.
 (defconstant GAUNTLET_FLYER_START_POS 1.0) ;; where a river fish starts on the path (fisher-fish-init-by-other)
 (defconstant GAUNTLET_FLYER_END_POS 7.2) ;; and where it is gone (fisher-fish-fall)
 (defconstant GAUNTLET_FLYER_SIZE (meters 1.0)) ;; added to the net's radius for the flying fish, as a river fish adds its own size (1.3 m for the big one): 1.7 m in all, a lane of 6.6 m across
@@ -5013,6 +5019,8 @@
 (defconstant GAUNTLET_FLYER_LANE_MAX 0.85)
 (defconstant GAUNTLET_FLYER_ZOOMER_SCALE 0.7) ;; the bike, which is a big one, and the fish on it
 (defconstant GAUNTLET_FLYER_FISH_SCALE 0.45)
+(defconstant GAUNTLET_FLYER_EEL_SCALE 1.0) ;; the eel on it, in the same proportion to the river's eel (0.9 wide, 0.7 long) as the fish is to the river's big one
+(defconstant GAUNTLET_FLYER_EEL_LENGTH 0.8)
 (defconstant GAUNTLET_FLYER_SEAT (meters 0.9)) ;; how far above the zoomer's origin the fish sits
 (defconstant GAUNTLET_FLYER_INTERVAL_SPREAD 0.25) ;; the interval is out by up to this fraction either way
 (defconstant GAUNTLET_FLYER_FIRST_SHARE 0.5) ;; and the first flying fish comes after this share of an interval
@@ -5022,6 +5030,7 @@
 (defconstant GAUNTLET_FISHER_JUMP_HALF_LENGTH (meters 6)) ;; the arc runs this far upstream of the net's line and this far downstream of it, 12 m in all
 (defconstant GAUNTLET_FISHER_JUMP_AIR_SHARE 0.5) ;; a fish lifted above this share of the net's rise is in the air and is for a raised net; under it, it is in the water
 (defconstant GAUNTLET_FISHER_JUMP_MAX_PITCH (degrees 55)) ;; the nose is never turned up or down further than this
+(defconstant GAUNTLET_PART_GROUP_BADFISH 177) ;; the eel's puffs, group-bad-fish, which fisher.gc defines and the river's eels leave behind them
 (defconstant GAUNTLET_PART_GROUP_FISHCATCH 179) ;; the catch's burst, group-fish-collect, which fisher.gc defines (the jungle is loaded whenever a flyer is)
 
 ;; What the fishing game keeps between frames. The net's rise is the one number the lift is made of: the eased value of it is what is
@@ -5064,6 +5073,14 @@
   catch-fishb-lod0-jg
   catch-fishb-idle-ja
   ((catch-fishb-lod0-mg (meters 999999)))
+  :bounds (static-spherem 0 0 0 4))
+
+;; the river's eel (*catch-fishc-sg* in fisher.gc, which this is a copy of for the same reason as the fish's)
+(defskelgroup *gauntlet-flyer-eel-sg*
+  catch-fishc
+  catch-fishc-lod0-jg
+  catch-fishc-idle-ja
+  ((catch-fishc-lod0-mg (meters 999999)))
   :bounds (static-spherem 0 0 0 4))
 
 (defun gauntlet-fisher-ease ()
@@ -5148,8 +5165,16 @@
 
 ;; ---- the zoomer
 
+(defun gauntlet-flyer-eel-roll! ()
+  "Whether the flying fish being born is an eel on the zoomer instead of the big fish."
+  (and (> *gauntlet-fisher-flyer-eel-chance* 0)
+       (rand-vu-percent? (* 0.01 (the float *gauntlet-fisher-flyer-eel-chance*)))))
+
 (deftype gauntlet-flyer (process-drawable)
-  ((rider  handle) ;; the fish on it
+  ((rider  handle) ;; what is on it
+   (kind   symbol) ;; 'fish, to be caught, or 'eel, to be dodged
+   (prev-x float) ;; where it was a frame ago on the ground, so the catch can look at the whole way it went
+   (prev-z float)
    (pos    float) ;; along the river, in the fisher's path positions
    (offset float) ;; which lane across it, 0 to 1
    (phase  float)) ;; where in its bob it starts, in rotation units
@@ -5158,7 +5183,7 @@
    gauntlet-flyer-gone))
 
 (deftype gauntlet-flyer-rider (process-drawable)
-  ()
+  ((kind symbol)) ;; 'fish or 'eel, as the zoomer is
   (:states
    gauntlet-flyer-rider-ride
    gauntlet-flyer-rider-netted
@@ -5182,13 +5207,17 @@
           (zoomer
            (set! (-> self root trans quad) (-> (the-as gauntlet-flyer zoomer) root trans quad))
            (+! (-> self root trans y) GAUNTLET_FLYER_SEAT)
-           (quaternion-copy! (-> self root quat) (-> (the-as gauntlet-flyer zoomer) root quat)))
+           (quaternion-copy! (-> self root quat) (-> (the-as gauntlet-flyer zoomer) root quat))
+           ;; an eel leaves its puffs behind it as the river's do
+           (if (and (= (-> self kind) 'eel) (nonzero? (-> self part))) (spawn (-> self part) (-> self root trans))))
           (else (go gauntlet-flyer-rider-gone))))
       (none))
   :code
     (behavior ()
       (ja-channel-push! 1 0)
-      (ja :group! catch-fishb-idle-ja :num! min)
+      (if (= (-> self kind) 'eel)
+        (ja :group! catch-fishc-idle-ja :num! min)
+        (ja :group! catch-fishb-idle-ja :num! min))
       (loop
         (suspend)
         (ja :num! (loop!))))
@@ -5215,12 +5244,19 @@
     (behavior ()
       (deactivate self)))
 
-(defbehavior gauntlet-flyer-rider-init-by-other gauntlet-flyer-rider ()
+(defbehavior gauntlet-flyer-rider-init-by-other gauntlet-flyer-rider ((kind symbol))
   (logclear! (-> self mask) (process-mask actor-pause))
   (set! (-> self root) (new 'process 'trsqv))
-  (set-vector! (-> self root scale) GAUNTLET_FLYER_FISH_SCALE GAUNTLET_FLYER_FISH_SCALE GAUNTLET_FLYER_FISH_SCALE 1.0)
-  (format 0 "GAUNTLET FLYER rider: building the fish's skeleton~%")
-  (initialize-skeleton self *gauntlet-flyer-fish-sg* '())
+  (set! (-> self kind) kind)
+  (format 0 "GAUNTLET FLYER rider: building the ~A's skeleton~%" kind)
+  (cond
+    ((= kind 'eel)
+     (set-vector! (-> self root scale) GAUNTLET_FLYER_EEL_SCALE GAUNTLET_FLYER_EEL_SCALE GAUNTLET_FLYER_EEL_LENGTH 1.0)
+     (set! (-> self part) (create-launch-control (get-part-group GAUNTLET_PART_GROUP_BADFISH) self))
+     (initialize-skeleton self *gauntlet-flyer-eel-sg* '()))
+    (else
+     (set-vector! (-> self root scale) GAUNTLET_FLYER_FISH_SCALE GAUNTLET_FLYER_FISH_SCALE GAUNTLET_FLYER_FISH_SCALE 1.0)
+     (initialize-skeleton self *gauntlet-flyer-fish-sg* '())))
   (format 0 "GAUNTLET FLYER rider: skeleton built~%")
   ;; the dimmer light of the river's fish (fisher-fish-init-by-other)
   (set-vector! (-> self draw color-mult) 0.6 0.6 0.6 1.0)
@@ -5257,27 +5293,61 @@
   (process-spawn part-tracker :init part-tracker-init group-punch-hit -1 #f #f #f at :to *entity-pool*)
   0)
 
+(defun gauntlet-flyer-near-net? ((from-x float) (from-z float) (to-x float) (to-z float))
+  "True when the net, which is on the ground, is within reach of the zoomer anywhere on its way from (from-x, from-z) to (to-x, to-z) this
+   frame, not only where it ended up: the distance from the net to that stretch. A faster zoomer or a slower frame is a longer stretch, never
+   a gap the zoomer can jump over the net through."
+  (let* ((net-x (-> *gauntlet-fisher* net x))
+         (net-z (-> *gauntlet-fisher* net z))
+         (run-x (- to-x from-x))
+         (run-z (- to-z from-z))
+         (run-squared (+ (* run-x run-x) (* run-z run-z)))
+         ;; how far along the stretch the point nearest the net is, 0 at its start and 1 at its end
+         (along (if (< run-squared 0.001)
+                  0.0
+                  (fmax 0.0 (fmin 1.0 (/ (+ (* (- net-x from-x) run-x) (* (- net-z from-z) run-z)) run-squared)))))
+         (off-x (- net-x (+ from-x (* along run-x))))
+         (off-z (- net-z (+ from-z (* along run-z)))))
+    (< (sqrtf (+ (* off-x off-x) (* off-z off-z)))
+       (+ (-> *gauntlet-fisher* net-radius) GAUNTLET_FLYER_SIZE))))
+
 (defstate gauntlet-flyer-fly (gauntlet-flyer)
   :trans
     (behavior ()
-      (+! (-> self pos) (* GAUNTLET_FLYER_SPEED (seconds-per-frame)))
+      (set! (-> self prev-x) (-> self root trans x))
+      (set! (-> self prev-z) (-> self root trans z))
+      (+! (-> self pos) (* *gauntlet-fisher-flyer-speed* (seconds-per-frame)))
       (gauntlet-flyer-place)
       (cond
-        ;; the net is up and under it: caught, for the pounds the console says, with the game's own feedback for a big fish
+        ;; the net is up and under it: caught. A fish is for the pounds the console says, with the game's own feedback for a big fish
         ((and (gauntlet-fisher-net-up?)
-              (< (vector-vector-xz-distance (-> self root trans) (-> *gauntlet-fisher* net))
-                 (+ (-> *gauntlet-fisher* net-radius) GAUNTLET_FLYER_SIZE)))
+              (gauntlet-flyer-near-net? (-> self prev-x) (-> self prev-z) (-> self root trans x) (-> self root trans z)))
          (let ((pounds *gauntlet-fisher-flyer-pounds*)
                (rider (handle->process (-> self rider))))
-           (format 0 "GAUNTLET FLYER caught +~D~%" pounds)
-           (send-event (ppointer->process (-> self parent)) 'fisher-fish-caught pounds)
-           (sound-play "get-big-fish")
-           (process-spawn part-tracker :init part-tracker-init (get-part-group GAUNTLET_PART_GROUP_FISHCATCH) -1 #f #f #f (-> self root trans) :to *entity-pool*)
-           (gauntlet-flyer-poof! (-> self root trans))
-           ;; the fish goes into the net; the zoomer is gone
-           (if rider (send-event rider 'caught))
-           (go gauntlet-flyer-gone)))
-        ;; past the end of the river: missed, which loses the game the way too many misses do, unless the console says it costs nothing
+           (cond
+             ((= (-> self kind) 'eel)
+              ;; an eel is what netting a river eel is (fisher-fish-caught): its sound and hint, then 'deadly, which ends the game
+              (format 0 "GAUNTLET FLYER eel caught~%")
+              (gauntlet-flyer-poof! (-> self root trans))
+              (sound-play "caught-eel")
+              (ambient-hint-spawn "sksp0a42" (-> self root trans) *entity-pool* 'ambient)
+              (send-event (ppointer->process (-> self parent)) 'deadly)
+              (go gauntlet-flyer-gone))
+             (else
+              (format 0 "GAUNTLET FLYER caught +~D~%" pounds)
+              (send-event (ppointer->process (-> self parent)) 'fisher-fish-caught pounds)
+              (sound-play "get-big-fish")
+              (process-spawn part-tracker :init part-tracker-init (get-part-group GAUNTLET_PART_GROUP_FISHCATCH) -1 #f #f #f (-> self root trans) :to *entity-pool*)
+              (gauntlet-flyer-poof! (-> self root trans))
+              ;; the fish goes into the net; the zoomer is gone
+              (if rider (send-event rider 'caught))
+              (go gauntlet-flyer-gone)))))
+        ;; past the end of the river: an eel dodged, which is the right play and costs nothing. A fish missed loses the game the way too
+        ;; many misses do, unless the console says it costs nothing
+        ((and (>= (-> self pos) GAUNTLET_FLYER_END_POS) (= (-> self kind) 'eel))
+         (format 0 "GAUNTLET FLYER eel dodged~%")
+         (gauntlet-flyer-poof! (-> self root trans))
+         (go gauntlet-flyer-gone))
         ((>= (-> self pos) GAUNTLET_FLYER_END_POS)
          (cond
            (*gauntlet-fisher-flyer-miss-loses*
@@ -5311,6 +5381,7 @@
   (set! (-> self entity) #f)
   (set! (-> self root) (new 'process 'trsqv))
   (set! (-> self rider) (the-as handle #f))
+  (set! (-> self kind) (if (gauntlet-flyer-eel-roll!) 'eel 'fish))
   (set! (-> self pos) GAUNTLET_FLYER_START_POS)
   (set! (-> self offset) (rand-vu-float-range GAUNTLET_FLYER_LANE_MIN GAUNTLET_FLYER_LANE_MAX))
   (set! (-> self phase) (rand-vu-float-range 0.0 (degrees 360)))
@@ -5321,10 +5392,16 @@
   (initialize-skeleton self *gauntlet-flyer-zoomer-sg* '())
   (format 0 "GAUNTLET FLYER zoomer: skeleton built~%")
   (gauntlet-flyer-place)
+  (set! (-> self prev-x) (-> self root trans x))
+  (set! (-> self prev-z) (-> self root trans z))
   (set! (-> *gauntlet-fisher* flyer) (process->handle self))
   (set! (-> self rider)
-        (ppointer->handle (process-spawn gauntlet-flyer-rider :init gauntlet-flyer-rider-init-by-other :to (ppointer->process (-> self parent)))))
-  (format 0 "GAUNTLET FLYER spawned on lane ~F, ~M m up~%" (-> self offset) *gauntlet-fisher-flyer-height*)
+        (ppointer->handle (process-spawn gauntlet-flyer-rider (-> self kind) :init gauntlet-flyer-rider-init-by-other :to (ppointer->process (-> self parent)))))
+  (format 0 "GAUNTLET FLYER spawned, rider ~S, on lane ~F, ~M m up, ~F positions a second~%"
+          (if (= (-> self kind) 'eel) "eel" "fish")
+          (-> self offset)
+          *gauntlet-fisher-flyer-height*
+          *gauntlet-fisher-flyer-speed*)
   (go gauntlet-flyer-fly)
   (none))
 
@@ -5469,6 +5546,8 @@
      (,row "fisher-flyer-enabled" flag *gauntlet-fisher-flyer-enabled* GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT 0 0)
      (,row "fisher-flyer-interval" seconds *gauntlet-fisher-flyer-interval* GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT 5.0 120.0)
      (,row "fisher-flyer-pounds" count *gauntlet-fisher-flyer-pounds* GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT 1.0 100.0)
+     (,row "fisher-flyer-speed" ratio *gauntlet-fisher-flyer-speed* GAUNTLET_FISHER_FLYER_SPEED_DEFAULT 0.5 6.0)
+     (,row "fisher-flyer-eel-chance" count *gauntlet-fisher-flyer-eel-chance* GAUNTLET_FISHER_FLYER_EEL_CHANCE_DEFAULT 0.0 100.0)
      (,row "fisher-flyer-miss-loses" flag *gauntlet-fisher-flyer-miss-loses* GAUNTLET_FISHER_FLYER_MISS_LOSES_DEFAULT 0 0)
      (,row "fisher-jump-chance" count *gauntlet-fisher-jump-chance* GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT 0.0 100.0)
      (,row "fisher-flyer-height" meters *gauntlet-fisher-flyer-height* GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT 1.0 8.0)))

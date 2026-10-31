@@ -176,6 +176,8 @@
 (defconstant GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT (seconds 20)) ;; from one flying fish to the next, give or take a quarter; the first comes after half of it
 (defconstant GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT 20) ;; what catching it is worth: a river fish is worth 1, a big one 5; it is also what missing it costs when that loses the game
 (defconstant GAUNTLET_FISHER_FLYER_MISS_LOSES_DEFAULT #t) ;; letting it get away ends the game of fishing as too many misses do
+(defconstant GAUNTLET_FISHER_FLYER_SPEED_DEFAULT 2.2) ;; how fast it flies down the river, in path positions a second: a river fish crosses at 2.6 to 4.1, about 3.6 m to a position
+(defconstant GAUNTLET_FISHER_FLYER_EEL_CHANCE_DEFAULT 33) ;; the chance in a hundred that a flying fish is an eel on the zoomer instead, which is to be dodged
 (defconstant GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT 20) ;; the chance in a hundred that a river fish, the eels too, leaps out of the water once on its way down
 (defconstant GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT (meters 3.5)) ;; how far above the net's usual height the flying fish flies, and how far X lifts the net: clear of Jak's head, in the camera's view
 
@@ -243,5 +245,7 @@
 (define *gauntlet-fisher-flyer-interval* (the int GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT)) ;; read when the next flying fish is scheduled
 (define *gauntlet-fisher-flyer-pounds* GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT) ;; read as the flying fish is caught
 (define *gauntlet-fisher-flyer-miss-loses* GAUNTLET_FISHER_FLYER_MISS_LOSES_DEFAULT) ;; read as the flying fish gets away
+(define *gauntlet-fisher-flyer-speed* GAUNTLET_FISHER_FLYER_SPEED_DEFAULT) ;; live: read every frame the flying fish flies
+(define *gauntlet-fisher-flyer-eel-chance* GAUNTLET_FISHER_FLYER_EEL_CHANCE_DEFAULT) ;; read as each flying fish is born
 (define *gauntlet-fisher-jump-chance* GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT) ;; read as each river fish is born
 (define *gauntlet-fisher-flyer-height* GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT) ;; live: the net rises to it, the flying fish flies at it

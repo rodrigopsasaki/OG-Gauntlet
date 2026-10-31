@@ -578,7 +578,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "Fishing",
     "Flying fish",
     "live",
-    "In the Forbidden Jungle's fishing game a big fish riding a zoomer now and then flies down the river, well above the water. Holding X raises the net to its height (it eases up, and back down when X is let go), and the fish is caught if the net is lined up under it. With the net up the river's fish cannot be caught: they pass it and count as missed, as any the game fails to catch does, unless they leapt out of the water to the net's height (see the leap chance below). Missing the flying fish loses the game (see below). Off is the game's own fishing: no flying fish, no leaping fish, and X does nothing.",
+    "In the Forbidden Jungle's fishing game a big fish riding a zoomer now and then flies down the river, well above the water. Holding X raises the net to its height (it eases up, and back down when X is let go), and the fish is caught if the net is lined up under it. With the net up the river's fish cannot be caught: they pass it and count as missed, as any the game fails to catch does, unless they leapt out of the water to the net's height (see the leap chance below). Missing the flying fish loses the game (see below). Some of the flyers are an eel on the zoomer instead (see the eel chance below), to be dodged. Off is the game's own fishing: no flying fish, no leaping fish, and X does nothing.",
   ),
   num(
     "fisher-flyer-interval",
@@ -588,6 +588,15 @@ const SETTINGS: readonly SettingSpec[] = [
     [5, 120, 1],
     "next flying fish",
     "About how long from one flying fish to the next, out by up to a quarter either way. The first comes after half of it. Only one flies at a time; if one is still in the air when the next is due, it waits a second and asks again.",
+  ),
+  num(
+    "fisher-flyer-speed",
+    "Fishing",
+    "Flying fish speed",
+    "x",
+    [0.5, 6, 0.1],
+    "live",
+    "How fast the flying fish, the eel too, flies down the river, in positions of the river's path a second (a position is about 3.6 m). The river's own fish cross at 2.6 to 4.1. The default, 2.2, is about 8 m a second, and the net takes a quarter of a second to rise. At any speed the catch looks at everywhere the flying fish went since the last frame, so it cannot slip over the net between two.",
   ),
   num(
     "fisher-flyer-pounds",
@@ -604,7 +613,17 @@ const SETTINGS: readonly SettingSpec[] = [
     "Fishing",
     "Missing the flying fish loses",
     "next flying fish",
-    "When the flying fish gets past the net, the game of fishing is lost on the spot, as if the misses had run out: the fisherman calls it off and says so. Off makes missing it cost nothing.",
+    "When the flying fish gets past the net, the game of fishing is lost on the spot, as if the misses had run out: the fisherman calls it off and says so. Off makes missing it cost nothing. Missing a flying eel always costs nothing.",
+  ),
+  num(
+    "fisher-flyer-eel-chance",
+    "Fishing",
+    "Chance a flyer is an eel",
+    "%",
+    [0, 100, 1],
+    "next flying fish",
+    "The chance, in a hundred, that a flying fish is an eel riding the zoomer instead of the big fish. An eel is to be dodged: letting it fly by costs nothing and does not lose the game, whatever the flag above says, and raising the net into it does what catching a river eel does, the fisherman's reaction and the game over. 0 means every flyer is a fish.",
+    true,
   ),
   num(
     "fisher-jump-chance",
