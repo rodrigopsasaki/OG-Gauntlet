@@ -1,5 +1,6 @@
 #include "FrameLimiter.h"
 
+#include <algorithm>
 #include <thread>
 
 #include "common/common_types.h"
@@ -31,8 +32,12 @@ void FrameLimiter::run(double target_fps,
   }
   double remaining_time = target_seconds - m_timer.getSeconds();
 
+  m_oversleep_ms = 0;
   if (do_sleeps && remaining_time > 0.001) {
-    std::this_thread::sleep_for(std::chrono::microseconds(int((remaining_time - 0.001) * 1e6)));
+    const double asked_seconds = remaining_time - 0.001;
+    Timer sleep_timer;
+    std::this_thread::sleep_for(std::chrono::microseconds(int(asked_seconds * 1e6)));
+    m_oversleep_ms = std::max(0.0, sleep_timer.getMs() - asked_seconds * 1e3);
   }
 
   while (remaining_time > 0) {

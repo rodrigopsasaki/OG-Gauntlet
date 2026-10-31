@@ -21,6 +21,7 @@
 
 #include "game/graphics/display.h"
 #include "game/graphics/gfx.h"
+#include "game/graphics/hitch_recorder.h"
 #include "game/graphics/opengl_renderer/OpenGLRenderer.h"
 #include "game/graphics/opengl_renderer/debug_gui.h"
 #include <algorithm>
@@ -505,6 +506,10 @@ void render_game_frame(int game_width,
     got_chain = g_gfx_data->dma_cv.wait_for(lock, std::chrono::milliseconds(40),
                                             [=] { return g_gfx_data->has_data_to_render; });
   }
+  hitch::phase_done(hitch::Phase::WaitForGame);
+  if (!got_chain) {
+    hitch::note_no_chain();
+  }
   // render that chain.
   if (got_chain) {
     g_gfx_data->frame_idx_of_input_data = g_gfx_data->frame_idx;
@@ -569,6 +574,7 @@ void render_game_frame(int game_width,
                                       options);
     }
   }
+  hitch::phase_done(hitch::Phase::Render);
 
   // before vsync, mark the chain as rendered.
   {
@@ -652,6 +658,8 @@ void GLDisplay::render() {
   // framebuffer size
   int fbuf_w, fbuf_h;
   SDL_GetWindowSizeInPixels(m_window, &fbuf_w, &fbuf_h);
+
+  hitch::phase_done(hitch::Phase::Input);
 
   // render game!
   g_gfx_data->debug_gui.master_enable = is_imgui_visible();
@@ -748,6 +756,8 @@ void GLDisplay::render() {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
   }
 
+  hitch::phase_done(hitch::Phase::Gui);
+
   // actual vsync
   g_gfx_data->debug_gui.finish_frame();
   if (Gfx::g_global_settings.framelimiter) {
@@ -755,12 +765,15 @@ void GLDisplay::render() {
     g_gfx_data->frame_limiter.run(
         Gfx::g_global_settings.target_fps, Gfx::g_global_settings.experimental_accurate_lag,
         Gfx::g_global_settings.sleep_in_frame_limiter, g_gfx_data->last_engine_time);
+    hitch::note_limiter_oversleep_ms(g_gfx_data->frame_limiter.last_oversleep_ms());
   }
+  hitch::phase_done(hitch::Phase::Limiter);
 
   {
     auto p = scoped_prof("swap-buffers");
     SDL_GL_SwapWindow(m_window);
   }
+  hitch::phase_done(hitch::Phase::Swap);
 
   // actually wait for vsync
   if (g_gfx_data->debug_gui.should_gl_finish()) {
@@ -808,6 +821,7 @@ void GLDisplay::render() {
       g_gfx_data->sync_cv.notify_all();
     }
   }
+  hitch::frame_end();
 }
 
 /*!
@@ -818,6 +832,7 @@ u32 gl_vsync() {
   if (!g_gfx_data) {
     return 0;
   }
+  hitch::ScopedGameCall timed(hitch::GameCall::VSync);
   std::unique_lock<std::mutex> lock(g_gfx_data->sync_mutex);
   auto init_frame = g_gfx_data->frame_idx_of_input_data;
   g_gfx_data->sync_cv.wait(lock, [=] {
@@ -830,6 +845,7 @@ u32 gl_sync_path() {
   if (!g_gfx_data) {
     return 0;
   }
+  hitch::ScopedGameCall timed(hitch::GameCall::SyncPath);
   std::unique_lock<std::mutex> lock(g_gfx_data->sync_mutex);
   g_gfx_data->last_engine_time = g_gfx_data->engine_timer.getSeconds();
   if (!g_gfx_data->has_data_to_render) {
@@ -845,6 +861,7 @@ u32 gl_sync_path() {
  */
 void gl_send_chain(const void* data, u32 offset) {
   if (g_gfx_data) {
+    hitch::ScopedGameCall timed(hitch::GameCall::SendChain);
     std::unique_lock<std::mutex> lock(g_gfx_data->dma_mutex);
     if (g_gfx_data->has_data_to_render) {
       lg::error(

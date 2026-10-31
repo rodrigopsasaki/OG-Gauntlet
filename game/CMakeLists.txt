@@ -37,6 +37,7 @@ set(RUNTIME_SOURCE
         graphics/display.cpp
         graphics/gfx_test.cpp
         graphics/gfx.cpp
+        graphics/hitch_recorder.cpp
         graphics/jak2_texture_remap.cpp
         graphics/jak3_texture_remap.cpp
         graphics/jakx_texture_remap.cpp

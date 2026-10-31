@@ -163,6 +163,7 @@
           (when (nonzero? (logand (ash 1 bit) (-> arg0 alloc-table (+ v1-0 a3-0))))
             (logxor! (-> arg0 alloc-table (+ v1-0 a3-0)) (ash 1 bit))
             (+! (-> arg0 num-alloc arg1) 1)
+            (+! *sp-alloc-total* 1)
             (let ((v1-9 (-> arg0 cpuinfo-table (+ bit (* (+ v1-0 a3-0) 64))))) (set! (-> v1-9 valid) #t) (return v1-9)))))
       (+! a3-0 1)
       (if (= a3-0 t0-0) (set! a3-0 0))))

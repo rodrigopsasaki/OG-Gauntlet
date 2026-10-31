@@ -5711,6 +5711,23 @@
      (,row "fisher-jump-chance" count *gauntlet-fisher-jump-chance* GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT 0.0 100.0)
      (,row "fisher-flyer-height" meters *gauntlet-fisher-flyer-height* GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT 1.0 8.0)))
 
+;; ---- the console link's own cost
+;; Reading the settings and writing the state are file work on the game's one thread. Each is timed, and told (CONSOLEIO, in
+;; the telemetry log next to the HITCH lines) when it takes long enough to be a frame of its own.
+
+(defconstant GAUNTLET_CONSOLE_IO_SLOW_US 2000) ;; 2 ms
+
+(define *gauntlet-io-began* 0) ;; pc-monotonic-us when the file work in hand began
+(define *gauntlet-telemetry-text* (new 'global 'string 768 "")) ;; a telemetry line is built here and handed over in one go
+
+(defun gauntlet-console-io-told! ((what string))
+  "Tell CONSOLEIO if the file work that began at *gauntlet-io-began* has taken over GAUNTLET_CONSOLE_IO_SLOW_US."
+  (let ((took (- (pc-monotonic-us) *gauntlet-io-began*)))
+    (when (< GAUNTLET_CONSOLE_IO_SLOW_US took)
+      (format (clear *gauntlet-telemetry-text*) "what=~S took_ms=~,,2f" what (/ (the float took) 1000.0))
+      (pc-telemetry-log "CONSOLEIO" *gauntlet-telemetry-text*)))
+  0)
+
 ;; ---- the settings file
 
 (define *gauntlet-settings-revision* 0) ;; the revision in effect: 0 until a file has been applied
@@ -5842,6 +5859,7 @@
   (+! *gauntlet-settings-countdown* -1)
   (when (>= 0 *gauntlet-settings-countdown*)
     (set! *gauntlet-settings-countdown* GAUNTLET_SETTINGS_POLL_FRAMES)
+    (set! *gauntlet-io-began* (pc-monotonic-us))
     (format (clear *pc-temp-string-1*) "~S/Mods/gauntlet-settings.gc" *pc-settings-folder*)
     (cond
       ((not (pc-filepath-exists? *pc-temp-string-1*))
@@ -5871,7 +5889,8 @@
                   (gauntlet-skip-past-close file))
                 (set! *gauntlet-settings-revision* revision)
                 (format 0 "GAUNTLET SETTINGS revision ~D applied, ~D keys~%" revision *gauntlet-settings-applied*))))
-           (file-stream-close file))))))
+           (file-stream-close file)))))
+    (gauntlet-console-io-told! "settings-poll"))
   0)
 
 ;; ---- the state file
@@ -6105,10 +6124,12 @@
     (gauntlet-json-close out)
     (format out "~%")
     (format (clear *pc-temp-string-1*) "~S/Mods/gauntlet-state.json" *pc-settings-folder*)
+    (set! *gauntlet-io-began* (pc-monotonic-us))
     (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'write)))
       (when (file-stream-valid? file)
         (file-stream-write file (-> out data) (the-as uint (length out)))
-        (file-stream-close file))))
+        (file-stream-close file)))
+    (gauntlet-console-io-told! "state-write"))
   0)
 
 (defun gauntlet-state-poll! ()
@@ -6117,6 +6138,65 @@
   (when (>= 0 *gauntlet-state-countdown*)
     (set! *gauntlet-state-countdown* GAUNTLET_STATE_POLL_FRAMES)
     (gauntlet-state-write!))
+  0)
+
+;; ---- what the game was doing when a frame was late
+;; The C++ side times every frame and writes a HITCH line for the ones that ran long (game/graphics/hitch_recorder.h). This is
+;; the game's half: once a second, if that second held a hitch, and every GAUNTLET_CONTEXT_IDLE_US otherwise, a GAMECTX line
+;; says how busy the world was (live processes, live particles), what the particle queue and the loader did since the last
+;; line, and which levels were loaded or loading. Deltas are since the last GAMECTX line.
+
+(defconstant GAUNTLET_CONTEXT_CHECK_US 1000000) ;; how often the clock is looked at
+(defconstant GAUNTLET_CONTEXT_IDLE_US 10000000) ;; the longest between two GAMECTX lines
+
+(define *gauntlet-context-checked* 0) ;; pc-monotonic-us at the last look
+(define *gauntlet-context-logged* 0) ;; and at the last GAMECTX line
+(define *gauntlet-context-hitches-seen* 0) ;; pc-hitch-count at the last look
+(define *gauntlet-context-particles* 0) ;; *sp-alloc-total*, *sp-queue-full-total* and *loader-stall-total* at the last line
+(define *gauntlet-context-queue-full* 0)
+(define *gauntlet-context-stalls* 0)
+
+(defun gauntlet-context-levels ((out string))
+  "Append the levels that are not inactive, as name=status."
+  (dotimes (i 2)
+    (let ((lev (-> *level* level i)))
+      (when (and (!= (-> lev status) 'inactive) (!= (-> lev name) 'none))
+        (format out " ~A=~A" (-> lev name) (-> lev status)))))
+  0)
+
+(defun gauntlet-context-write! ((hitches int))
+  "One GAMECTX line; hitches is how many HITCH lines the C++ side wrote since the last look."
+  (let ((out (clear *gauntlet-telemetry-text*))
+        (loading (-> *level* loading-level)))
+    (format out "frame=~D hitches_since_last_look=~D procs=~D particles_live_2d=~D/1920 particles_live_hud=~D particles_live_3d=~D"
+            *gauntlet-frame* hitches (process-count *active-pool*)
+            (-> *sp-particle-system-2d* num-alloc 0) (-> *sp-particle-system-2d* num-alloc 1) (-> *sp-particle-system-3d* num-alloc 0))
+    (format out " particles_launched=~D particle_queue_full=~D loader_stalls=~D"
+            (- *sp-alloc-total* *gauntlet-context-particles*)
+            (- *sp-queue-full-total* *gauntlet-context-queue-full*)
+            (- *loader-stall-total* *gauntlet-context-stalls*))
+    (format out " level_loading=~A spooling=~A jak_in=~A levels:"
+            (if (and loading (!= loading (-> *level* level-default))) (-> loading name) 'none)
+            (if (handle->process (-> *art-control* spool-lock)) 'yes 'no)
+            (gauntlet-level-name))
+    (gauntlet-context-levels out)
+    (pc-telemetry-log "GAMECTX" out))
+  (set! *gauntlet-context-particles* *sp-alloc-total*)
+  (set! *gauntlet-context-queue-full* *sp-queue-full-total*)
+  (set! *gauntlet-context-stalls* *loader-stall-total*)
+  0)
+
+(defun gauntlet-context-poll! ()
+  "Per-frame hook: looks at the clock, and about once a second decides whether a GAMECTX line is due."
+  (let ((now (pc-monotonic-us)))
+    (when (<= GAUNTLET_CONTEXT_CHECK_US (- now *gauntlet-context-checked*))
+      (set! *gauntlet-context-checked* now)
+      (let* ((hitches (pc-hitch-count))
+             (new-hitches (- hitches *gauntlet-context-hitches-seen*)))
+        (set! *gauntlet-context-hitches-seen* hitches)
+        (when (or (< 0 new-hitches) (<= GAUNTLET_CONTEXT_IDLE_US (- now *gauntlet-context-logged*)))
+          (set! *gauntlet-context-logged* now)
+          (gauntlet-context-write! new-hitches)))))
   0)
 
 ;; ------------------------------------------------------------------ the poll --
@@ -6161,6 +6241,7 @@
   (when (>= 0 *gauntlet-drop-countdown*)
     (set! *gauntlet-drop-countdown* GAUNTLET_DROP_POLL_FRAMES)
     (format (clear *pc-temp-string-1*) "~S/Mods/gauntlet-drop-request.txt" *pc-settings-folder*)
+    (set! *gauntlet-io-began* (pc-monotonic-us))
     (when (pc-filepath-exists? *pc-temp-string-1*)
       (let ((file (new 'stack 'file-stream *pc-temp-string-1* 'read)))
         (when (file-stream-valid? file)
@@ -6181,6 +6262,8 @@
               (file-stream-read-word file)
               (gauntlet-drop! *pc-temp-string*)))
           (file-stream-close file))))
+    (gauntlet-console-io-told! "drop-request-poll")
     (set! *gauntlet-drop-primed* #t))
   (gauntlet-state-poll!)
+  (gauntlet-context-poll!)
   (none))

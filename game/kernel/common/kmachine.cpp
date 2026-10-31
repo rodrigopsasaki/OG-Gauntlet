@@ -14,6 +14,7 @@
 #include "game/external/discord.h"
 #include "game/graphics/display.h"
 #include "game/graphics/gfx.h"
+#include "game/graphics/hitch_recorder.h"
 #include "game/graphics/screenshot.h"
 #include "game/kernel/common/Ptr.h"
 #include "game/kernel/common/kernel_types.h"
@@ -1084,6 +1085,18 @@ u64 pc_mkdir_filepath(u32 filepath) {
   return bool_to_symbol(file_util::create_dir_if_needed_for_file(filepath_str));
 }
 
+u64 pc_hitch_count() {
+  return hitch::hitch_count();
+}
+
+u64 pc_monotonic_us() {
+  return hitch::monotonic_us();
+}
+
+void pc_telemetry_log(u32 tag, u32 body) {
+  hitch::emit(Ptr<String>(tag).c()->data(), Ptr<String>(body).c()->data());
+}
+
 void pc_prof(u32 name, ProfNode::Kind kind) {
   prof().event(Ptr<String>(name).c()->data(), kind);
 }
@@ -1238,6 +1251,11 @@ void init_common_pc_port_functions(
 
   // profiler
   make_func_symbol_func("pc-prof", (void*)pc_prof);
+
+  // hitch telemetry: the GOAL side's half of a HITCH line (see game/graphics/hitch_recorder.h)
+  make_func_symbol_func("pc-hitch-count", (void*)pc_hitch_count);
+  make_func_symbol_func("pc-monotonic-us", (void*)pc_monotonic_us);
+  make_func_symbol_func("pc-telemetry-log", (void*)pc_telemetry_log);
 
   // RNG
   make_func_symbol_func("pc-rand", (void*)pc_rand);

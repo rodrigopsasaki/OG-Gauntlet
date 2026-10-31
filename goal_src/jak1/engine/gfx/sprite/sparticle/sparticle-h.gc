@@ -11,6 +11,10 @@
 
 (define *sp-60-hz* #t)
 
+;; hitch telemetry (gauntlet.gc's GAMECTX line): particles allocated, and launches dropped because the queue was full, since boot
+(define *sp-alloc-total* 0)
+(define *sp-queue-full-total* 0)
+
 (defenum sp-cpuinfo-flag
   :bitfield #t
   :type uint32

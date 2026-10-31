@@ -396,6 +396,9 @@
 ;; (some processes may want to wait for the stream to be preloaded, which won't happen with this disabled)
 (define *preload-spool-anims* #t)
 
+;; hitch telemetry (gauntlet.gc's GAMECTX line): frames a spooled animation spent stalled on the loader, since boot
+(define *loader-stall-total* 0)
+
 (defmethod file-status ((this external-art-control) (name string) (part int))
   "Get the status of a file in this art control. #f = file not found"
   (dotimes (i 2)
@@ -650,6 +653,7 @@
             (arg1 (when (!= (ja-group) arg1) (ja-channel-push! 1 (seconds 0.05)) (ja :group! arg1 :num! min)))
             (else (ja-channel-set! 0)))
           (while (or (handle->process (-> *art-control* spool-lock)) (!= *master-mode* 'game))
+            (+! *loader-stall-total* 1)
             (format #t "WARNING: ---------------------> loader stall on lock~%")
             (if (arg3 self) (goto cfg-88))
             (spool-push *art-control* (-> arg0 name) spool-part self -9.0)
@@ -668,6 +672,7 @@
             (while (!= (file-status *art-control* (-> arg0 name) spool-part) 'active)
               (if (arg3 self) (goto cfg-88))
               (spool-push *art-control* (-> arg0 name) spool-part self -20.0)
+              (+! *loader-stall-total* 1)
               (format #t "WARNING: ---------------------> loader stall on art ~S ~D~%" (-> arg0 name) spool-part)
               (suspend)
               (if arg1 (ja :num! (loop!)))))

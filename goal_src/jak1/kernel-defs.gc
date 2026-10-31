@@ -609,6 +609,12 @@
 
 (define-extern pc-prof (function string pc-prof-event none))
 
+;; hitch telemetry (game/graphics/hitch_recorder.h): hitches logged so far, a monotonic clock in microseconds, and one
+;; line of the telemetry log (tag, body) stamped with the wall clock
+(define-extern pc-hitch-count (function int))
+(define-extern pc-monotonic-us (function int))
+(define-extern pc-telemetry-log (function string string none))
+
 (defmacro get-user ()
   `(quote ,*user*))
 

@@ -232,6 +232,7 @@
     ;; og:preserve-this constant
     ;; make sure we have room in the queue
     (when (= (-> v1-0 in-use) SPARTICLE_QUEUE_SIZE)
+      (+! *sp-queue-full-total* 1)
       (format 0 "ERROR: sp-launch-particles called during processing, and queue is full~%")
       (return 0))
     ;; make a new entry in the queue

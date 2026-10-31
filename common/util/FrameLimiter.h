@@ -9,8 +9,12 @@ class FrameLimiter {
 
   void run(double target_fps, bool experimental_accurate_lag, bool do_sleeps, double engine_time);
 
+  /// How much longer than asked the last run's sleep took: the OS waking the thread late.
+  double last_oversleep_ms() const { return m_oversleep_ms; }
+
  private:
   double round_to_nearest_60fps(double current);
 
   Timer m_timer;
+  double m_oversleep_ms = 0;
 };
