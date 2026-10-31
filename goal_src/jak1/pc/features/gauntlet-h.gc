@@ -37,13 +37,23 @@
 
 ;; The Forbidden Jungle's fishing game (levels/jungle/fisher.gc, in JUN.DGO, after this file and after gauntlet.gc) asks these. Holding X
 ;; raises the net to the height of a fish on a zoomer that now and then flies down the river (pc/features/gauntlet.gc, "the flying fish");
-;; with the net up the river's fish cannot be caught. begin and end bracket one game of it; update runs every frame of it with the fisher,
-;; the net's place on the river (at the water, where the fish are caught), the river's lane width and the net's radius, which fisher.gc owns.
+;; with the net up the river's fish cannot be caught, except the ones that leap out of the water to the net's height. begin and end bracket
+;; one game of it; update runs every frame of it with the fisher, the net's place on the river (at the water, where the fish are caught), the
+;; river's lane width and the net's radius, which fisher.gc owns.
 (define-extern gauntlet-fisher-begin! (function int))
 (define-extern gauntlet-fisher-end! (function int))
 (define-extern gauntlet-fisher-update! (function process-drawable vector float float none))
 ;; True while the net is down far enough to catch the river's fish.
 (define-extern gauntlet-fisher-net-low? (function symbol))
+;; True when the net is where a river fish lifted this far (game units) off its swimming line can be caught: a lowered net for a fish in the
+;; water, a raised one for a fish in the air.
+(define-extern gauntlet-fisher-net-catches? (function float symbol))
+;; Whether a river fish that is being born will leap once on its way down the river.
+(define-extern gauntlet-fisher-jump-roll! (function symbol))
+;; How far a leaping fish at trans, swimming along dir, is above its swimming line (game units; 0 when it is not in its leap), and how far
+;; its nose is turned up (rotation units, negative on the way down).
+(define-extern gauntlet-fisher-jump-lift (function vector vector float))
+(define-extern gauntlet-fisher-jump-pitch (function vector vector float))
 ;; The net's root joint: where cspace<-cspace+quaternion! puts it (Jak's right hand), lifted by the net's rise. target-fishing uses it in place of that function.
 (define-extern gauntlet-fisher-net-cspace! (function cspace cspace quaternion matrix))
 
@@ -165,6 +175,7 @@
 (defconstant GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT #t) ;; the flying fish comes, and X raises the net; off is the game's own fishing
 (defconstant GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT (seconds 20)) ;; from one flying fish to the next, give or take a quarter; the first comes after half of it
 (defconstant GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT 10) ;; what catching it is worth: a river fish is worth 1, a big one 5
+(defconstant GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT 20) ;; the chance in a hundred that a river fish, the eels too, leaps out of the water once on its way down
 (defconstant GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT (meters 3.5)) ;; how far above the net's usual height the flying fish flies, and how far X lifts the net: clear of Jak's head, in the camera's view
 
 ;; Times are in ticks (300 a second), lengths and speeds in game units, the spread in rotation units, a chance or a
@@ -230,4 +241,5 @@
 (define *gauntlet-fisher-flyer-enabled* GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT) ;; live: read every frame of the fishing game
 (define *gauntlet-fisher-flyer-interval* (the int GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT)) ;; read when the next flying fish is scheduled
 (define *gauntlet-fisher-flyer-pounds* GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT) ;; read as the flying fish is caught
+(define *gauntlet-fisher-jump-chance* GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT) ;; read as each river fish is born
 (define *gauntlet-fisher-flyer-height* GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT) ;; live: the net rises to it, the flying fish flies at it

@@ -578,7 +578,7 @@ const SETTINGS: readonly SettingSpec[] = [
     "Fishing",
     "Flying fish",
     "live",
-    "In the Forbidden Jungle's fishing game a big fish riding a zoomer now and then flies down the river, well above the water. Holding X raises the net to its height (it eases up, and back down when X is let go), and the fish is caught if the net is lined up under it. With the net up the river's fish cannot be caught: they pass it and count as missed, as any the game fails to catch does. Missing the flying fish costs nothing. Off is the game's own fishing: no flying fish, and X does nothing.",
+    "In the Forbidden Jungle's fishing game a big fish riding a zoomer now and then flies down the river, well above the water. Holding X raises the net to its height (it eases up, and back down when X is let go), and the fish is caught if the net is lined up under it. With the net up the river's fish cannot be caught: they pass it and count as missed, as any the game fails to catch does, unless they leapt out of the water to the net's height (see the leap chance below). Missing the flying fish costs nothing. Off is the game's own fishing: no flying fish, no leaping fish, and X does nothing.",
   ),
   num(
     "fisher-flyer-interval",
@@ -597,6 +597,16 @@ const SETTINGS: readonly SettingSpec[] = [
     [1, 100, 1],
     "next catch",
     "What catching the flying fish adds to the pounds caught. A river fish is worth 1 and a big one 5; the game is won at 200.",
+    true,
+  ),
+  num(
+    "fisher-jump-chance",
+    "Fishing",
+    "Chance a river fish leaps",
+    "%",
+    [0, 100, 1],
+    "next river fish",
+    "The chance, in a hundred, that each fish coming down the river, the eels too, leaps out of the water once, in an arc that is at the flying height as it crosses the net. A fish is caught by the net that is where it is: a lowered net catches one in the water, a raised net one in the air. A leaping fish that passes a lowered net is missed like any other; a leaping eel is dodged by keeping the net down, and raising the net into it catches it, with an eel's usual price. 0 means no fish leaps. Needs the flying fish on, since the net only rises with it.",
     true,
   ),
   num(

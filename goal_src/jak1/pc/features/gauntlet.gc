@@ -4983,6 +4983,10 @@
 ;; pounds. The price is that, with the net up, the river's fish cannot be caught: they pass it and count as missed exactly as the game
 ;; counts any it fails to catch. The flying fish itself costs nothing to miss.
 ;;
+;; The river's own fish leap, too: any of them, the eels with them, with a chance the console sets, once on its way down, in an arc that is at the
+;; net's raised height over the net's line. A fish is caught by the net that is where it is: a lowered one in the water, a raised one in the
+;; air. So a leaping fish is a miss for a net that stayed down, and a leaping eel is dodged by keeping the net down.
+;;
 ;; fisher.gc owns the river, the net and the score, and calls in here (gauntlet-fisher-*, declared in gauntlet-h.gc): begin and end
 ;; around a game, update every frame of it, and net-low? from each river fish's catch test. This file owns everything new: the lift,
 ;; the schedule and the two processes. Both art groups are not this file's: catch-fishb ships in JUN.DGO and is looked up through
@@ -5012,6 +5016,11 @@
 (defconstant GAUNTLET_FLYER_INTERVAL_SPREAD 0.25) ;; the interval is out by up to this fraction either way
 (defconstant GAUNTLET_FLYER_FIRST_SHARE 0.5) ;; and the first flying fish comes after this share of an interval
 (defconstant GAUNTLET_FLYER_BUSY_RETRY (seconds 1)) ;; when one is due and the last is still flying, ask again after this long
+;; A river fish that leaps (fisher-fish, fisher.gc) goes up and down in one arc along the river, centered on the net's line, so it is at its highest as
+;; it crosses the net.
+(defconstant GAUNTLET_FISHER_JUMP_HALF_LENGTH (meters 6)) ;; the arc runs this far upstream of the net's line and this far downstream of it, 12 m in all
+(defconstant GAUNTLET_FISHER_JUMP_AIR_SHARE 0.5) ;; a fish lifted above this share of the net's rise is in the air and is for a raised net; under it, it is in the water
+(defconstant GAUNTLET_FISHER_JUMP_MAX_PITCH (degrees 55)) ;; the nose is never turned up or down further than this
 (defconstant GAUNTLET_PART_GROUP_FISHCATCH 179) ;; the catch's burst, group-fish-collect, which fisher.gc defines (the jungle is loaded whenever a flyer is)
 
 ;; What the fishing game keeps between frames. The net's rise is the one number the lift is made of: the eased value of it is what is
@@ -5068,6 +5077,50 @@
 (defun gauntlet-fisher-net-up? ()
   "True while the net is up far enough to catch the flying fish."
   (>= (gauntlet-fisher-ease) (- 1.0 GAUNTLET_FLYER_REACH)))
+
+(defun gauntlet-fisher-net-catches? ((lift float))
+  "True when the net is where a river fish lifted lift game units off its swimming line can be caught: a fish in the water is for a
+   lowered net and a fish in the air, one that leapt above the share of the net's rise that is GAUNTLET_FISHER_JUMP_AIR_SHARE, for a
+   raised one. Between the two the net catches nothing, which is what keeps tapping X from catching both."
+  (if (< lift (* GAUNTLET_FISHER_JUMP_AIR_SHARE *gauntlet-fisher-flyer-height*))
+    (gauntlet-fisher-net-low?)
+    (gauntlet-fisher-net-up?)))
+
+(defun gauntlet-fisher-jump-roll! ()
+  "Whether a river fish being born will leap once on its way down. Never when the net cannot be raised to it (no flying fish)."
+  (and *gauntlet-fisher-flyer-enabled*
+       (> *gauntlet-fisher-jump-chance* 0)
+       (rand-vu-percent? (* 0.01 (the float *gauntlet-fisher-jump-chance*)))))
+
+(defun gauntlet-fisher-jump-along ((trans vector) (dir vector))
+  "How far upstream of the net's line a fish at trans, swimming along dir (which points down the river), is: positive before it
+   reaches the line, 0 on it, negative after. A very large number when dir has no direction."
+  (let ((run (vector-xz-length dir)))
+    (if (< run 0.001)
+      4096000.0
+      (/ (+ (* (- (-> *gauntlet-fisher* net x) (-> trans x)) (-> dir x))
+            (* (- (-> *gauntlet-fisher* net z) (-> trans z)) (-> dir z)))
+         run))))
+
+(defun gauntlet-fisher-jump-lift ((trans vector) (dir vector))
+  "How far above its swimming line a leaping fish at trans, swimming along dir, is: a parabola along the river that is the height of the
+   raised net over the net's line and 0 GAUNTLET_FISHER_JUMP_HALF_LENGTH either side of it, so the fish is in the air, at the net's
+   height, as it crosses the net."
+  (let ((ratio (/ (gauntlet-fisher-jump-along trans dir) GAUNTLET_FISHER_JUMP_HALF_LENGTH)))
+    (if (< (fabs ratio) 1.0)
+      (* *gauntlet-fisher-flyer-height* (- 1.0 (* ratio ratio)))
+      0.0)))
+
+(defun gauntlet-fisher-jump-pitch ((trans vector) (dir vector))
+  "How far a leaping fish's nose is turned up, in rotation units: the slope of the arc, so up on the way to the net's line and down on the
+   way from it. 0 outside the arc."
+  (let ((along (gauntlet-fisher-jump-along trans dir)))
+    (if (< (fabs along) GAUNTLET_FISHER_JUMP_HALF_LENGTH)
+      (fmax (- GAUNTLET_FISHER_JUMP_MAX_PITCH)
+            (fmin GAUNTLET_FISHER_JUMP_MAX_PITCH
+                  (atan (/ (* 2.0 *gauntlet-fisher-flyer-height* along) (* GAUNTLET_FISHER_JUMP_HALF_LENGTH GAUNTLET_FISHER_JUMP_HALF_LENGTH))
+                        1.0)))
+      0.0)))
 
 (defun gauntlet-fisher-net-cspace! ((dest cspace) (hand cspace) (quat quaternion))
   "The fish net's root joint. The game puts it in Jak's right hand, turned as he is (cspace<-cspace+quaternion!); this does that and
@@ -5402,6 +5455,7 @@
      (,row "fisher-flyer-enabled" flag *gauntlet-fisher-flyer-enabled* GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT 0 0)
      (,row "fisher-flyer-interval" seconds *gauntlet-fisher-flyer-interval* GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT 5.0 120.0)
      (,row "fisher-flyer-pounds" count *gauntlet-fisher-flyer-pounds* GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT 1.0 100.0)
+     (,row "fisher-jump-chance" count *gauntlet-fisher-jump-chance* GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT 0.0 100.0)
      (,row "fisher-flyer-height" meters *gauntlet-fisher-flyer-height* GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT 1.0 8.0)))
 
 ;; ---- the settings file
