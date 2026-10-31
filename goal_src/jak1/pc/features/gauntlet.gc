@@ -5151,7 +5151,9 @@
   (logclear! (-> self mask) (process-mask actor-pause))
   (set! (-> self root) (new 'process 'trsqv))
   (set-vector! (-> self root scale) GAUNTLET_FLYER_FISH_SCALE GAUNTLET_FLYER_FISH_SCALE GAUNTLET_FLYER_FISH_SCALE 1.0)
+  (format 0 "GAUNTLET FLYER rider: building the fish's skeleton~%")
   (initialize-skeleton self *gauntlet-flyer-fish-sg* '())
+  (format 0 "GAUNTLET FLYER rider: skeleton built~%")
   ;; the dimmer light of the river's fish (fisher-fish-init-by-other)
   (set-vector! (-> self draw color-mult) 0.6 0.6 0.6 1.0)
   (set-vector! (-> self draw color-emissive) 0.6 0.6 0.6 0.0)
@@ -5236,7 +5238,11 @@
   (set! (-> self offset) (rand-vu-float-range GAUNTLET_FLYER_LANE_MIN GAUNTLET_FLYER_LANE_MAX))
   (set! (-> self phase) (rand-vu-float-range 0.0 (degrees 360)))
   (set-vector! (-> self root scale) GAUNTLET_FLYER_ZOOMER_SCALE GAUNTLET_FLYER_ZOOMER_SCALE GAUNTLET_FLYER_ZOOMER_SCALE 1.0)
+  ;; initialize-skeleton does not return when the art is wrong: it goes to process-drawable-art-error, which says nothing
+  ;; unless the debug display is on, so a line on each side of it is how a death inside it is told from one after it
+  (format 0 "GAUNTLET FLYER zoomer: building its skeleton~%")
   (initialize-skeleton self *gauntlet-flyer-zoomer-sg* '())
+  (format 0 "GAUNTLET FLYER zoomer: skeleton built~%")
   (gauntlet-flyer-place)
   (set! (-> *gauntlet-fisher* flyer) (process->handle self))
   (set! (-> self rider)
@@ -5254,7 +5260,11 @@
     (set! (-> world rise) 0.0)
     (set! (-> world held) #f)
     (set! (-> world next-flyer) (+ (current-time) (gauntlet-flyer-pause-time GAUNTLET_FLYER_FIRST_SHARE)))
-    (format 0 "GAUNTLET FLYER fishing game started, enabled ~A~%" *gauntlet-fisher-flyer-enabled*))
+    (format 0 "GAUNTLET FLYER fishing game started, enabled ~A, now ~D, first one due at ~D, interval ~D~%"
+            *gauntlet-fisher-flyer-enabled*
+            (current-time)
+            (-> world next-flyer)
+            *gauntlet-fisher-flyer-interval*))
   0)
 
 (defun gauntlet-fisher-end! ()
@@ -5262,6 +5272,7 @@
   (set! (-> *gauntlet-fisher* flyer) (the-as handle #f))
   (set! (-> *gauntlet-fisher* rise) 0.0)
   (set! (-> *gauntlet-fisher* held) #f)
+  (format 0 "GAUNTLET FLYER fishing game over~%")
   0)
 
 (defun gauntlet-fisher-update! ((fisher process-drawable) (net vector) (width float) (net-radius float))
@@ -5278,14 +5289,21 @@
             (seek (-> world rise) (if held 1.0 0.0)
                   (* (seconds-per-frame) (if held GAUNTLET_FLYER_RISE_PER_SECOND GAUNTLET_FLYER_FALL_PER_SECOND)))))
     (when (and *gauntlet-fisher-flyer-enabled* (>= (current-time) (-> world next-flyer)))
+      (format 0 "GAUNTLET FLYER due at ~D~%" (current-time))
       (cond
         ((handle->process (-> world flyer))
+         (format 0 "GAUNTLET FLYER busy, the last is still flying, asking again in a second~%")
          (set! (-> world next-flyer) (+ (current-time) GAUNTLET_FLYER_BUSY_RETRY)))
         ((not (gauntlet-art-ready? *gauntlet-flyer-zoomer-sg*))
          (format 0 "GAUNTLET FLYER: the zoomer's art group is not loaded, none sent~%")
          (set! (-> world next-flyer) (+ (current-time) (gauntlet-flyer-pause-time 1.0))))
         (else
-         (process-spawn gauntlet-flyer :init gauntlet-flyer-init-by-other :to fisher)
+         (let ((made (process-spawn gauntlet-flyer :init gauntlet-flyer-init-by-other :to fisher)))
+           (cond
+             ((not made) (format 0 "GAUNTLET FLYER spawn failed: no process from the pool~%"))
+             ;; the zoomer's init puts its handle here once it is placed, so an empty one means it died before that
+             ((not (handle->process (-> world flyer)))
+              (format 0 "GAUNTLET FLYER spawn failed: the zoomer's init ended before it was placed, see the lines above~%"))))
          (set! (-> world next-flyer) (+ (current-time) (gauntlet-flyer-pause-time 1.0)))))))
   (none))
 
