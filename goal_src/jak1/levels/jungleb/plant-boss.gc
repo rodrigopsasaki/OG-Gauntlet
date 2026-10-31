@@ -2,6 +2,7 @@
 (in-package goal)
 (bundles "JUB.DGO")
 (require "levels/jungleb/aphid.gc")
+(require "pc/features/gauntlet-h.gc")
 (declare-type plant-boss-leaf process-drawable)
 
 ;; DECOMP BEGINS
@@ -26,7 +27,8 @@
    (try              int32)
    (camera           handle)
    (money            handle)
-   (try-inc          symbol))
+   (try-inc          symbol)
+   (eco              gauntlet-eco))
   (:states (plant-boss-attack int)
    (plant-boss-dead symbol)
    (plant-boss-dead-bounce float)
@@ -140,12 +142,26 @@
             :top-plane
             (new 'static 'plane :y 1.0 :w 4096.0))))
 
+;; gauntlet: the rounds. The boss has three hits (health 3, 2, 1) and every hit that lands ends a round and starts the next, so the round he is in
+;; is 4 minus his health, and the minions of a round (the aphids that plant-boss-spawn sends, one more each round: want-aphid-count) wear the eco
+;; of the round. The aphids ask for it as they are born ('eco, below), and the boss answers with what he settled on as the round began.
+;; The eco language is the babaks' ("the eco charge" in pc/features/gauntlet-h.gc): yellow shoots Jak, red hits for two and throws him far, blue runs faster.
+(defun plant-boss-round-eco ((health float))
+  "The eco the minions wear in the round the boss is in with this health: yellow in the first, red in the second, blue in the third. None with the
+   rework off."
+  (cond
+    ((not *gauntlet-plant-boss-rework*) (gauntlet-eco none))
+    ((>= health 3.0) (gauntlet-eco yellow))
+    ((>= health 2.0) (gauntlet-eco red))
+    (else (gauntlet-eco blue))))
+
 (defbehavior plant-boss-generic-event-handler plant-boss ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (local-vars (v0-0 object))
   (case arg2
     (('child-die) (set! v0-0 (seekl (-> self aphid-count) 0 1)) (set! (-> self aphid-count) (the-as int v0-0)) v0-0)
     (('joint) 24)
     (('try) (-> self try))
+    (('eco) (-> self eco))
     (('notify)
      (case (-> arg3 param 0)
        (('pickup)
@@ -848,7 +864,14 @@
                  (cond
                    ((>= (-> self try) 15) 1)
                    ((>= (-> self try) 10) 2)
-                   (else 3)))))
+                   (else 3))))
+      ;; gauntlet: the round has begun, and so has its eco
+      (set! (-> self eco) (plant-boss-round-eco (-> self health)))
+      (if *gauntlet-plant-boss-rework*
+        (format 0 "PLANT round ~D, ~D minions, eco ~S~%"
+                (- 4 (the int (-> self health)))
+                (-> self want-aphid-count)
+                (aphid-charge-word (-> self eco)))))
   :trans
     (behavior ()
       (let ((f0-0 (vector-vector-distance (target-pos 0) (-> self root trans))))
@@ -1393,6 +1416,7 @@
   (set! (-> this camera) (the-as handle #f))
   (set! (-> this money) (the-as handle #f))
   (set! (-> this try-inc) #f)
+  (set! (-> this eco) (gauntlet-eco none))
   (set! (-> this neck) (new 'process 'joint-mod (joint-mod-handler-mode flex-blend) this 13))
   (set-vector! (-> this neck twist-max) 3640.889 8192.0 0.0 1.0)
   (set! (-> this neck up) (the-as uint 0))

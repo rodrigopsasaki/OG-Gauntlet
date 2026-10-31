@@ -43,6 +43,7 @@ type SettingGroup =
   | "Scout flies"
   | "TNT barrels"
   | "Temple"
+  | "Plant boss"
   | "Fishing";
 type SettingValue = number | boolean;
 type SettingMap = Record<string, SettingValue>;
@@ -580,6 +581,13 @@ const SETTINGS: readonly SettingSpec[] = [
     "No floating platforms in the temple",
     "next level load",
     "The ten floating platforms inside the Forbidden Jungle's temple (the underground part, toward the blue eco switch and toward the plant boss) are not born, so the temple is crossed on boosted jumps and roll jumps. The flipping platforms, the launchers and the tower's blue eco platforms are untouched. A platform is decided at its birth, so this takes effect when the temple loads again (leave and re-enter it, or die); one already standing stays until then.",
+  ),
+  flag(
+    "plant-boss-rework",
+    "Plant boss",
+    "The plant boss, reworked",
+    "live",
+    "Every bite of the Forbidden Jungle's plant boss that lands eats Jak, whatever his health (the game's own bite eats him only when it is his last hit). And every round has its eco: the first round's minion wears yellow eco and shoots volleys at Jak, the dummies' own (their volley settings steer it), flaring for half a second before each; the second round's minions are charged with red, which costs two hits and throws Jak far; the third round's with blue, which runs faster, by the blue speed and the desperation. The round's eco is settled as the round begins and an aphid wears it for good, so turning this on or off takes effect at the next round. Off leaves the boss as the game made him.",
   ),
   flag(
     "fisher-flyer-enabled",

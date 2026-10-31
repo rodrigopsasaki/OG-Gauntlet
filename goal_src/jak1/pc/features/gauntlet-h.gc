@@ -95,6 +95,26 @@
 ;; The second hit of a red strike, after the first has landed on the process given.
 (define-extern gauntlet-eco-second-hit! (function process none))
 
+;; ------------------------------------------------------------ the volley --
+
+;; The yellow eco that is fired at Jak, in volleys: the training dummies' sage fires them (levels/training/training-obs.gc) and the
+;; Forbidden Jungle's yellow plant boss minions (levels/jungleb/aphid.gc) do too. The functions are defined in gauntlet.gc ("the volley")
+;; and only called once a level is running, as the three above are; the shot itself (gauntlet-shot) is in engine/game/projectiles.gc.
+(deftype gauntlet-volley (structure)
+  ((start-time     time-frame)
+   (next-shot-time time-frame)
+   (size           int32)
+   (shots-left     int32)
+   (sweep          float)
+   (heading        vector :inline)
+   (muzzle         vector :inline)))
+
+(define-extern gauntlet-jak-in-range? (function process-drawable float object))
+(define-extern gauntlet-jak-shootable? (function object))
+(define-extern gauntlet-volley-start (function gauntlet-volley vector int))
+(define-extern gauntlet-volley-fire-next (function process-drawable gauntlet-volley int))
+(define-extern gauntlet-volley-update (function process-drawable gauntlet-volley vector float int))
+
 ;; ------------------------------------------------------------ the tunables --
 
 ;; Everything the gauntlet console can steer. The defaults are written once, as constants in game units (meters are
@@ -173,6 +193,8 @@
 (defconstant GAUNTLET_TNT_ENABLED_DEFAULT #t) ;; the barrels stand at their spots
 ;; The Forbidden Jungle's temple (pc/features/gauntlet.gc, "the temple"): its floating platforms are not born, to be crossed on boosted and roll jumps.
 (defconstant GAUNTLET_FJ_TEMPLE_PLATFORMS_REMOVED_DEFAULT #t) ;; the temple's floating platforms are not there
+;; The Forbidden Jungle's plant boss (pc/features/gauntlet.gc, "the plant boss"): its minions are charged with eco by the round, and a bite is the end of Jak.
+(defconstant GAUNTLET_PLANT_BOSS_REWORK_DEFAULT #t) ;; the rework is on; off is the game's own boss
 ;; The Forbidden Jungle's fishing game: a big fish on a zoomer flies down the river, higher up, and the net can be raised to it by holding X.
 (defconstant GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT #t) ;; the flying fish comes, and X raises the net; off is the game's own fishing
 (defconstant GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT (seconds 20)) ;; from one flying fish to the next, give or take a quarter; the first comes after half of it
@@ -244,6 +266,7 @@
 (define *gauntlet-carrier-return* (the int GAUNTLET_CARRIER_RETURN_DEFAULT)) ;; read as each carrier dies
 (define *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT) ;; off: no barrels, and whatever stands is put away
 (define *gauntlet-fj-temple-platforms-removed* GAUNTLET_FJ_TEMPLE_PLATFORMS_REMOVED_DEFAULT) ;; read as each actor of the temple is born; off: they are born as the game made them
+(define *gauntlet-plant-boss-rework* GAUNTLET_PLANT_BOSS_REWORK_DEFAULT) ;; live: read as each round starts (the minions' eco) and as each bite lands
 (define *gauntlet-fisher-flyer-enabled* GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT) ;; live: read every frame of the fishing game
 (define *gauntlet-fisher-flyer-interval* (the int GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT)) ;; read when the next flying fish is scheduled
 (define *gauntlet-fisher-flyer-pounds* GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT) ;; read as the flying fish is caught

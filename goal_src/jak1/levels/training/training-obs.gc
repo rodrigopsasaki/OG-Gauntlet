@@ -461,29 +461,9 @@
 ;; pc/features/gauntlet-h.gc; the gauntlet console steers them live.
 (defconstant GAUNTLET_HERALD_DUMMY "scarecrow-a-1") ;; entity name of the dummy that heralds the rest, which wakes from further away
 
-;; gauntlet: Jak's yellow eco shot, turned around. It flies straight along the heading it was
-;; fired on and hits Jak (plus walls). Jak's own projectile-yellow is untouched.
-(deftype gauntlet-shot (projectile-yellow)
-  ())
+;; gauntlet: the shot the dummies' sage fires (gauntlet-shot) and the volley it fires it in (gauntlet-volley-*) are not this level's: the Forbidden
+;; Jungle's plant boss minions shoot them too, so the shot lives in engine/game/projectiles.gc and the volley in pc/features/gauntlet.gc.
 
-
-(defmethod projectile-method-26 ((this gauntlet-shot))
-  "Collide with Jak and walls only. Leaving enemy out is what stops the shot from ever hitting the dummy that fired it."
-  ((method-of-type projectile-yellow projectile-method-26) this)
-  (set! (-> this root root-prim collide-with) (collide-kind background target))
-  (backup-collide-with-as (-> this root))
-  (none))
-
-(defmethod projectile-method-27 ((this gauntlet-shot))
-  "The launch flash points where the root faces, and a dummy does not face Jak, so face along the flight."
-  (quaternion-vector-angle! (-> this root quat) (new 'static 'vector :y 1.0 :w 1.0) (vector-y-angle (-> this root transv)))
-  ((method-of-type projectile-yellow projectile-method-27) this)
-  (none))
-
-(defmethod projectile-method-28 ((this gauntlet-shot))
-  "Jak's shot searches for the nearest enemy to home on. This one keeps the point fixed at launch, so it flies straight."
-  (set! (-> this target quad) (-> this target-base quad))
-  (none))
 
 ;; The sage's art group is made common (GAME.CGO, see common_art_groups in the decompiler config), so he is
 ;; available on Geyser Rock even though yellowsage-ag.go originally ships in CIT.DGO only.
@@ -502,16 +482,6 @@
   :bounds (static-spherem 0 0 0 3)
   :texture-level 2
   :sort 1)
-
-(deftype gauntlet-volley (structure)
-  ((start-time     time-frame)
-   (next-shot-time time-frame)
-   (size           int32)
-   (shots-left     int32)
-   (sweep          float)
-   (heading        vector :inline)
-   (muzzle         vector :inline)))
-
 
 ;; The sage is the brain: range, puff, volleys, leaving. His body is a manipy (see gauntlet-sage-init-by-other),
 ;; the game's own way to put a character from code on screen, so the sage has no skeleton or draw-control of his own.
@@ -533,70 +503,12 @@
 (defconstant GAUNTLET_SAGE_PUFF_CLEAR (seconds 0.5)) ;; the smoke of his appearing hides him this long, so the first wind-up waits
 
 
-(defun gauntlet-jak-in-range? ((source process-drawable) (range float))
-  "True while Jak is within range of source."
-  (and *target* (>= range (vector-vector-distance (-> source root trans) (-> *target* control trans)))))
-
-(defun gauntlet-jak-shootable? ()
-  "True while Jak is in a state worth shooting at: not mid-hit, invulnerable, in a cutscene or dying."
-  (and *target*
-       (not (logtest? (-> *target* state-flags)
-                      (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))))
-
 (defun gauntlet-puff ((where vector))
   "A burst of yellow eco at chest height over where: the sage appearing and vanishing."
   (let ((burst-at (new 'stack-no-clear 'vector)))
     (set! (-> burst-at quad) (-> where quad))
     (+! (-> burst-at y) 6144.0)
     (process-spawn part-tracker :init part-tracker-init group-part-yellow-eco-fireball-hit -1 #f #f #f burst-at :to *entity-pool*))
-  0)
-
-(defun gauntlet-volley-start ((volley gauntlet-volley) (origin vector))
-  "Capture the aim at Jak once. The whole volley sweeps around this heading, it is not re-aimed per shot.
-   Shots leave from origin (the cane) on a level line toward Jak, like every shooting enemy in the game."
-  (let ((heading (-> volley heading)))
-    (set! (-> heading quad) (-> (target-pos 0) quad))
-    (vector-! heading heading origin)
-    ;; level on purpose: this is the tutorial, the shot does not track Jak's height. A shot can pass under or over him
-    ;; when he stands higher or lower than the cane, and the player learns the pattern and adjusts. The sweep (a
-    ;; rotation about world y) keeps it level.
-    (set! (-> heading y) 0.0)
-    (vector-normalize! heading 1.0))
-  ;; the shots always leave from the cane, wherever Jak stands
-  (set! (-> volley muzzle quad) (-> origin quad))
-  ;; alternate left-to-right and right-to-left, like a sprinkler
-  (set! (-> volley sweep) (if (> (-> volley sweep) 0.0) -1.0 1.0))
-  (set! (-> volley size) *gauntlet-dummy-volley-size*)
-  (set! (-> volley shots-left) (-> volley size))
-  (set-time! (-> volley start-time))
-  0)
-
-(defun gauntlet-volley-fire-next ((source process-drawable) (volley gauntlet-volley))
-  "Fire the next shot of the volley on the captured heading."
-  (let ((shot-heading (new 'stack-no-clear 'vector))
-        (velocity (new 'stack-no-clear 'vector))
-        (index (- (-> volley size) (-> volley shots-left))))
-    (vector-rotate-y! shot-heading
-                      (-> volley heading)
-                      (* (-> volley sweep)
-                         *gauntlet-dummy-volley-spread*
-                         (- (the float index) (* 0.5 (the float (+ (-> volley size) -1))))))
-    (vector-float*! velocity shot-heading *gauntlet-dummy-shot-speed*)
-    (process-spawn gauntlet-shot :init projectile-init-by-other (-> source entity) (-> volley muzzle) velocity 0 #f :to source))
-  (+! (-> volley shots-left) -1)
-  (set-time! (-> volley next-shot-time))
-  0)
-
-(defun gauntlet-volley-update ((source process-drawable) (volley gauntlet-volley) (origin vector) (range float))
-  "One frame of a volley leaving origin: start one every interval, then fire its shots one gap apart.
-   If Jak leaves range or stops being shootable, the rest of the volley is dropped."
-  (cond
-    ((not (and (gauntlet-jak-in-range? source range) (gauntlet-jak-shootable?))) (set! (-> volley shots-left) 0))
-    ((> (-> volley shots-left) 0)
-     (if (time-elapsed? (-> volley next-shot-time) *gauntlet-dummy-volley-gap*) (gauntlet-volley-fire-next source volley)))
-    ((time-elapsed? (-> volley start-time) *gauntlet-dummy-volley-interval*)
-     (gauntlet-volley-start volley origin)
-     (gauntlet-volley-fire-next source volley)))
   0)
 
 ;; His body. A manipy is how the game draws a character from code (finalboss spawns these very sages as manipys, with

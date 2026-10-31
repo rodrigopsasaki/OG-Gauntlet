@@ -18,6 +18,12 @@
 
 (define *auto-continue* #f)
 
+;; gauntlet: called when a bite of the Forbidden Jungle's plant boss has landed on Jak (the hit below, mode 'plant-boss), once the game has taken its
+;; one hit from him, so the mod can take the rest and let the bite eat him whatever his health was (pc/features/gauntlet.gc, "the plant boss").
+;; It does nothing until then: this file links ahead of gauntlet.o in GAME.CGO, and ENGINE.CGO has no gauntlet.o at all. A hook, for the
+;; reason *target-bonk-hook* is one (engine/target/target-handler.gc).
+(define *plant-boss-bite-hook* (the (function none) nothing))
+
 (defun next-level ((arg0 symbol))
   (let ((v1-0 (lookup-level-info arg0)))
     (the-as level-load-info
@@ -600,6 +606,7 @@
                (('death) (pickup-collectable! (-> self fact) (pickup-type eco-green) (the-as float -1000.0) (the-as handle #f)))
                (('plant-boss)
                 (pickup-collectable! (-> self fact) (pickup-type eco-green) (- (-> *FACT-bank* health-single-inc)) (the-as handle #f))
+                (*plant-boss-bite-hook*)
                 (if (and (= (-> self game mode) 'play) (>= 0.0 (-> self fact health))) (go target-death (-> gp-0 mode))))
                (else
                 (pickup-collectable! (-> self fact) (pickup-type eco-green) (- (-> *FACT-bank* health-single-inc)) (the-as handle #f))))
