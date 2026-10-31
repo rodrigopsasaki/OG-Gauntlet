@@ -403,8 +403,13 @@
 ;; ask the questions initialize-skeleton asks, of the same art, so the bomb is only dropped when its init cannot take
 ;; that path. The sage's pair in training-obs.gc is the same check.
 (defun gauntlet-art-complete? ((art art-group) (skel skeleton-group))
-  "True when the skelgroup's joint geometry and every lod mesh exist in the art group with the types the draw needs."
+  "True when the skelgroup's joint geometry, its initial animation (when it names one) and every lod mesh exist in the art group
+   with the types the draw needs: the same checks initialize-skeleton makes, in the same order, so a group that passes cannot
+   send a process to process-drawable-art-error. An element that was stripped from the art group is #f, a symbol, and fails."
   (when (or (>= (-> skel jgeo) (-> art length)) (!= (-> (-> art data (-> skel jgeo)) type) art-joint-geo))
+    (return #f))
+  (when (and (>= (-> skel janim) 0)
+             (or (>= (-> skel janim) (-> art length)) (!= (-> (-> art data (-> skel janim)) type) art-joint-anim)))
     (return #f))
   (dotimes (lod (+ (-> skel max-lod) 1))
     (when (or (>= (-> skel mgeo lod) (-> art length)) (!= (-> (-> art data (-> skel mgeo lod)) type) merc-ctrl))
@@ -5026,11 +5031,16 @@
 (set! (-> *gauntlet-fisher* rise) 0.0)
 (set! (-> *gauntlet-fisher* held) #f)
 
+;; The racer's exploded model, which is the whole bike in pieces posed together (the game swaps it for the bike when it blows up, see
+;; *racer-explode-sg* in racer.gc), not the bike's own racer-geo. The disc's racer-ag has every animation of racer-geo stripped: elements 3
+;; to 21 are #f in all five copies (FIC, LAV, MIS, OGR, ROL), so racer-geo's idle animation, element 3, is not an art-joint-anim and
+;; initialize-skeleton sent the zoomer to process-drawable-art-error. The explode group's own idle animation (element 24) is there, and
+;; it is the one animation the draw needs: a skeleton with no animation at all has no pose to draw.
 (defskelgroup *gauntlet-flyer-zoomer-sg*
   racer
-  racer-geo-jg
-  racer-racer-idle-ja
-  ((racer-geo-mg (meters 999999)))
+  racer-explode-lod0-jg
+  racer-explode-idle-ja
+  ((racer-explode-lod0-mg (meters 999999)))
   :bounds (static-spherem 0 0 0 3.5)
   :texture-level 2
   :sort 1)
@@ -5218,7 +5228,7 @@
   :code
     (behavior ()
       (ja-channel-push! 1 0)
-      (ja :group! racer-racer-idle-ja :num! min)
+      (ja :group! racer-explode-idle-ja :num! min)
       (loop
         (suspend)
         (ja :num! (loop!))))
@@ -5232,6 +5242,8 @@
 (defbehavior gauntlet-flyer-init-by-other gauntlet-flyer ()
   "Appear at the upstream end of the river on a lane of its own, with its fish on it."
   (logclear! (-> self mask) (process-mask actor-pause))
+  ;; it inherits the fisher's entity, and the zoomer needs none: texture level 2 finds its art in level-default, as the yakow's does
+  (set! (-> self entity) #f)
   (set! (-> self root) (new 'process 'trsqv))
   (set! (-> self rider) (the-as handle #f))
   (set! (-> self pos) GAUNTLET_FLYER_START_POS)
@@ -5295,7 +5307,7 @@
          (format 0 "GAUNTLET FLYER busy, the last is still flying, asking again in a second~%")
          (set! (-> world next-flyer) (+ (current-time) GAUNTLET_FLYER_BUSY_RETRY)))
         ((not (gauntlet-art-ready? *gauntlet-flyer-zoomer-sg*))
-         (format 0 "GAUNTLET FLYER: the zoomer's art group is not loaded, none sent~%")
+         (format 0 "GAUNTLET FLYER: the zoomer's art group is not loaded or not whole (joint geometry, idle animation, mesh), none sent~%")
          (set! (-> world next-flyer) (+ (current-time) (gauntlet-flyer-pause-time 1.0))))
         (else
          (let ((made (process-spawn gauntlet-flyer :init gauntlet-flyer-init-by-other :to fisher)))
