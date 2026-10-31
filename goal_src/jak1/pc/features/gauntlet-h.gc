@@ -35,6 +35,18 @@
 (define-extern gauntlet-babak-charged? (function process basic)) ;; babak.gc defines it: whether a babak wears an eco now
 (define-extern gauntlet-muse-caught! (function symbol none))
 
+;; The Forbidden Jungle's fishing game (levels/jungle/fisher.gc, in JUN.DGO, after this file and after gauntlet.gc) asks these. Holding X
+;; raises the net to the height of a fish on a zoomer that now and then flies down the river (pc/features/gauntlet.gc, "the flying fish");
+;; with the net up the river's fish cannot be caught. begin and end bracket one game of it; update runs every frame of it with the fisher,
+;; the net's place on the river (at the water, where the fish are caught), the river's lane width and the net's radius, which fisher.gc owns.
+(define-extern gauntlet-fisher-begin! (function int))
+(define-extern gauntlet-fisher-end! (function int))
+(define-extern gauntlet-fisher-update! (function process-drawable vector float float none))
+;; True while the net is down far enough to catch the river's fish.
+(define-extern gauntlet-fisher-net-low? (function symbol))
+;; The net's root joint: where cspace<-cspace+quaternion! puts it (Jak's right hand), lifted by the net's rise. target-fishing uses it in place of that function.
+(define-extern gauntlet-fisher-net-cspace! (function cspace cspace quaternion matrix))
+
 ;; Where a muse that Jak dropped starts. muse.gc reads it as a muse is born (levels/misty/muse.gc, muse-path-point-nearest): with w at
 ;; 1.0 the muse starts on the point of its path nearest the xyz, and puts the w back to 0.0; a muse born with w at 0.0 starts where the game puts it.
 (define *gauntlet-muse-start* (new 'global 'vector))
@@ -149,6 +161,11 @@
 (defconstant GAUNTLET_CARRIER_RETURN_DEFAULT (seconds 20)) ;; a carrier that died comes back, charged again, this long after, while its box is still closed; 0 is never. The eco it spilled is picked up once and gone, so this is how a wasted colour comes back
 ;; The skull TNT barrels of Mountain Pass stand where a table in gauntlet.gc puts them, on any level.
 (defconstant GAUNTLET_TNT_ENABLED_DEFAULT #t) ;; the barrels stand at their spots
+;; The Forbidden Jungle's fishing game: a big fish on a zoomer flies down the river, higher up, and the net can be raised to it by holding X.
+(defconstant GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT #t) ;; the flying fish comes, and X raises the net; off is the game's own fishing
+(defconstant GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT (seconds 20)) ;; from one flying fish to the next, give or take a quarter; the first comes after half of it
+(defconstant GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT 10) ;; what catching it is worth: a river fish is worth 1, a big one 5
+(defconstant GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT (meters 3.5)) ;; how far above the net's usual height the flying fish flies, and how far X lifts the net: clear of Jak's head, in the camera's view
 
 ;; Times are in ticks (300 a second), lengths and speeds in game units, the spread in rotation units, a chance or a
 ;; multiplier a plain float.
@@ -210,3 +227,7 @@
 (define *gauntlet-flybox-bounce* GAUNTLET_FLYBOX_BOUNCE_DEFAULT) ;; read as each refusal happens
 (define *gauntlet-carrier-return* (the int GAUNTLET_CARRIER_RETURN_DEFAULT)) ;; read as each carrier dies
 (define *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT) ;; off: no barrels, and whatever stands is put away
+(define *gauntlet-fisher-flyer-enabled* GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT) ;; live: read every frame of the fishing game
+(define *gauntlet-fisher-flyer-interval* (the int GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT)) ;; read when the next flying fish is scheduled
+(define *gauntlet-fisher-flyer-pounds* GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT) ;; read as the flying fish is caught
+(define *gauntlet-fisher-flyer-height* GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT) ;; live: the net rises to it, the flying fish flies at it

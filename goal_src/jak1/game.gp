@@ -594,8 +594,8 @@
 
 (goal-src-sequence
  "levels/jungle/"
- :deps ;; no idea what these depend on, make it depend on the whole engine
- ("$OUT/obj/ticky.o")
+ :deps ;; no idea what these depend on, make it depend on the whole engine; and gauntlet-h, which fisher.gc asks about the flying fish
+ ("$OUT/obj/ticky.o" "$OUT/obj/gauntlet-h.o")
 
  "jungle-elevator.gc"
  "bouncer.gc"

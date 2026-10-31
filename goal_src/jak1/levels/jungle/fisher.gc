@@ -5,6 +5,7 @@
 (require "engine/common-obs/process-taskable.gc")
 (require "engine/target/logic-target.gc")
 (require "engine/target/sidekick.gc")
+(require "pc/features/gauntlet-h.gc")
 (declare-type fisher-fish process-drawable)
 
 ;; DECOMP BEGINS
@@ -809,8 +810,10 @@
         (ja-no-eval :group! (ja-group) :num! (seek!) :frame-num 0.0)
         (until (ja-done? 0)
           (fisher-fish-move)
-          (if (< (vector-vector-xz-distance (-> self root trans) (-> (the-as fisher (-> self parent 0)) paddle-pos))
-                 (+ (-> *FISHER-bank* net-radius) (* (-> self size) (-> self root scale x))))
+          ;; gauntlet: with the net raised to the flying fish, the river's fish (and the eel) pass it uncaught and are missed as usual
+          (if (and (gauntlet-fisher-net-low?)
+                   (< (vector-vector-xz-distance (-> self root trans) (-> (the-as fisher (-> self parent 0)) paddle-pos))
+                      (+ (-> *FISHER-bank* net-radius) (* (-> self size) (-> self root scale x)))))
             (go fisher-fish-caught))
           (if (or (>= (-> self pos) (the float (+ (-> (the-as fisher (-> self parent 0)) path curve num-cverts) -1)))
                   (>= (-> self pos) 7.2))
@@ -1188,6 +1191,8 @@
   (+! (-> self paddle) (* (-> self paddle-vel) (seconds-per-frame)))
   (set! (-> self paddle) (fmax 0.0 (fmin 1.0 (-> self paddle))))
   (vector-lerp! (-> self paddle-pos) (-> self paddle-end 0) (the-as vector (&-> self stack 288)) (-> self paddle))
+  ;; gauntlet: X lifts the net to the flying fish, and the flying fish is sent now and then (pc/features/gauntlet.gc)
+  (gauntlet-fisher-update! self (-> self paddle-pos) (-> *FISHER-bank* width) (-> *FISHER-bank* net-radius))
   0
   (none))
 
@@ -1230,6 +1235,7 @@
       (init! (-> self query) (the-as string #f) 40 150 25 #t (lookup-text! *common-text* (text-id quit) #f)))
   :exit
     (behavior ()
+      (gauntlet-fisher-end!)
       (minigame-stop!)
       (remove-setting! 'ambient-volume)
       (let* ((v1-2 *camera-other-matrix*)
@@ -1275,6 +1281,7 @@
       (set! (-> self ambient-steady) 0)
       (set! (-> self ambient-sagging) 0)
       (set! (-> self ambient-almost) 0)
+      (gauntlet-fisher-begin!)
       (loop
         (hide-hud-quick)
         (fisher-game-update)
@@ -1594,7 +1601,8 @@
                       (set! (-> self joint 1) (new 'process 'joint-mod (joint-mod-handler-mode joint-set*) self 5))
                       (none)))
         (let ((v1-35 (-> self manipy 0 node-list data)))
-          (set! (-> v1-35 0 param0) cspace<-cspace+quaternion!)
+          ;; gauntlet: the net's root joint is Jak's hand, as the game had it, plus the rise X gives it
+          (set! (-> v1-35 0 param0) gauntlet-fisher-net-cspace!)
           (set! (-> v1-35 0 param1) (the-as basic (joint-node eichar-lod0-jg sk_rhand)))
           (set! (-> v1-35 0 param2) (the-as basic (-> self control quat)))))
       (ja :group! eichar-fishing-ja :num! (identity (ja-aframe 15.0 0)))

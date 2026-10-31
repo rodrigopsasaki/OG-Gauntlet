@@ -41,7 +41,8 @@ type SettingGroup =
   | "Horde"
   | "Klaww"
   | "Scout flies"
-  | "TNT barrels";
+  | "TNT barrels"
+  | "Fishing";
 type SettingValue = number | boolean;
 type SettingMap = Record<string, SettingValue>;
 
@@ -571,6 +572,41 @@ const SETTINGS: readonly SettingSpec[] = [
     "Skull TNT barrels",
     "live",
     "Mountain Pass's skull TNT barrels stand where the designer picked a spot for one (the first is on Sentinel Beach, between a power cell and the ground below it). Touching or attacking one kills Jak outright and the barrel explodes. A barrel that is gone stands again once Jak is more than 30 m from its spot. Off puts every barrel away and spawns none.",
+  ),
+  flag(
+    "fisher-flyer-enabled",
+    "Fishing",
+    "Flying fish",
+    "live",
+    "In the Forbidden Jungle's fishing game a big fish riding a zoomer now and then flies down the river, well above the water. Holding X raises the net to its height (it eases up, and back down when X is let go), and the fish is caught if the net is lined up under it. With the net up the river's fish cannot be caught: they pass it and count as missed, as any the game fails to catch does. Missing the flying fish costs nothing. Off is the game's own fishing: no flying fish, and X does nothing.",
+  ),
+  num(
+    "fisher-flyer-interval",
+    "Fishing",
+    "Time between flying fish",
+    "s",
+    [5, 120, 1],
+    "next flying fish",
+    "About how long from one flying fish to the next, out by up to a quarter either way. The first comes after half of it. Only one flies at a time; if one is still in the air when the next is due, it waits a second and asks again.",
+  ),
+  num(
+    "fisher-flyer-pounds",
+    "Fishing",
+    "Pounds for the flying fish",
+    "",
+    [1, 100, 1],
+    "next catch",
+    "What catching the flying fish adds to the pounds caught. A river fish is worth 1 and a big one 5; the game is won at 200.",
+    true,
+  ),
+  num(
+    "fisher-flyer-height",
+    "Fishing",
+    "Flying height",
+    "m",
+    [1, 8, 0.25],
+    "live",
+    "How far above the net's usual height the flying fish flies, and so how far X lifts the net. The default clears Jak's head and stays in the camera's view; much higher and the net goes out of frame.",
   ),
 ];
 
