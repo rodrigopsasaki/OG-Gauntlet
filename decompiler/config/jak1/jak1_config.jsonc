@@ -135,8 +135,9 @@
   // and Klaww, the ogre boss of Mountain Pass (art group otherwise only in OGR.DGO), stands in the pelican's nest at Sentinel
   // Beach, with the generic button (art group otherwise only in SUN.DGO) that shoots him,
   // the lurkerworms of Sentinel Beach raise Snowy Mountain's ice cubes (art groups otherwise only in SNO.DGO) out of the sand,
-  // and Mountain Pass's skull TNT barrels can stand anywhere the designer picks a spot for one (art group otherwise only in OGR.DGO).
-  "common_art_groups": ["yellowsage-ag", "darkecobomb-ag", "yakow-ag", "ogreboss-ag", "generic-button-ag", "ice-cube-ag", "ice-cube-break-ag", "tntbarrel-ag"],
+  // Mountain Pass's skull TNT barrels can stand anywhere the designer picks a spot for one (art group otherwise only in OGR.DGO),
+  // and the zoomer (art group otherwise only in the racing levels' DGOs: FIC, LAV, MIS, OGR, ROL) carries the flying fish of the Forbidden Jungle's fishing game.
+  "common_art_groups": ["yellowsage-ag", "darkecobomb-ag", "yakow-ag", "ogreboss-ag", "generic-button-ag", "ice-cube-ag", "ice-cube-break-ag", "tntbarrel-ag", "racer-ag"],
 
   // whether or not to dump out streamed audio files to decompiler_out/<game>/audio/sfx and decompiler_out/<game>/audio/voice_lines
   "rip_streamed_audio": false,

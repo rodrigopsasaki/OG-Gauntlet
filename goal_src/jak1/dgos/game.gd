@@ -386,4 +386,8 @@
   ;; ships in OGR.DGO only; its models, with their textures, are in GAME.fr3 (common_art_groups again). No tpage, for the VRAM
   ;; reason above: the barrel has no eyes and no VRAM-read effects.
   "tntbarrel-ag.go"
+  ;; gauntlet: the zoomer that carries the flying fish of the jungle's fishing game. The bike's art group ships in the racing levels'
+  ;; DGOs (FIC, LAV, MIS, OGR, ROL) and not in JUN.DGO; its models, with their textures, are in GAME.fr3 (common_art_groups again). No
+  ;; tpage, for the VRAM reason above: the bike has no eyes and no VRAM-read effects.
+  "racer-ag.go"
  ))
