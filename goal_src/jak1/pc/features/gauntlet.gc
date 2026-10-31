@@ -4561,6 +4561,48 @@
         ((type-type? (-> pd type) nav-enemy) (gauntlet-flybox-carrier-born! ent pd (-> ent extra level name))))))
   (none))
 
+;; ------------------------------------------------------------------ the temple --
+
+;; The floating platforms inside the Forbidden Jungle's temple (the level jungleb, the underground one: the ones that ride a path
+;; toward the blue eco switch and toward the plant boss) are not there: the temple is crossed on boosted and roll jumps. They are
+;; named in a table and refused at birth by *entity-birth-veto-hook* (engine/entity/entity.gc), so no process is ever made for
+;; them. Their actors stay in the level, so nothing that walks actors (actor-link-info) loses a neighbour, and a level reload or
+;; a death changes nothing: the veto is asked again at each birth. The flipping platforms (plat-flip), the launchers and the
+;; elevator are not in the table.
+(defmacro gauntlet-temple-table (join row)
+  "Expand row once per platform, (row level name): the actor named name of level is not born."
+  `(,join
+     (,row jungleb "plat-77")
+     (,row jungleb "plat-79")
+     (,row jungleb "plat-80")
+     (,row jungleb "plat-81")
+     (,row jungleb "plat-82")
+     (,row jungleb "plat-83")
+     (,row jungleb "plat-84")
+     (,row jungleb "plat-85")
+     (,row jungleb "plat-86")
+     (,row jungleb "plat-87")))
+
+(defmacro gauntlet-row-temple-platform (level name)
+  `(when (and (= at-level (quote ,level)) (string= at-name ,name))
+     (return #t)))
+
+(defun gauntlet-temple-platform? ((at-level symbol) (at-name string))
+  "Whether the actor named at-name of level at-level is one of the temple's floating platforms."
+  (gauntlet-temple-table begin gauntlet-row-temple-platform)
+  #f)
+
+(defun *entity-birth-veto-hook* ((ent entity-actor))
+  "Asked before each actor is born: true for a temple platform while the setting has them removed. The level is looked at first, since
+   every actor of every level comes through here and only jungleb has a name to read."
+  (let ((level-name (-> ent extra level name)))
+    (when (and *gauntlet-fj-temple-platforms-removed* (= level-name 'jungleb))
+      (let ((name (res-lump-struct ent 'name string)))
+        (when (gauntlet-temple-platform? level-name name)
+          (format 0 "GAUNTLET TEMPLE removed ~S~%" name)
+          (return #t)))))
+  #f)
+
 ;; gauntlet: engine/entity/entity.gc calls this after birth! has run for an actor
 (defun *entity-born-hook* ((ent entity-actor))
   (gauntlet-horde-born! ent)
@@ -5543,6 +5585,7 @@
      (,row "flybox-bounce" meters *gauntlet-flybox-bounce* GAUNTLET_FLYBOX_BOUNCE_DEFAULT 0.0 20.0)
      (,row "flybox-carrier-return" seconds *gauntlet-carrier-return* GAUNTLET_CARRIER_RETURN_DEFAULT 0.0 600.0)
      (,row "tnt-enabled" flag *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT 0 0)
+     (,row "fj-temple-platforms-removed" flag *gauntlet-fj-temple-platforms-removed* GAUNTLET_FJ_TEMPLE_PLATFORMS_REMOVED_DEFAULT 0 0)
      (,row "fisher-flyer-enabled" flag *gauntlet-fisher-flyer-enabled* GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT 0 0)
      (,row "fisher-flyer-interval" seconds *gauntlet-fisher-flyer-interval* GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT 5.0 120.0)
      (,row "fisher-flyer-pounds" count *gauntlet-fisher-flyer-pounds* GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT 1.0 100.0)

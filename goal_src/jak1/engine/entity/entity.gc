@@ -808,8 +808,21 @@
 ;; is never defined crashes, and a hook that is never set is a call to nothing. Same shape as *menu-hook* and *pre-draw-hook*.
 (define *entity-born-hook* (the (function entity-actor none) nothing))
 
+;; gauntlet: asked of an actor before birth! makes its process: true means this actor is not to exist at all. The actor is marked as one
+;; that failed to birth (bit-0, the same mark an unknown etype gets below), so the birth loop does not ask again, and no process is made
+;; to be taken away again, which is why this is a veto and not *entity-born-hook* ending the process after the fact. Nothing is removed
+;; for good: a level reload or a death clears the mark and the actor is asked about afresh at its next birth. The default vetoes nothing,
+;; for the reason *entity-born-hook* is a hook (pc/features/gauntlet.gc, "the temple", sets it).
+(defun entity-birth-veto-nothing ((ent entity-actor))
+  #f)
+
+(define *entity-birth-veto-hook* entity-birth-veto-nothing)
+
 (defmethod birth! ((this entity-actor))
   "Create a process for this entity and start it."
+  (when (*entity-birth-veto-hook* this)
+    (logior! (-> this extra perm status) (entity-perm-status bit-0))
+    (return this))
   ;; temp
   ;; (when (or (not (this-etype? process))
   ;;           ;disallowed types

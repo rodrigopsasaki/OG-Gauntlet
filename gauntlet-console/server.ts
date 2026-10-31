@@ -42,6 +42,7 @@ type SettingGroup =
   | "Klaww"
   | "Scout flies"
   | "TNT barrels"
+  | "Temple"
   | "Fishing";
 type SettingValue = number | boolean;
 type SettingMap = Record<string, SettingValue>;
@@ -572,6 +573,13 @@ const SETTINGS: readonly SettingSpec[] = [
     "Skull TNT barrels",
     "live",
     "Mountain Pass's skull TNT barrels stand where the designer picked a spot for one (the first is on Sentinel Beach, between a power cell and the ground below it). Touching or attacking one kills Jak outright and the barrel explodes. A barrel that is gone stands again once Jak is more than 30 m from its spot. Off puts every barrel away and spawns none.",
+  ),
+  flag(
+    "fj-temple-platforms-removed",
+    "Temple",
+    "No floating platforms in the temple",
+    "next level load",
+    "The ten floating platforms inside the Forbidden Jungle's temple (the underground part, toward the blue eco switch and toward the plant boss) are not born, so the temple is crossed on boosted jumps and roll jumps. The flipping platforms, the launchers and the tower's blue eco platforms are untouched. A platform is decided at its birth, so this takes effect when the temple loads again (leave and re-enter it, or die); one already standing stays until then.",
   ),
   flag(
     "fisher-flyer-enabled",
