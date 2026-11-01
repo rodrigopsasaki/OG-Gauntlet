@@ -145,6 +145,9 @@
   // whether or not to dump out music files to decompiler_out/<game>/audio/music
   "rip_music": false,
 
+  // tpages that should always be possible to access, e.g. "common_tpages": [1119],
+  "common_tpages": [],
+
   ////////////////////////////
   // PATCHING OPTIONS
   ////////////////////////////

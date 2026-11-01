@@ -204,6 +204,7 @@
   "speedruns.o" ;; added
   "pckernel-common.o" ;; added
   "pckernel.o" ;; added
+  "input-display.o" ;; mod-base-change added
   "mood-tables.o"
   "mood.o"
   "weather-part.o"
@@ -348,6 +349,11 @@
   "ropebridge.o"
   "ticky.o"
   "hud-classes-pc.o" ;; added
+  "mod-settings.o" ;; added mod-base-change
+  "mod-common-functions.o" ;; added
+  "orb-placer.o" ;; added
+  "mod-custom-code.o" ;; added
+  "mod-debug.o" ;; added
   "gauntlet.o" ;; added (gauntlet drops, after generic-obs and shadow whose symbols its states read at link time)
   ;; gauntlet: the yellow sage the training dummies turn into. His art group and its tpage ship in CIT.DGO only,
   ;; so they live here, with his models in GAME.fr3 (common_art_groups in the decompiler config).

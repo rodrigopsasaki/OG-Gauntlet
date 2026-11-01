@@ -806,6 +806,7 @@
   )
 
 ;; definition for method 3 of type flying-formation
+;; INFO: this function exists in multiple non-identical object files
 (defmethod inspect ((this flying-formation))
   (when (not this)
     (set! this this)

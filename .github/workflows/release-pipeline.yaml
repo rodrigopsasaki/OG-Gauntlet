@@ -29,7 +29,7 @@ jobs:
     steps:
       # Docs - https://github.com/mathieudutour/github-tag-action
       - name: Bump Version and Push Tag
-        if: github.repository == 'open-goal/jak-project' && !inputs.release_version
+        if: github.repository == 'OpenGOAL-Mods/OG-Mod-Base'
         id: tag_version
         uses: mathieudutour/github-tag-action@v6.2
         with:
@@ -121,7 +121,6 @@ jobs:
 
   # Upload the Artifacts
   upload_artifacts:
-    if: github.repository == 'open-goal/jak-project'
     needs:
       - cut_release
       - build_windows_clang
@@ -133,7 +132,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.cut_release.outputs.new_tag }}
+          fetch-tags: true
+          fetch-depth: 0
 
       - name: Prepare Artifact Folder
         run: mkdir -p ./ci-artifacts/final
@@ -191,12 +191,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_VAL=${{ needs.cut_release.outputs.new_tag }}
-          gh release upload "${TAG_VAL}" ${{ github.WORKSPACE }}/ci-artifacts/final/* --repo open-goal/jak-project --clobber
+          gh release upload ${{ needs.cut_release.outputs.new_tag }} ${{ github.WORKSPACE }}/ci-artifacts/final/* --repo ${{ github.repository }} --clobber
 
       - name: Publish Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_VAL=${{ needs.cut_release.outputs.new_tag }}
-          gh release edit ${TAG_VAL} --draft=false --repo open-goal/jak-project
+          gh release edit ${{ needs.cut_release.outputs.new_tag }} --draft=false --repo ${{ github.repository }}

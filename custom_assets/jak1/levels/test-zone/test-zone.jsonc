@@ -60,15 +60,15 @@
   // "symbol-list": ["symbol", "sym-1", "sym-2"]
 
   // The base actor id for your custom level. If you have multiple levels, this should be unique!
-  "base_id": 100,
+  "base_id": 10000,
 
   // All art groups you want to use in your custom level. Will add their models and corresponding textures to the FR3 file.
   // Note: You will still have to add them to your level's .gd file.
-  // "art_groups": ["plat-ag"],
+  "art_groups": ["babak-ag", "plat-ag", "plat-eco-ag", "generic-button-ag"],
 
   // If you have any custom models in the "custom_assets/jak1/models/custom_levels" folder that you want to use in your level, add them to this list.
   // Note: Like with art groups, these should also be added to your level's .gd file.
-  "custom_models": ["test-actor"],
+  "custom_models": ["test-actor", "on-off-block"],
 
   // Any textures you want to include in your custom level. This is mainly useful for things such as the zoomer HUD,
   // sky textures and cases where you want to use objects drawn with the generic renderer,
@@ -221,24 +221,432 @@
       }
     },
     {
+      "trans": [-7.3159, 1.0468, 20.3499],
+      "etype": "babak",
+      "game_task": 0,
+      "quat" : [0, 0, 0, 1],
+      "bsphere": [-7.3159, 1.0468, 20.3499, 10],
+      "lump": {
+        "name": "test-babak",
+        "vis-dist": ["meters", 200.0],
+        "cam-notice-dist": ["meters", 30.0],
+        "idle-distance": ["meters", 50.0],
+        "cam-vert": ["meters", 8.0],
+        "cam-horz": ["meters", 20.0],
+        "path": ["vector3m", // I am pretty sure game will crash if there is no path for an enemy. So just add one. You can use "path-actor" if you want to use another actor's path.
+            [-7.3159, 1.0468, 20.3499],
+            [-2.3607, 1.0468, 12.8255],
+            [-9.7266, 1.0468, 14.4445],
+            [-7.3159, 1.0468, 20.3499]
+          ],
+        "nav-mesh-sphere": ["vector4m", // You can define spheres that will be added to the navmesh of the enemy. Enemies of the navmesh will avoid these spheres - like they avoid each other.
+          [-5.3159, 1.0468, 16.3499, 1.0]
+          ]
+      }
+    },
+    {
       "trans": [-5.41, 3.5, 28.42], // translation
       "etype": "test-actor", // actor type
       "game_task": 0, // associated game task (for powercells, etc)
       "quat": [0, 0, 0, 1], // quaternion
-      "bsphere": [-7.41, 3.5, 28.42, 10], // bounding sphere
+      "bsphere": [-5.41, 3.5, 28.42, 10], // bounding sphere
       "lump": {
         "name": "test-actor"
       }
-    }
+    },
+
+    {
+      "trans": [0.0, 50.0, 10.0],
+      "etype": "linear-plat",
+      "game_task": 0,
+      "quat": [0, 0, 0, 1],
+      "bsphere": [0.0, 50.0, 10.0, 10],
+      "lump": {
+        "name": "linear-plat-0",
+        "path": ["vector4m",
+          [0.0, 50.0, 10.0, 1.0],
+          [0.0, 50.0, 10.0, 1.0],
+          [0.0, 60.0, 10.0, 1.0],
+          [0.0, 50.0, 10.0, 1.0],
+          [0.0, 50.0, 10.0, 1.0],
+          [0.0, 60.0, 10.0, 1.0],
+          [0.0, 50.0, 10.0, 1.0]
+          ],
+        "timings": ["float",
+          0.0, // offset before starting
+          2.0, // down to up (out)
+          2.0, // up to down (out)
+          6.0, // stay down
+          2.0, // down to up (back)
+          2.0, // up to down (back)
+          0.0 // immediately start back up
+          ],
+        "sync": ["float", 14, 0.0]
+      }
+    },
+
+    {
+      "trans": [0.0, 50.0, 17.0],
+      "etype": "linear-plat",
+      "game_task": 0,
+      "quat": [0, 0, 0, 1],
+      "bsphere": [0.0, 50.0, 17.0, 10],
+      "lump": {
+        "name": "linear-plat-1",
+        "path": ["vector4m",
+          [0.0, 50.0, 17.0, 1.0],
+          [0.0, 50.0, 17.0, 1.0],
+          [0.0, 60.0, 17.0, 1.0],
+          [0.0, 50.0, 17.0, 1.0],
+          [0.0, 50.0, 17.0, 1.0],
+          [0.0, 60.0, 17.0, 1.0],
+          [0.0, 50.0, 17.0, 1.0]
+        ],
+        "timings": ["float",
+          1.0, // offset before starting
+          2.0, // down to up (out)
+          2.0, // up to down (out)
+          4.0, // stay down
+          2.0, // down to up (back)
+          2.0, // up to down (back)
+          1.0 // immediately start back up
+          ],
+        "sync": ["float", 14, 0.0]
+      }
+    },
+
+    {
+      "trans": [0.0, 50.0, 24.0],
+      "etype": "linear-plat",
+      "game_task": 0,
+      "quat": [0, 0, 0, 1],
+      "bsphere": [0.0, 50.0, 24.0, 10],
+      "lump": {
+        "name": "linear-plat-2",
+        "path": ["vector4m",
+          [0.0, 50.0, 24.0, 1.0],
+          [0.0, 50.0, 24.0, 1.0],
+          [0.0, 60.0, 24.0, 1.0],
+          [0.0, 50.0, 24.0, 1.0],
+          [0.0, 50.0, 24.0, 1.0],
+          [0.0, 60.0, 24.0, 1.0],
+          [0.0, 50.0, 24.0, 1.0]
+          ],
+        "timings": ["float",
+          2.0, // offset before starting
+          2.0, // down to up (out)
+          2.0, // up to down (out)
+          2.0, // stay down
+          2.0, // down to up (back)
+          2.0, // up to down (back)
+          2.0 // immediately start back up
+          ],
+        "sync": ["float", 14, 0.0]
+      }
+    },
+
+    {
+      "trans": [0.0, 50.0, 31.0],
+      "etype": "linear-plat",
+      "game_task": 0,
+      "quat": [0, 0, 0, 1],
+      "bsphere": [0.0, 50.0, 31.0, 10],
+      "lump": {
+        "name": "linear-plat-3",
+        "path": ["vector4m",
+          [0.0, 50.0, 31.0, 1.0],
+          [0.0, 50.0, 31.0, 1.0],
+          [0.0, 60.0, 31.0, 1.0],
+          [0.0, 50.0, 31.0, 1.0],
+          [0.0, 50.0, 31.0, 1.0],
+          [0.0, 60.0, 31.0, 1.0],
+          [0.0, 50.0, 31.0, 1.0]
+        ],
+        "timings": ["float",
+          3.0, // offset before starting
+          2.0, // down to up (out)
+          2.0, // up to down (out)
+          0.0, // stay down
+          2.0, // down to up (back)
+          2.0, // up to down (back)
+          0.0 // immediately start back up
+          ],
+        "sync": ["float", 14, 0.0]
+      }
+    },
+
     // {
-    //   "trans": [-7.41, 3.5, 28.42], // translation
+    //   "trans": [-5.41, 3.5, 28.42], // translation
     //   "etype": "plat",  // actor type
     //   "game_task": "(game-task none)", // associated game task (for powercells, etc)
     //   "quat": [0, 0, 0, 1], // quaternion
-    //   "bsphere": [-7.41, 3.5, 28.42, 10], // bounding sphere
+    //   "bsphere": [-5.41, 3.5, 28.42, 10], // bounding sphere
     //   "lump": {
     //     "name": "test-plat"
     //   }
     // }
+    // series of on-off buttons, blocks
+    {
+      "trans": [-5.41, 53.5, 28.42], // translation
+      "etype": "on-off-button", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-5.41, 53.5, 28.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-button-red",
+        "on-off-group": ["uint32", 0]
+      }
+    },
+    {
+      "trans": [-5.41, 53.5, 33.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-5.41, 53.5, 33.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-red-1",
+        "on-off-group": ["uint32", 0]
+      }
+    },
+    {
+      "trans": [-5.41, 53.5, 38.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-5.41, 53.5, 38.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-red-2",
+        "on-off-group": ["uint32", 0],
+        "inverted?": ["uint32", 1],
+        "scale": ["vector", [2.0, 2.0, 3.0, 1.0]]
+      }
+    },
+    {
+      "trans": [-5.41, 56.5, 43.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-5.41, 56.5, 38.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-red-3",
+        "on-off-group": ["uint32", 0],
+        "inverted?": ["uint32", 1],
+        "scale": ["vector", [0.25, 0.5, 1.0, 1.0]]
+      }
+    },
+    {
+      "trans": [-15.41, 53.5, 28.42], // translation
+      "etype": "on-off-button", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-15.41, 53.5, 28.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-button-blue",
+        "on-off-group": ["uint32", 1]
+      }
+    },
+    {
+      "trans": [-15.41, 53.5, 33.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-15.41, 53.5, 33.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-blue-1",
+        "on-off-group": ["uint32", 1]
+      }
+    },
+    {
+      "trans": [-15.41, 53.5, 38.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-15.41, 53.5, 38.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-blue-2",
+        "on-off-group": ["uint32", 1],
+        "inverted?": ["uint32", 1],
+        "scale": ["vector", [2.0, 2.0, 1.0, 1.0]]
+      }
+    },
+    {
+      "trans": [-15.41, 56.5, 43.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-15.41, 56.5, 43.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-blue-3",
+        "on-off-group": ["uint32", 1],
+        "scale": ["vector", [1.0, 1.0, 0.1, 1.0]]
+      }
+    },
+    {
+      "trans": [-25.41, 53.5, 28.42], // translation
+      "etype": "on-off-button", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-25.41, 53.5, 28.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-button-green",
+        "on-off-group": ["uint32", 2]
+      }
+    },
+    {
+      "trans": [-25.41, 53.5, 33.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-25.41, 53.5, 33.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-green-1",
+        "on-off-group": ["uint32", 2]
+      }
+    },
+    {
+      "trans": [-25.41, 53.5, 38.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-25.41, 53.5, 38.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-green-2",
+        "on-off-group": ["uint32", 2],
+        "inverted?": ["uint32", 1],
+        "scale": ["vector", [1.0, 2.0, 1.0, 1.0]]
+      }
+    },
+    {
+      "trans": [-25.41, 53.5, 43.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-25.41, 53.5, 43.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-green-3",
+        "on-off-group": ["uint32", 2],
+        "scale": ["vector", [1.0, 0.75, 3.0, 1.0]]
+      }
+    },
+    {
+      "trans": [-35.41, 53.5, 28.42], // translation
+      "etype": "on-off-button", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-5.41, 53.5, 28.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-button-yellow",
+        "on-off-group": ["uint32", 3]
+      }
+    },
+    {
+      "trans": [-35.41, 53.5, 33.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-35.41, 53.5, 33.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-yellow-1",
+        "on-off-group": ["uint32", 3]
+      }
+    },
+    {
+      "trans": [-35.41, 53.5, 38.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-35.41, 53.5, 38.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-yellow-2",
+        "on-off-group": ["uint32", 3],
+        "inverted?": ["uint32", 1],
+        "scale": ["vector", [2.0, 1.0, 1.0, 1.0]]
+      }
+    },
+    {
+      "trans": [-35.41, 53.5, 43.42], // translation
+      "etype": "on-off-block", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-35.41, 53.5, 43.42, 10], // bounding sphere
+      "lump": {
+        "name": "on-off-block-yellow-3",
+        "on-off-group": ["uint32", 3],
+        "inverted?": ["uint32", 1],
+        "scale": ["vector", [0.2, 0.2, 0.2, 1.0]]
+      }
+    },
+    {
+      "trans": [-15.41, 53.5, 52.42], // translation
+      "etype": "cycling-on-off-button", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-15.41, 53.5, 52.42, 10], // bounding sphere
+      "lump": {
+        "name": "cycling-on-off-button-fast"
+      }
+    },
+    {
+      "trans": [-25.41, 53.5, 52.42], // translation
+      "etype": "cycling-on-off-button", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-25.41, 53.5, 52.42, 10], // bounding sphere
+      "lump": {
+        "name": "cycling-on-off-button-slow",
+        "period": ["float", 0.5]
+      }
+    },
+    {
+      "trans": [-45.41, 53.5, 38.42], // translation
+      "etype": "eco-on-off-button", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-45.41, 53.5, 38.42, 10], // bounding sphere
+      "lump": {
+        "name": "eco-on-off-button"
+      }
+    },
+    {
+      "trans": [-55.41, 53.5, 28.42], // translation
+      "etype": "ventred", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-55.41, 53.5, 28.42, 10], // bounding sphere
+      "lump": {
+        "name": "red-vent"
+      }
+    },
+    {
+      "trans": [-55.41, 53.5, 33.42], // translation
+      "etype": "ventblue", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-55.41, 53.5, 33.42, 10], // bounding sphere
+      "lump": {
+        "name": "blue-vent"
+      }
+    },
+    {
+      "trans": [-55.41, 53.5, 38.42], // translation
+      "etype": "ventyellow", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-55.41, 53.5, 38.42, 10], // bounding sphere
+      "lump": {
+        "name": "yellow-vent"
+      }
+    },
+    {
+      "trans": [-55.41, 53.5, 43.42], // translation
+      "etype": "ecovent", // actor type
+      "game_task": 0, // associated game task (for powercells, etc)
+      "quat": [0, 0, 0, 1], // quaternion
+      "bsphere": [-55.41, 53.5, 43.42, 10], // bounding sphere
+      "lump": {
+        "name": "green-vent",
+        "eco-info": ["eco-info", "(pickup-type eco-green)", 1]
+      }
+    }
   ]
 }

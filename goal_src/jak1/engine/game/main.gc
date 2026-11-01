@@ -15,6 +15,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Letterbox and blackout
 ;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun-extern runs-every-frame (none))
 
 (defun set-letterbox-frames ((arg0 time-frame))
   "Set the letterbox frame counter for arg0 frames in the future"
@@ -368,6 +369,7 @@
     ;; collide dma
     (suspend)
     (while *run*
+      (runs-every-frame) ;; trigger hook for mod base mod-base-change entry point
       ;; start immediately after all process updates finish.
       (profiler-instant-event "display-loop-top")
       ;; drawing effects to be used in foreground drawing.
@@ -419,9 +421,7 @@
         (update-camera))
       (add-ee-profile-frame 'draw :r #x40 :b #x40)
       (with-profiler "draw-hook"
-        (*draw-hook*)
-        (#when PC_PORT
-          (gauntlet-poll!)))
+        (*draw-hook*))
       (add-ee-profile-frame 'draw :g #x80)
       (with-profiler "menu"
         (#when PC_PORT

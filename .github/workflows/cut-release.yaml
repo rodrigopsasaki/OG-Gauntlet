@@ -64,7 +64,7 @@ jobs:
           GAMES=${GAMES%?}
           echo "GAMES=$GAMES" >> $GITHUB_OUTPUT
           REPO=OpenGOAL-Mods/OG-Mod-Base
-          if [[ "${{ inputs.binary_source }}" == "vanilla" ]]; then REPO=open-goal/jak-project; fi
+          if [[ ${{ inputs.binary_source == 'vanilla' }} ]]; then REPO=open-goal/jak-project; fi
           echo "REPO=$REPO" >> $GITHUB_OUTPUT
 
   cut_mod_release:

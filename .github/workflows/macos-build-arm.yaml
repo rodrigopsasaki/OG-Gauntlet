@@ -24,6 +24,9 @@ jobs:
       - name: Checkout Repository
         if: ${{ ! inputs.uploadArtifacts }}
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Checkout Repository with Tags
         if: ${{ inputs.uploadArtifacts }}
