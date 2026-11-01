@@ -272,7 +272,8 @@ void extract_common(const ObjectFileDB& db,
                     const TextureDB& tex_db,
                     const std::string& dgo_name,
                     const fs::path& output_folder,
-                    const Config& config) {
+                    const Config& config,
+                    const std::vector<std::string>& all_dgo_names) {
   if (db.obj_files_by_dgo.count(dgo_name) == 0) {
     lg::warn("Skipping common extract for {} because the DGO was not part of the input", dgo_name);
     return;
@@ -292,6 +293,50 @@ void extract_common(const ObjectFileDB& db,
 
   add_all_textures_from_level(tfrag_level, "ARTSPOOL", tex_db);
   extract_art_groups_from_level(db, tex_db, {}, "ARTSPOOL", tfrag_level, art_group_data);
+
+  // copy in any art groups that were requested to be available on every level. They live in a
+  // level DGO, so the level's texture remap is needed to resolve their textures.
+  if (!config.common_art_groups.empty()) {
+    std::unordered_set<std::string> art_groups_made_common;
+    MercSwapInfo swapped_info;
+    for (const auto& level_dgo_name : all_dgo_names) {
+      if (art_groups_made_common.size() == config.common_art_groups.size()) {
+        break;
+      }
+      if (db.obj_files_by_dgo.count(level_dgo_name) == 0) {
+        continue;
+      }
+      auto tex_remap = extract_tex_remap(db, level_dgo_name);
+      for (const auto& file : db.obj_files_by_dgo.at(level_dgo_name)) {
+        if (config.common_art_groups.count(file.name) && !art_groups_made_common.count(file.name)) {
+          lg::info("Art group {} was requested to be made common, found it in {}", file.name,
+                   level_dgo_name);
+          std::set<u32> textures_before;
+          for (const auto& t : tfrag_level.textures) {
+            textures_before.insert(t.combo_id);
+          }
+          const auto& ag_file = db.lookup_record(file);
+          extract_merc(ag_file, tex_db, db.dts, tex_remap, tfrag_level, false, db.version(),
+                       swapped_info);
+          extract_joint_group(ag_file, db.dts, db.version(), art_group_data);
+          extract_animations(ag_file, db.dts, db.version(), art_group_data);
+          // textures that are not already common: the game must load their tpage on every level
+          for (const auto& t : tfrag_level.textures) {
+            if (!textures_before.count(t.combo_id)) {
+              lg::info("  {} needs texture {} from {} (tpage {})", file.name, t.debug_name,
+                       t.debug_tpage_name, t.combo_id >> 16);
+            }
+          }
+          art_groups_made_common.insert(file.name);
+        }
+      }
+    }
+    for (const auto& name : config.common_art_groups) {
+      if (!art_groups_made_common.count(name)) {
+        lg::warn("Art group {} was requested to be made common, but was not found", name);
+      }
+    }
+  }
 
   std::set<std::string> textures_we_have;
   std::set<u32> textures_we_have_id;
@@ -412,7 +457,7 @@ void extract_all_levels(const ObjectFileDB& db,
                         const std::string& common_name,
                         const Config& config,
                         const fs::path& output_path) {
-  extract_common(db, tex_db, common_name, output_path, config);
+  extract_common(db, tex_db, common_name, output_path, config, dgo_names);
   auto entities_dir = file_util::get_jak_project_dir() / "decompiler_out" /
                       game_version_names[config.game_version] / "entities";
   file_util::create_dir_if_needed(entities_dir);
