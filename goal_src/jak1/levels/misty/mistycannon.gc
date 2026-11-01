@@ -708,6 +708,8 @@
       (if (and *target* (= (-> *target* next-state name) 'target-periscope))
         (sound-play-by-spec (static-sound-spec "explosion" :fo-min 200 :fo-max 400) (new-sound-id) (the-as vector #t))
         (sound-play-by-spec (static-sound-spec "explosion") (new-sound-id) (the-as vector #t)))
+      ;; gauntlet: this shot has gone off, once. A blast on Klaww heals him (see "Klaww" in pc/features/gauntlet.gc).
+      (gauntlet-klaww-cannon-blast! (-> self root trans) (-> self blast-radius))
       (spawn (-> self part2) (-> self root trans))
       (ja-channel-set! 0)
       (let ((v1-11 (-> self root root-prim)))

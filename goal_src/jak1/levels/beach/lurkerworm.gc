@@ -3,6 +3,8 @@
 (bundles "BEA.DGO")
 (require "engine/common-obs/nav-enemy.gc")
 (require "levels/beach/twister.gc")
+(require "levels/snow/ice-cube.gc")
+(require "pc/features/gauntlet-h.gc")
 
 ;; DECOMP BEGINS
 
@@ -270,11 +272,43 @@ lurkerworm-default-post-behavior
         (suspend)))
   :post lurkerworm-default-post-behavior)
 
+;; gauntlet: a worm rising out of the sand pulls Snowy Mountain's ice cubes up out of the ground around it. They come up on a ring
+;; this wide, further out than the worm's own nav obstacle (its nav-radius, 3 m) and the cubes' (1.5 m) so the nav mesh has
+;; room for both, and they are the worm's children, so they go when it does.
+(defconstant GAUNTLET_WORM_CUBE_RING_RADIUS (meters 7))
+
+(defbehavior lurkerworm-raise-ice-cubes lurkerworm ()
+  "Raise *gauntlet-worm-cube-count* ice cubes on a ring around the worm, the first on the side facing Jak and each facing him,
+   unless the last wave is still alive. The cubes borrow the nav mesh and path of the entity the worm's own nav-mesh-actor
+   names, a lurkercrab or a babak of the beach; a worm with none (lurkerworm-43) raises nothing."
+  (when (and *gauntlet-worm-cubes-enabled* (> *gauntlet-worm-cube-count* 0) *target*)
+    (let ((owner (entity-actor-lookup (-> self entity) 'nav-mesh-actor 0)))
+      (cond
+        ((-> self child))
+        ((not owner))
+        (else
+          (let ((toward (vector-! (new 'stack-no-clear 'vector) (target-pos 0) (-> self root trans)))
+                (spot (new 'stack-no-clear 'vector))
+                (facing (new 'stack-no-clear 'vector))
+                (step (/ (degrees 360) (the float *gauntlet-worm-cube-count*))))
+            (set! (-> toward y) 0.0)
+            (vector-xz-normalize! toward 1.0)
+            (dotimes (i *gauntlet-worm-cube-count*)
+              (vector-rotate-around-y! spot toward (* step (the float i)))
+              (vector-float*! spot spot GAUNTLET_WORM_CUBE_RING_RADIUS)
+              (vector+! spot spot (-> self root trans))
+              (vector-! facing (target-pos 0) spot)
+              (set! (-> facing y) 0.0)
+              (vector-xz-normalize! facing 1.0)
+              (process-spawn ice-cube owner spot facing :to self)))))))
+  0)
+
 (defstate lurkerworm-rise (lurkerworm)
   :event lurkerworm-default-event-handler
   :enter
     (behavior ()
-      (set-time! (-> self state-time)))
+      (set-time! (-> self state-time))
+      (lurkerworm-raise-ice-cubes))
   :code
     (behavior ()
       (ja-channel-set! 1)
