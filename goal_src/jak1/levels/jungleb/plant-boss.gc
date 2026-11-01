@@ -191,6 +191,10 @@
     (let ((gp-0 (-> *target* control root-prim prim-core)))
       (set-target! (-> self neck) (the-as vector gp-0))
       (set-target! (-> self body) (the-as vector gp-0))))
+  ;; gauntlet: the head wears the eco of the round, yellow, then red, then blue, as the minions do (the aphids' aura keeps theirs up the same
+  ;; way), so the colour holds through his animations. The burn is the minions' too: it rises as Jak weakens, which is the eco's rule everywhere.
+  (if (and *gauntlet-plant-boss-rework* (!= (-> self eco) (gauntlet-eco none)))
+    (gauntlet-eco-glow! self (-> self eco)))
   (transform-post)
   (none))
 
@@ -865,8 +869,10 @@
                    ((>= (-> self try) 15) 1)
                    ((>= (-> self try) 10) 2)
                    (else 3))))
-      ;; gauntlet: the round has begun, and so has its eco
-      (set! (-> self eco) (plant-boss-round-eco (-> self health))))
+      ;; gauntlet: the round has begun, and so has its eco, which the boss's head wears like the minions of the round (plant-boss-post keeps it up)
+      (set! (-> self eco) (plant-boss-round-eco (-> self health)))
+      (if (!= (-> self eco) (gauntlet-eco none))
+        (gauntlet-eco-glow! self (-> self eco))))
   :trans
     (behavior ()
       (let ((f0-0 (vector-vector-distance (target-pos 0) (-> self root trans))))
