@@ -5853,9 +5853,31 @@
 
 ;; ------------------------------------------------------------------ the poll --
 
+;; Every "when did it last happen" stamp of this mod is a reading of (current-time), and loading a save does not leave that clock alone: it sets
+;; it to the base-time the save was made at (game-save.gc, game-save-elt base-time), mending only the stamps the game keeps itself (the
+;; blackout, the letterbox, the hint and text times). A stamp of the mod's that was taken later in the session than the save was made is then
+;; in the FUTURE: "since" is negative, and the muse icon's flash (1 - since / flash time) came out huge, so the portrait was drawn at many
+;; times its size and shrank as the clock caught up with the stamp. The same future stamp would hold Daxter silent, the R2 blast on its
+;; cooldown, the empty goggles quiet and the mastery banner up for as long. A stamp ahead of the clock can only mean the clock was set back,
+;; so it goes back to long ago, which is what it was before anything happened.
+(defmacro gauntlet-stamp-unrewind! (stamp)
+  `(if (< (current-time) ,stamp) (set! ,stamp (- 0 (seconds 3600)))))
+
+(defun gauntlet-clock-rewound-poll! ()
+  "Per-frame, first: a stamp that is later than the clock (a save was loaded that was made earlier in the game's time than the stamp) is put
+   back to long ago, before anything reads it."
+  (gauntlet-stamp-unrewind! *gauntlet-muse-flip-time*)
+  (gauntlet-stamp-unrewind! *gauntlet-mayhem-voice-time*)
+  (gauntlet-stamp-unrewind! *gauntlet-eco-blast-time*)
+  (gauntlet-stamp-unrewind! *gauntlet-goggles-click-time*)
+  (gauntlet-stamp-unrewind! *gauntlet-mastery-time*)
+  0)
+
 (defun gauntlet-poll! ()
-  "Per-frame hook: the settings file is looked at first, so what it says holds for this frame; then Jak's health, for the
-   desperation; the muse, the drop spots, the Sandover spot, the beach, the TNT barrels and R2 are watched every frame."
+  "Per-frame hook: the clock is checked for a save loaded under the mod's stamps, then the settings file is looked at, so what it says
+   holds for this frame; then Jak's health, for the desperation; the muse, the drop spots, the Sandover spot, the beach, the TNT barrels
+   and R2 are watched every frame."
+  (gauntlet-clock-rewound-poll!)
   (gauntlet-settings-poll!)
   (gauntlet-muse-poll!)
   (gauntlet-drop-spots-poll!)
