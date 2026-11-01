@@ -198,6 +198,7 @@
   "loader.o"
   "task-control-h.o"
   "speedruns-h.o" ;; added
+  "gauntlet-h.o" ;; added (gauntlet mod)
   "game-info.o"
   "game-save.o"
   "settings.o"
@@ -310,5 +311,6 @@
   "entity-debug.o" ;; added
   "subtitle.o" ;; added
   "default-menu-pc.o" ;; added
+  "gauntlet.o" ;; added (gauntlet drops, after generic-obs and shadow whose symbols its states read at link time)
  ))
 

@@ -194,6 +194,7 @@
   "loader.o"
   "task-control-h.o"
   "speedruns-h.o" ;; added
+  "gauntlet-h.o" ;; added (gauntlet mod)
   "game-info.o"
   "game-save.o"
   "settings.o"
@@ -338,6 +339,7 @@
   "tippy.o"
   "joint-exploder.o"
   "babak.o"
+  "ice-cube.o" ;; gauntlet: the beach's lurkerworms raise ice cubes (moved from SNO.DGO, where a second copy would dangle when it unloads)
   "sharkey.o"
   "orb-cache.o"
   "plat.o"
@@ -346,4 +348,42 @@
   "ropebridge.o"
   "ticky.o"
   "hud-classes-pc.o" ;; added
+  "gauntlet.o" ;; added (gauntlet drops, after generic-obs and shadow whose symbols its states read at link time)
+  ;; gauntlet: the yellow sage the training dummies turn into. His art group and its tpage ship in CIT.DGO only,
+  ;; so they live here, with his models in GAME.fr3 (common_art_groups in the decompiler config).
+  "yellowsage-ag.go"
+  "tpage-1417.go"
+  ;; gauntlet: the dark eco bomb that can be dropped on Jak anywhere. Its art group ships in FIN.DGO only, with its
+  ;; textures in the final boss's tpage 1419; its models, with their textures, are in GAME.fr3 (common_art_groups again).
+  ;; tpage 1419 is NOT here: every tpage booted in GAME.CGO takes VRAM for good, and with it the boot uploads ran ~450 KB past
+  ;; the 4 MB the GS can address, which wrapped onto the font and garbled the title screen's text. The bomb draws from its fr3
+  ;; textures (see the ice cube note below) and has no eyes, so the 578 KB page bought nothing.
+  "darkecobomb-ag.go"
+  ;; gauntlet: the yakows that can charge Jak anywhere. Their art group ships in VI1.DGO only, with its textures in Sandover's
+  ;; pris tpage 400; their models are in GAME.fr3 (common_art_groups again).
+  "yakow-ag.go"
+  "tpage-400.go"
+  ;; gauntlet: Klaww, the ogre boss, who stands in the pelican's nest at Sentinel Beach. His art group ships in OGR.DGO only, with
+  ;; its textures (his own, and the boulder's) in Mountain Pass's pris tpage 967; his models are in GAME.fr3 (common_art_groups again).
+  "ogreboss-ag.go"
+  "tpage-967.go"
+  ;; gauntlet: the buttons beside the green eco cloggers that shoot him. generic-button-ag ships in SUN.DGO only, with its three
+  ;; textures in Lost Precursor City's tfrag tpage 661; its models are in GAME.fr3 (common_art_groups again).
+  "generic-button-ag.go"
+  ;; gauntlet: the ice cubes the beach's lurkerworms raise out of the sand. Their art groups ship in SNO.DGO (and stay there for
+  ;; Snowy Mountain); their models, with their textures, are in GAME.fr3 (common_art_groups again). Their tpage 842 is NOT
+  ;; here: a tpage that boots in GAME.CGO is uploaded to VRAM for good, VRAM is 4 MB (the GS addresses it with 14 bits), and
+  ;; this one (288 KB, all of Snowy's characters) pushed the boot uploads past the end, which crashed gk before its window
+  ;; opened. The PC merc renderer draws a model from its fr3 textures (Merc2 binds lev->textures), not from VRAM, and the
+  ;; cube has no eyes or VRAM-read effects, so it does not need the page; generic-button-ag above lives the same way.
+  "ice-cube-ag.go"
+  "ice-cube-break-ag.go"
+  ;; gauntlet: the skull TNT barrels of Mountain Pass, which can stand wherever the designer picks a spot for one. Their art group
+  ;; ships in OGR.DGO only; its models, with their textures, are in GAME.fr3 (common_art_groups again). No tpage, for the VRAM
+  ;; reason above: the barrel has no eyes and no VRAM-read effects.
+  "tntbarrel-ag.go"
+  ;; gauntlet: the zoomer that carries the flying fish of the jungle's fishing game. The bike's art group ships in the racing levels'
+  ;; DGOs (FIC, LAV, MIS, OGR, ROL) and not in JUN.DGO; its models, with their textures, are in GAME.fr3 (common_art_groups again). No
+  ;; tpage, for the VRAM reason above: the bike has no eyes and no VRAM-read effects.
+  "racer-ag.go"
  ))

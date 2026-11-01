@@ -1,0 +1,275 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; Declarations for the gauntlet mod (pc/features/gauntlet.gc). main.gc calls the
+;; per-frame poll and compiles long before the module, so the call needs
+;; declaring here, and so do the functions the levels' own files call.
+
+;; The mod's per-frame work: the settings file, and everything that watches for Jak (the muse, the drop spots, the Sandover spot, the beach,
+;; the TNT barrels). A no-op except one exists-check per 30 frames.
+(define-extern gauntlet-poll! (function none))
+
+;; The pelican at Sentinel Beach (levels/beach/pelican.gc) calls this when it is at its nest with the stolen power cell:
+;; Klaww falls onto it from there. It is compiled in the beach's DGO, after this file, so the call needs declaring here too.
+(define-extern gauntlet-klaww-pelican-at-nest! (function process none))
+
+;; The cannon's shots (levels/misty/mistycannon.gc, which is also in BEA.DGO: the cannon on top of the sentinel at Sentinel Beach)
+;; call this as each one goes off, with where and how wide the blast is. A blast on Klaww heals him one hit. It is compiled in
+;; the beach's and Misty's DGOs, after this file, so the call needs declaring here too.
+(define-extern gauntlet-klaww-cannon-blast! (function vector float none))
+
+;; The farm's yakows (levels/village1/yakow.gc, in VI1.DGO, after this file and after gauntlet.gc) call this when Jak attacks
+;; one, so a punched cow can bring the herd down on him. It is given the yakow that was hit.
+(define-extern gauntlet-stampede-yakow-hit! (function process-drawable int))
+
+;; Misty Island's muse (pc/features/gauntlet.gc, "the muse"). Catching her calms the island, losing her (a hit, a bonk, a death) starts the
+;; mayhem. babak.gc (GAME.CGO) and bonelurker.gc (MIS.DGO) ask these what their pace is and whether the mayhem is on for them, both for the process
+;; that asks (the answer is only not the plain one for something Misty placed, while the muse is loose; a babak asks every frame and wears
+;; the charge that goes with the answer: the one it was born with in the calm, the island's in the mayhem), and muse.gc (MIS.DGO) tells
+;; the mod of a catch. All are defined in gauntlet.gc and only called once a level is running.
+(define-extern gauntlet-misty-pace (function process float))
+(define-extern gauntlet-mayhem-for? (function process basic))
+(define-extern gauntlet-babak-sync (function process none)) ;; babak.gc defines it: the muse's change, told to a babak asleep
+(define-extern gauntlet-babak-charged? (function process basic)) ;; babak.gc defines it: whether a babak wears an eco now
+(define-extern gauntlet-muse-caught! (function symbol none))
+
+;; The Forbidden Jungle's fishing game (levels/jungle/fisher.gc, in JUN.DGO, after this file and after gauntlet.gc) asks these. Holding X
+;; raises the net to the height of a fish on a zoomer that now and then flies down the river (pc/features/gauntlet.gc, "the flying fish");
+;; with the net up the river's fish cannot be caught, except the ones that leap out of the water to the net's height. begin and end bracket
+;; one game of it; update runs every frame of it with the fisher, the net's place on the river (at the water, where the fish are caught), the
+;; river's lane width, the net's radius and how many misses the game has and allows, which fisher.gc owns.
+(define-extern gauntlet-fisher-begin! (function int))
+(define-extern gauntlet-fisher-end! (function int))
+(define-extern gauntlet-fisher-update! (function process-drawable vector float float int int none))
+;; True while the net is down far enough to catch the river's fish.
+(define-extern gauntlet-fisher-net-low? (function symbol))
+;; True when the net is where a river fish lifted this far (game units) off its swimming line can be caught: a lowered net for a fish in the
+;; water, a raised one for a fish in the air.
+(define-extern gauntlet-fisher-net-catches? (function float symbol))
+;; Whether a river fish that is being born will leap once on its way down the river.
+(define-extern gauntlet-fisher-jump-roll! (function symbol))
+;; How far a leaping fish at trans, swimming along dir, is above its swimming line (game units; 0 when it is not in its leap), and how far
+;; its nose is turned up (rotation units, negative on the way down).
+(define-extern gauntlet-fisher-jump-lift (function vector vector float))
+(define-extern gauntlet-fisher-jump-pitch (function vector vector float))
+;; The net's root joint: where cspace<-cspace+quaternion! puts it (Jak's right hand), lifted by the net's rise. target-fishing uses it in place of that function.
+(define-extern gauntlet-fisher-net-cspace! (function cspace cspace quaternion matrix))
+
+;; Where a muse that Jak dropped starts. muse.gc reads it as a muse is born (levels/misty/muse.gc, muse-path-point-nearest): with w at
+;; 1.0 the muse starts on the point of its path nearest the xyz, and puts the w back to 0.0; a muse born with w at 0.0 starts where the game puts it.
+(define *gauntlet-muse-start* (new 'global 'vector))
+
+;; ---------------------------------------------------------- the eco charge --
+
+;; The mod speaks in eco, so that the colour of a charge tells the player what a hazard does. Red is strength: a red hazard
+;; hits for two and throws Jak far. Blue is draw: a blue hazard pulls Jak in, or runs at him faster. Yellow and green are not
+;; hazards: they are what the scout fly boxes ask for (yellow eco; green is the zoomer's, on Precursor Basin). A charged hazard glows
+;; its colour and carries the aura of Jak's own eco of that colour. The users are the red yakows of the stampede, the bomb
+;; (blue, it pulls) and the babaks, which are in GAME.CGO and so charged on every level. babak.gc compiles and loads before
+;; gauntlet.gc, so the kind and the constants live here, ahead of both, and the three functions are declared here and
+;; defined in gauntlet.gc, the way gauntlet-klaww-pelican-at-nest! is: they are only called once a level is running.
+(defenum gauntlet-eco
+  :type uint32
+  (none 0)
+  (red 1)
+  (blue 2)
+  (yellow 3)
+  (green 4))
+
+(defconstant GAUNTLET_ECO_RED_SHOVE_BACK (meters 9)) ;; a red hit throws Jak this far, two and a half times a plain yakow's
+(defconstant GAUNTLET_ECO_RED_SHOVE_UP (meters 3)) ;; and twice as high
+
+;; The eco gets stronger as Jak gets weaker: every effect of a charge (blue's speed and pull, red's throw) is multiplied by this,
+;; read live wherever the effect is applied. 1.0 at full health, *gauntlet-desperation-max* at one hit left, linear between,
+;; and 1.0 with no Jak. See "the desperation" in pc/features/gauntlet.gc.
+(define-extern gauntlet-desperation (function float))
+
+;; Push the colors of a process-drawable's draw toward a kind's eco, with a glow that burns harder as the desperation rises.
+;; Called when it is made, and again every frame by the aura below.
+(define-extern gauntlet-eco-glow! (function process-drawable gauntlet-eco none))
+;; One frame of a kind's eco aura at a process-drawable's joints, to be called every frame it should show. Denser as the
+;; desperation rises.
+(define-extern gauntlet-eco-aura! (function process-drawable gauntlet-eco none))
+;; The second hit of a red strike, after the first has landed on the process given.
+(define-extern gauntlet-eco-second-hit! (function process none))
+
+;; ------------------------------------------------------------ the volley --
+
+;; The yellow eco that is fired at Jak, in volleys: the training dummies' sage fires them (levels/training/training-obs.gc) and the
+;; Forbidden Jungle's yellow plant boss minions (levels/jungleb/aphid.gc) do too. The functions are defined in gauntlet.gc ("the volley")
+;; and only called once a level is running, as the three above are; the shot itself (gauntlet-shot) is in engine/game/projectiles.gc.
+(deftype gauntlet-volley (structure)
+  ((start-time     time-frame)
+   (next-shot-time time-frame)
+   (size           int32)
+   (shots-left     int32)
+   (sweep          float)
+   (heading        vector :inline)
+   (muzzle         vector :inline)))
+
+(define-extern gauntlet-jak-in-range? (function process-drawable float object))
+(define-extern gauntlet-jak-shootable? (function object))
+(define-extern gauntlet-volley-start (function gauntlet-volley vector int))
+(define-extern gauntlet-volley-fire-next (function process-drawable gauntlet-volley int))
+(define-extern gauntlet-volley-update (function process-drawable gauntlet-volley vector float int))
+
+;; ------------------------------------------------------------ the tunables --
+
+;; Everything the mod lets be tuned. The defaults are written once, as constants in game units (meters are
+;; 4096 units, seconds are 300 ticks, degrees are 65536 per turn); the globals start from them and are what the mod
+;; reads on every use. pc/features/gauntlet.gc owns the settings file that overwrites the globals, and puts them back to
+;; these same defaults, so the reset path and the defaults read one truth.
+;; gauntlet.gc and levels/training/training-obs.gc both read the globals, which is why they live here, ahead of both.
+(defconstant GAUNTLET_BOMB_COUNTDOWN_DEFAULT (seconds 4)) ;; from landing to blast, with the warning beeps speeding up
+(defconstant GAUNTLET_BOMB_BLAST_RADIUS_DEFAULT (meters 35)) ;; Jak inside this when it goes off is killed, unless a recent hit still has him invulnerable
+(defconstant GAUNTLET_BOMB_PULL_RADIUS_DEFAULT GAUNTLET_BOMB_BLAST_RADIUS_DEFAULT) ;; the bomb pulls Jak while he is closer than this, measured sideways
+(defconstant GAUNTLET_BOMB_PULL_DEFAULT (meters 20)) ;; in the air Jak is dragged toward the bomb faster every second by this much, a third of gravity: a 0.7 s jump loses 4.6 m, a 1 s flip loses 10 m
+(defconstant GAUNTLET_BOMB_GROUND_PULL_DEFAULT (meters 0.5)) ;; on his feet, or in water, he slides toward it at this steady speed: felt standing still, a 2 m cost over a 4 s run
+(defconstant GAUNTLET_BOMB_DROP_HEIGHT_DEFAULT (meters 25)) ;; how high above Jak the bomb appears
+(defconstant GAUNTLET_BOMB_GRAVITY_DEFAULT (meters 30)) ;; its fall, in meters per second per second (about 1.3 s from 25 m)
+(defconstant GAUNTLET_BRIDGE_ENABLED_DEFAULT #t) ;; the bomb drops by itself on the bridge
+(defconstant GAUNTLET_VENT_ENABLED_DEFAULT #t) ;; and on the blue eco vent before the precursor door, where the player has just charged up with blue eco
+(defconstant GAUNTLET_BRIDGE_TRIGGER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to a drop spot of Geyser Rock (the bridge, the vent), sideways, sets its bomb off
+(defconstant GAUNTLET_BRIDGE_REARM_RANGE_DEFAULT (meters 60)) ;; and that spot will not drop again until he has been farther than this from it, which dying and respawning also does
+(defconstant GAUNTLET_DUMMIES_ENABLED_DEFAULT #t) ;; the training dummies turn into sages and shoot
+(defconstant GAUNTLET_DUMMY_VOLLEY_INTERVAL_DEFAULT (seconds 3.0)) ;; time between volley starts, per dummy
+(defconstant GAUNTLET_DUMMY_VOLLEY_GAP_DEFAULT (seconds 0.4)) ;; time between shots within a volley
+(defconstant GAUNTLET_DUMMY_VOLLEY_SIZE_DEFAULT 5) ;; shots per volley, swept across a fan centred on the aim at Jak
+(defconstant GAUNTLET_DUMMY_VOLLEY_SPREAD_DEFAULT (degrees 15)) ;; angle between neighbouring shots in the fan
+(defconstant GAUNTLET_DUMMY_RANGE_DEFAULT (meters 20)) ;; a dummy turns into a sage and fires once Jak is this close
+(defconstant GAUNTLET_SAGE_LEAVE_RANGE_DEFAULT (meters 24)) ;; the sage leaves only beyond this, so Jak on the edge of range does not flicker him in and out
+;; The first dummy heralds the rest from the top of the stairs (28 m from it), so the player learns early
+;; that the dummies shoot. It wakes from further away, and every shot rule is otherwise the same.
+(defconstant GAUNTLET_HERALD_RANGE_DEFAULT (meters 30)) ;; its appear and firing range
+(defconstant GAUNTLET_HERALD_LEAVE_RANGE_DEFAULT (meters 34)) ;; its sage leaves beyond this
+(defconstant GAUNTLET_DUMMY_SHOT_SPEED_DEFAULT (meters 40)) ;; Jak's own shot is 60; slower here so a sidestep beats it
+(defconstant GAUNTLET_STAMPEDE_ENABLED_DEFAULT #t) ;; the herd charges by itself at the spot beside the farmer in Sandover
+(defconstant GAUNTLET_STAMPEDE_HERD_SIZE_DEFAULT 8) ;; yakows in a herd, filled three to a row
+(defconstant GAUNTLET_STAMPEDE_SPEED_DEFAULT (meters 14)) ;; Jak runs at 10 m/s, so he cannot outrun them and has to sidestep
+(defconstant GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to the Sandover spot, sideways, sets the herd off
+(defconstant GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT (meters 60)) ;; and it will not charge again until he has been farther than this from it
+(defconstant GAUNTLET_YAKOW_STAMPEDE_ENABLED_DEFAULT #t) ;; hitting a farm yakow sends the herd, from behind the yakow, through it, at Jak
+(defconstant GAUNTLET_STAMPEDE_LAUNCH_UP_DEFAULT (meters 30)) ;; a yakow's hit throws Jak this high, far into the sky: the top of his arc, above where he stood (see gauntlet-yakow-trample)
+(defconstant GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT 3) ;; yakows charged with red eco, the first slots of the herd: the lead row. Red hits for two and throws far
+(defconstant GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT #t) ;; babaks may be born charged with eco, on every level
+(defconstant GAUNTLET_BABAK_CHARGE_CHANCE_DEFAULT 0.5) ;; the chance, from 0 to 1, that a babak is charged when it is born; a charged one is red or blue by the toss of a coin
+(defconstant GAUNTLET_BABAK_BLUE_SPEED_DEFAULT 3.0) ;; a blue babak runs this many times faster than a plain one at full health; a red one hits as hard as a red yakow
+;; The eco effects scale with Jak's missing health (gauntlet-desperation in gauntlet.gc), and a power cell heals him.
+(defconstant GAUNTLET_DESPERATION_MAX_DEFAULT 2.0) ;; every eco effect is this many times stronger with one hit left (1.0 at full health, linear between)
+(defconstant GAUNTLET_CELL_HEAL_ENABLED_DEFAULT #t) ;; a power cell heals Jak up to 3 hits, never above
+;; Misty Island's muse: with her caught the island is calm (its own lurkers and no company), without her (not yet caught, or dropped by a hit, a bonk or a death) it is mayhem.
+(defconstant GAUNTLET_MISTY_MUSE_ENABLED_DEFAULT #t) ;; the muse is a state of the island, shown by an icon, and a loose one brings the mayhem below
+(defconstant GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT 2) ;; every lurker Misty places has this many more clones while the muse is loose, on top of lurker-multiplier's (which Misty has only then too)
+(defconstant GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT 1.8) ;; Misty's babaks and bonelurkers run this many times faster while she is loose; 1.5 was a pace nobody noticed against the calm one
+(defconstant GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT 1.0) ;; the chance a Misty babak is born charged while she is loose, instead of babak-charge-chance
+(defconstant GAUNTLET_MISTY_MAYHEM_ATMOSPHERE_DEFAULT 1.0) ;; how far the world is tinted dark-eco violet while she is loose, from 0 (not at all) to 1 (as far as it goes)
+(defconstant GAUNTLET_MISTY_MAYHEM_MUSIC_DEFAULT #t) ;; Misty's battle music (its sound-flava misty-battle) plays while she is loose
+(defconstant GAUNTLET_MISTY_MAYHEM_VOICE_DEFAULT #t) ;; Daxter says a line when she is lost and another when she is caught again, at most one in a few seconds
+(defconstant GAUNTLET_MUSE_GRACE (seconds 1.5)) ;; a muse Jak has just dropped cannot be caught for this long, or she would be caught where she lands
+(defconstant GAUNTLET_MUSE_ICON_SCALE_DEFAULT 1.0) ;; how many times the portrait's usual size (about 47 px tall of the hud's 448, GAUNTLET_MUSE_ICON_SCALE) it is drawn
+;; The lurkerworms of Sentinel Beach pull Snowy Mountain's ice cubes up out of the sand when they rise (levels/beach/lurkerworm.gc).
+(defconstant GAUNTLET_WORM_CUBES_ENABLED_DEFAULT #t) ;; a worm that rises raises ice cubes around it
+(defconstant GAUNTLET_WORM_CUBE_COUNT_DEFAULT 2) ;; ice cubes per rise, evenly around the worm; a worm raises a new wave only once the last is gone
+;; Every lurker the level places has company (pc/features/gauntlet.gc, "the horde"; the hook is in engine/entity/entity.gc).
+(defconstant GAUNTLET_LURKER_MULTIPLIER_DEFAULT 3) ;; each lurker the level places becomes this many, itself and the clones born beside it: 6 where there are 2, 3 where there is 1. 1 is the game's own
+;; The cap keeps a crowd from costing more than the frame has: every clone is a whole nav enemy process, with its own collision,
+;; nav mesh walk and animation, and the multiplier times the lurkers a level places can run far past what a frame can pay for.
+(defconstant GAUNTLET_HORDE_MAX_CLONES_DEFAULT 60) ;; clones alive at once, all groups together; a birth that would pass it gets only the clones that fit
+;; Klaww stands in the pelican's nest at Sentinel Beach and lobs boulders at Jak. The buttons on the beach (a table in gauntlet.gc) shoot him; each button is one hit, and all of them bring him down.
+(defconstant GAUNTLET_KLAWW_ENABLED_DEFAULT #t) ;; Klaww and his buttons appear on the beach
+(defconstant GAUNTLET_KLAWW_THROW_CYCLE 1580) ;; ticks, 5.2667 s: the throw animations played at their own speed, measured from a play log (158 frames at 30 a second: 56 of wind-up, 102 of loop and follow-through)
+(defconstant GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT GAUNTLET_KLAWW_THROW_CYCLE) ;; release to release with no hit taken: the animations as the game made them. Shorter plays them faster, so it is the real gap
+(defconstant GAUNTLET_KLAWW_RAGE_MAX_DEFAULT 2.5) ;; he throws this many times as often with one hit left (1.0 with none taken, linear between): 2.1 s between boulders at the default interval
+(defconstant GAUNTLET_KLAWW_RADIUS_MAX_DEFAULT 2.0) ;; and his boulders blast this many times as wide with one hit left (1.0 with none taken, linear between)
+(defconstant GAUNTLET_KLAWW_RANGE_DEFAULT (meters 140)) ;; he throws while Jak is this close, sideways: the first button is 100 m from the nest, so Jak is still a target while he presses it
+(defconstant GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to where a boulder lands is hit; the landing marker draws this circle
+;; The scout fly boxes of Sentinel Beach each want an eco to open (a table in gauntlet.gc), and lurkers carry it (pc/features/gauntlet.gc, "the scout fly boxes").
+(defconstant GAUNTLET_FLYBOX_ENABLED_DEFAULT #t) ;; the boxes of the table want their eco; the lurkers that carry it glow and spill it
+(defconstant GAUNTLET_FLYBOX_BOUNCE_DEFAULT (meters 2.5)) ;; a box that refuses Jak throws him this far back (and 1.5 m up), with no damage
+(defconstant GAUNTLET_CARRIER_RETURN_DEFAULT (seconds 20)) ;; a carrier that died comes back, charged again, this long after, while its box is still closed; 0 is never. The eco it spilled is picked up once and gone, so this is how a wasted colour comes back
+;; The skull TNT barrels of Mountain Pass stand where a table in gauntlet.gc puts them, on any level.
+(defconstant GAUNTLET_TNT_ENABLED_DEFAULT #t) ;; the barrels stand at their spots
+;; The Forbidden Jungle's temple (pc/features/gauntlet.gc, "the temple"): its floating platforms are not born, to be crossed on boosted and roll jumps.
+(defconstant GAUNTLET_FJ_TEMPLE_PLATFORMS_REMOVED_DEFAULT #t) ;; the temple's floating platforms are not there
+;; The Forbidden Jungle's plant boss (pc/features/gauntlet.gc, "the plant boss"): its minions are charged with eco by the round, and a bite is the end of Jak.
+(defconstant GAUNTLET_PLANT_BOSS_REWORK_DEFAULT #t) ;; the rework is on; off is the game's own boss
+;; The Forbidden Jungle's fishing game: a big fish on a zoomer flies down the river, higher up, and the net can be raised to it by holding X.
+(defconstant GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT #t) ;; the flying fish comes, and X raises the net; off is the game's own fishing
+(defconstant GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT (seconds 20)) ;; from one flying fish to the next, give or take a quarter; the first comes after half of it
+(defconstant GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT 20) ;; what catching it is worth: a river fish is worth 1, a big one 5; it is also what missing it costs when that loses the game
+(defconstant GAUNTLET_FISHER_FLYER_MISS_LOSES_DEFAULT #t) ;; letting it get away ends the game of fishing as too many misses do
+(defconstant GAUNTLET_FISHER_FLYER_SPEED_DEFAULT 2.2) ;; how fast it flies down the river, in path positions a second: a river fish crosses at 2.6 to 4.1, about 3.6 m to a position
+(defconstant GAUNTLET_FISHER_FLYER_EEL_CHANCE_DEFAULT 33) ;; the chance in a hundred that a flying fish is an eel on the zoomer instead, which is to be dodged
+(defconstant GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT 20) ;; the chance in a hundred that a river fish, the eels too, leaps out of the water once on its way down
+(defconstant GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT (meters 3.5)) ;; how far above the net's usual height the flying fish flies, and how far X lifts the net: clear of Jak's head, in the camera's view
+
+;; Times are in ticks (300 a second), lengths and speeds in game units, the spread in rotation units, a chance or a
+;; multiplier a plain float.
+;; Which of them apply to something already in the world varies by setting: a bomb in the air keeps
+;; the countdown, drop height and gravity it was dropped with, a sage keeps the ranges he appeared with.
+(define *gauntlet-bomb-countdown* (the int GAUNTLET_BOMB_COUNTDOWN_DEFAULT))
+(define *gauntlet-bomb-blast-radius* GAUNTLET_BOMB_BLAST_RADIUS_DEFAULT)
+(define *gauntlet-bomb-pull-radius* GAUNTLET_BOMB_PULL_RADIUS_DEFAULT)
+(define *gauntlet-bomb-pull* GAUNTLET_BOMB_PULL_DEFAULT) ;; per second, per second
+(define *gauntlet-bomb-ground-pull* GAUNTLET_BOMB_GROUND_PULL_DEFAULT) ;; per second
+(define *gauntlet-bomb-drop-height* GAUNTLET_BOMB_DROP_HEIGHT_DEFAULT)
+(define *gauntlet-bomb-gravity* GAUNTLET_BOMB_GRAVITY_DEFAULT) ;; per second, per second
+(define *gauntlet-bridge-enabled* GAUNTLET_BRIDGE_ENABLED_DEFAULT) ;; off: the bomb never drops by itself on the bridge
+(define *gauntlet-vent-enabled* GAUNTLET_VENT_ENABLED_DEFAULT) ;; off: the bomb never drops by itself on the vent
+(define *gauntlet-bridge-trigger-radius* GAUNTLET_BRIDGE_TRIGGER_RADIUS_DEFAULT)
+(define *gauntlet-bridge-rearm-range* GAUNTLET_BRIDGE_REARM_RANGE_DEFAULT)
+(define *gauntlet-dummies-enabled* GAUNTLET_DUMMIES_ENABLED_DEFAULT) ;; off: the training dummies are the game's own, no sage and no shots
+(define *gauntlet-dummy-volley-interval* (the int GAUNTLET_DUMMY_VOLLEY_INTERVAL_DEFAULT))
+(define *gauntlet-dummy-volley-gap* (the int GAUNTLET_DUMMY_VOLLEY_GAP_DEFAULT))
+(define *gauntlet-dummy-volley-size* GAUNTLET_DUMMY_VOLLEY_SIZE_DEFAULT)
+(define *gauntlet-dummy-volley-spread* GAUNTLET_DUMMY_VOLLEY_SPREAD_DEFAULT)
+(define *gauntlet-dummy-range* GAUNTLET_DUMMY_RANGE_DEFAULT)
+(define *gauntlet-dummy-leave-range* GAUNTLET_SAGE_LEAVE_RANGE_DEFAULT)
+(define *gauntlet-herald-range* GAUNTLET_HERALD_RANGE_DEFAULT)
+(define *gauntlet-herald-leave-range* GAUNTLET_HERALD_LEAVE_RANGE_DEFAULT)
+(define *gauntlet-dummy-shot-speed* GAUNTLET_DUMMY_SHOT_SPEED_DEFAULT) ;; per second
+(define *gauntlet-stampede-enabled* GAUNTLET_STAMPEDE_ENABLED_DEFAULT) ;; off: the herd never charges by itself in Sandover
+(define *gauntlet-stampede-herd-size* GAUNTLET_STAMPEDE_HERD_SIZE_DEFAULT)
+(define *gauntlet-stampede-speed* GAUNTLET_STAMPEDE_SPEED_DEFAULT) ;; per second
+(define *gauntlet-stampede-trigger-radius* GAUNTLET_STAMPEDE_TRIGGER_RADIUS_DEFAULT)
+(define *gauntlet-stampede-rearm-range* GAUNTLET_STAMPEDE_REARM_RANGE_DEFAULT)
+(define *gauntlet-yakow-stampede-enabled* GAUNTLET_YAKOW_STAMPEDE_ENABLED_DEFAULT) ;; off: hitting a farm yakow does nothing extra
+(define *gauntlet-stampede-launch-up* GAUNTLET_STAMPEDE_LAUNCH_UP_DEFAULT) ;; live: read as each yakow's hit is sent
+(define *gauntlet-stampede-red-count* GAUNTLET_STAMPEDE_RED_COUNT_DEFAULT) ;; the herd's first this-many slots are red, however big the herd
+(define *gauntlet-babak-charge-enabled* GAUNTLET_BABAK_CHARGE_ENABLED_DEFAULT) ;; off: babaks are the game's own, never charged
+(define *gauntlet-babak-charge-chance* GAUNTLET_BABAK_CHARGE_CHANCE_DEFAULT) ;; rolled once per babak, when it is born
+(define *gauntlet-babak-blue-speed* GAUNTLET_BABAK_BLUE_SPEED_DEFAULT) ;; at full health; a babak keeps the base it was born with, and the desperation multiplies it live
+(define *gauntlet-desperation-max* GAUNTLET_DESPERATION_MAX_DEFAULT) ;; live: read every frame an eco effect is applied
+(define *gauntlet-cell-heal-enabled* GAUNTLET_CELL_HEAL_ENABLED_DEFAULT) ;; off: a power cell leaves Jak's health as the game made it
+(define *gauntlet-misty-muse-enabled* GAUNTLET_MISTY_MUSE_ENABLED_DEFAULT) ;; off: no icon, no mayhem; the muse is the game's own and her catch is the game's
+(define *gauntlet-misty-mayhem-extra* GAUNTLET_MISTY_MAYHEM_EXTRA_DEFAULT) ;; live: dropping the muse tops up every group, catching her takes all the clones away
+(define *gauntlet-misty-mayhem-speed* GAUNTLET_MISTY_MAYHEM_SPEED_DEFAULT) ;; live: read every frame a Misty lurker moves; composes with the desperation by multiplication
+(define *gauntlet-misty-mayhem-charge-chance* GAUNTLET_MISTY_MAYHEM_CHARGE_CHANCE_DEFAULT) ;; read as each babak is born
+(define *gauntlet-misty-mayhem-atmosphere* GAUNTLET_MISTY_MAYHEM_ATMOSPHERE_DEFAULT) ;; live: read every frame the mood is tinted
+(define *gauntlet-misty-mayhem-music* GAUNTLET_MISTY_MAYHEM_MUSIC_DEFAULT) ;; live: read every frame
+(define *gauntlet-misty-mayhem-voice* GAUNTLET_MISTY_MAYHEM_VOICE_DEFAULT) ;; live: read as each line would be said
+(define *gauntlet-misty-muse-icon-scale* GAUNTLET_MUSE_ICON_SCALE_DEFAULT) ;; live: read every frame the icon is drawn
+(define *gauntlet-worm-cubes-enabled* GAUNTLET_WORM_CUBES_ENABLED_DEFAULT) ;; off: the worms rise as the game made them
+(define *gauntlet-worm-cube-count* GAUNTLET_WORM_CUBE_COUNT_DEFAULT) ;; read at each rise
+(define *gauntlet-lurker-multiplier* GAUNTLET_LURKER_MULTIPLIER_DEFAULT) ;; read as each lurker is born; the ones already in the world keep their company (Misty's, with the muse setting on, have it only while she is loose)
+(define *gauntlet-horde-max-clones* GAUNTLET_HORDE_MAX_CLONES_DEFAULT) ;; read as each lurker is born, and live: clones already standing are never taken away for it
+(define *gauntlet-klaww-enabled* GAUNTLET_KLAWW_ENABLED_DEFAULT) ;; off: no Klaww, no buttons, and whatever stands is taken away
+(define *gauntlet-klaww-throw-interval* (the int GAUNTLET_KLAWW_THROW_INTERVAL_DEFAULT))
+(define *gauntlet-klaww-rage-max* GAUNTLET_KLAWW_RAGE_MAX_DEFAULT) ;; live: read every frame he is deciding whether to throw, and every frame of a throw
+(define *gauntlet-klaww-radius-max* GAUNTLET_KLAWW_RADIUS_MAX_DEFAULT) ;; read as each boulder leaves his hand
+(define *gauntlet-klaww-range* GAUNTLET_KLAWW_RANGE_DEFAULT)
+(define *gauntlet-klaww-boulder-radius* GAUNTLET_KLAWW_BOULDER_RADIUS_DEFAULT) ;; a boulder in the air keeps the radius it was thrown with
+(define *gauntlet-flybox-enabled* GAUNTLET_FLYBOX_ENABLED_DEFAULT) ;; live for the rule (off: every box opens as the game made it); the look and the carriers are made at birth
+(define *gauntlet-flybox-bounce* GAUNTLET_FLYBOX_BOUNCE_DEFAULT) ;; read as each refusal happens
+(define *gauntlet-carrier-return* (the int GAUNTLET_CARRIER_RETURN_DEFAULT)) ;; read as each carrier dies
+(define *gauntlet-tnt-enabled* GAUNTLET_TNT_ENABLED_DEFAULT) ;; off: no barrels, and whatever stands is put away
+(define *gauntlet-fj-temple-platforms-removed* GAUNTLET_FJ_TEMPLE_PLATFORMS_REMOVED_DEFAULT) ;; read as each actor of the temple is born; off: they are born as the game made them
+(define *gauntlet-plant-boss-rework* GAUNTLET_PLANT_BOSS_REWORK_DEFAULT) ;; live: read as each round starts (the minions' eco) and as each bite lands
+(define *gauntlet-fisher-flyer-enabled* GAUNTLET_FISHER_FLYER_ENABLED_DEFAULT) ;; live: read every frame of the fishing game
+(define *gauntlet-fisher-flyer-interval* (the int GAUNTLET_FISHER_FLYER_INTERVAL_DEFAULT)) ;; read when the next flying fish is scheduled
+(define *gauntlet-fisher-flyer-pounds* GAUNTLET_FISHER_FLYER_POUNDS_DEFAULT) ;; read as the flying fish is caught
+(define *gauntlet-fisher-flyer-miss-loses* GAUNTLET_FISHER_FLYER_MISS_LOSES_DEFAULT) ;; read as the flying fish gets away
+(define *gauntlet-fisher-flyer-speed* GAUNTLET_FISHER_FLYER_SPEED_DEFAULT) ;; live: read every frame the flying fish flies
+(define *gauntlet-fisher-flyer-eel-chance* GAUNTLET_FISHER_FLYER_EEL_CHANCE_DEFAULT) ;; read as each flying fish is born
+(define *gauntlet-fisher-jump-chance* GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT) ;; read as each river fish is born
+(define *gauntlet-fisher-flyer-height* GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT) ;; live: the net rises to it, the flying fish flies at it

@@ -932,3 +932,28 @@
   :code
     (behavior ()
       (go-virtual projectile-die)))
+
+;; gauntlet: Jak's yellow eco shot, turned around. It flies straight along the heading it was
+;; fired on and hits Jak (plus walls). Jak's own projectile-yellow is untouched. The training dummies' sage fires it (levels/training/
+;; training-obs.gc) and so do the plant boss's yellow minions (levels/jungleb/aphid.gc), so it lives here, in every level's reach.
+(deftype gauntlet-shot (projectile-yellow)
+  ())
+
+
+(defmethod projectile-method-26 ((this gauntlet-shot))
+  "Collide with Jak and walls only. Leaving enemy out is what stops the shot from ever hitting the dummy that fired it."
+  ((method-of-type projectile-yellow projectile-method-26) this)
+  (set! (-> this root root-prim collide-with) (collide-kind background target))
+  (backup-collide-with-as (-> this root))
+  (none))
+
+(defmethod projectile-method-27 ((this gauntlet-shot))
+  "The launch flash points where the root faces, and a dummy does not face Jak, so face along the flight."
+  (quaternion-vector-angle! (-> this root quat) (new 'static 'vector :y 1.0 :w 1.0) (vector-y-angle (-> this root transv)))
+  ((method-of-type projectile-yellow projectile-method-27) this)
+  (none))
+
+(defmethod projectile-method-28 ((this gauntlet-shot))
+  "Jak's shot searches for the nearest enemy to home on. This one keeps the point fixed at launch, so it flies straight."
+  (set! (-> this target quad) (-> this target-base quad))
+  (none))

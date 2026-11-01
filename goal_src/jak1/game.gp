@@ -521,7 +521,7 @@
 
 (goal-src-sequence
   "levels/beach/"
-  :deps ("$OUT/obj/ticky.o")
+  :deps ("$OUT/obj/ticky.o" "$OUT/obj/gauntlet-h.o" "$OUT/obj/ice-cube.o") ;; the first makes us depend on the whole engine, the second declares what pelican.gc tells Klaww, the third is the cube lurkerworm.gc raises
   "air-h.gc"
   "air.gc"
   "wobbler.gc"
@@ -594,8 +594,8 @@
 
 (goal-src-sequence
  "levels/jungle/"
- :deps ;; no idea what these depend on, make it depend on the whole engine
- ("$OUT/obj/ticky.o")
+ :deps ;; no idea what these depend on, make it depend on the whole engine; and gauntlet-h, which fisher.gc asks about the flying fish
+ ("$OUT/obj/ticky.o" "$OUT/obj/gauntlet-h.o")
 
  "jungle-elevator.gc"
  "bouncer.gc"
@@ -744,8 +744,8 @@
 
 (goal-src-sequence
  "levels/jungleb/"
- :deps ;; no idea what these depend on, make it depend on the whole engine
- ("$OUT/obj/ticky.o")
+ :deps ;; no idea what these depend on, make it depend on the whole engine; and gauntlet-h, which aphid.gc and plant-boss.gc ask about the eco and the volley
+ ("$OUT/obj/ticky.o" "$OUT/obj/gauntlet-h.o")
 
  "jungleb-obs.gc"
  "plat-flip.gc"
@@ -778,7 +778,7 @@
 
 (goal-src-sequence
   "levels/misty/"
-  :deps ("$OUT/obj/evilbro.o")
+  :deps ("$OUT/obj/evilbro.o" "$OUT/obj/gauntlet-h.o") ;; the second declares what mistycannon.gc tells Klaww when a shot goes off
   "mistycannon.gc"
   "babak-with-cannon.gc"
   "misty-obs.gc"
@@ -986,7 +986,6 @@
  :deps ("$OUT/obj/ticky.o")
  "target-snowball.gc"
  "target-ice.gc"
- "ice-cube.gc"
  "snow-ball.gc"
  "snow-obs.gc"
  "snow-flutflut-obs.gc"
@@ -1290,7 +1289,7 @@
 ;; The code
 (goal-src-sequence
   "levels/training/"
-  :deps ("$OUT/obj/ticky.o") ;; makes us depend on the whole engine
+  :deps ("$OUT/obj/ticky.o" "$OUT/obj/gauntlet-h.o") ;; the first makes us depend on the whole engine, the second is the gauntlet tunables training-obs reads
 
   "training-obs.gc"
   "training-part.gc"
@@ -1773,6 +1772,8 @@
 (goal-src "pc/util/knuth-rand.gc" "settings-h")
 
 (goal-src "pc/features/speedruns-h.gc")
+;; the eco functions it declares take a process-drawable, so game-h (where that type is born) is built first
+(goal-src "pc/features/gauntlet-h.gc" "game-h")
 
 (goal-src-sequence
  ;; prefix
@@ -2056,7 +2057,20 @@
  "common-obs/basebutton.gc"
  "common-obs/tippy.gc"
  "anim/joint-exploder.gc"
- "common-obs/babak.gc"
+ )
+
+;; gauntlet: babaks are charged with eco on every level, so babak.gc reads the gauntlet-eco kind and the babak settings from
+;; gauntlet-h. The sequence has no way to name an extra dependency for one file, so babak.gc is taken out of it and
+;; the rest of it starts again from babak.
+(goal-src "engine/common-obs/babak.gc" "joint-exploder" "gauntlet-h")
+
+(goal-src-sequence
+ ;; prefix
+ "engine/"
+
+ :deps
+ ("$OUT/obj/babak.o")
+
  "common-obs/sharkey.gc"
  "common-obs/orb-cache.gc"
  "common-obs/plat.gc"
@@ -2065,6 +2079,11 @@
  "common-obs/ropebridge.gc"
  "common-obs/ticky.gc"
  )
+
+;; gauntlet: the beach's lurkerworms raise ice cubes out of the sand, so ice-cube.gc is in GAME.CGO (and out of SNO.DGO) and
+;; compiles with the engine. It uses the engine only (nav-enemy, joint-exploder, collectables, hint-control, all earlier in
+;; the chain joint-exploder ends); nothing in the engine or in the snow level reads it.
+(goal-src "levels/snow/ice-cube.gc" "joint-exploder")
 
 (copy-mus-files "DANGER")
 
@@ -2112,6 +2131,7 @@
 (goal-src "pc/util/pc-anim-util.gc" "target-h")
 (goal-src "pc/pckernel-common.gc" "pckernel-impl" "pc-anim-util" "settings" "video" "target-h" "autosplit-h" "speedruns-h")
 (goal-src "pc/pckernel.gc" "pckernel-common")
+(goal-src "pc/features/gauntlet.gc" "gauntlet-h" "generic-obs" "process-drawable" "shadow" "sparticle-launcher" "gsound" "target-util" "pckernel" "basebutton" "trajectory" "projectiles")
 (goal-src "pc/subtitle.gc" "text" "pckernel" "hint-control" "loader-h" "gsound" "ambient")
 (goal-src "pc/progress-pc.gc" "progress" "pckernel")
 (goal-src "pc/hud-classes-pc.gc" "pckernel" "hud" "battlecontroller" "generic-obs")

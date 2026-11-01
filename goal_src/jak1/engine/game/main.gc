@@ -419,7 +419,9 @@
         (update-camera))
       (add-ee-profile-frame 'draw :r #x40 :b #x40)
       (with-profiler "draw-hook"
-        (*draw-hook*))
+        (*draw-hook*)
+        (#when PC_PORT
+          (gauntlet-poll!)))
       (add-ee-profile-frame 'draw :g #x80)
       (with-profiler "menu"
         (#when PC_PORT

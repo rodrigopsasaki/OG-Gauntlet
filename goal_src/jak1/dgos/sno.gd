@@ -6,7 +6,6 @@
   "eichar-flut+0-ag.go"
   "target-snowball.o"
   "target-ice.o"
-  "ice-cube.o"
   "snow-ball.o"
   "snow-obs.o"
   "snow-flutflut-obs.o"
