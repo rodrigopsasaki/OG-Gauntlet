@@ -354,6 +354,22 @@
   "orb-placer.o" ;; added
   "mod-custom-code.o" ;; added
   "mod-debug.o" ;; added
+  ;; The OG-Mod-Base moves the zoomer's and Flut Flut's code out of the racing and flut levels' DGOs (they are commented out of fic, lav, mis,
+  ;; ogr, rol, sno and swa as "mod-base-change") and into GAME.CGO, so that it is loaded once and the vehicles work anywhere. Merging the mod
+  ;; base skipped this block, which left the code in no DGO at all: no racer, no target-racing states, no Flut, so a zoomer on Misty (or on
+  ;; any racing level) could not be mounted. Only the code objects are here. The art groups and tpages stay in the level DGOs that already
+  ;; list them (eichar-racer+0, tpage-1119, flut-saddle, eichar-flut+0), because every tpage booted in GAME.CGO takes VRAM for good and
+  ;; there is none to spare (see the notes on the art groups below); blocking-plane.o likewise stays in the racing levels' DGOs, the
+  ;; only places a zoomer's idle state ever asks for a plane.
+  "target-racer-h.o"
+  "racer-part.o"
+  "racer.o"
+  "target-racer.o"
+  "racer-states.o"
+  "collide-reaction-racer.o"
+  "flut-part.o"
+  "flutflut.o"
+  "target-flut.o"
   "gauntlet.o" ;; added (gauntlet drops, after generic-obs and shadow whose symbols its states read at link time)
   ;; gauntlet: the yellow sage the training dummies turn into. His art group and its tpage ship in CIT.DGO only,
   ;; so they live here, with his models in GAME.fr3 (common_art_groups in the decompiler config).
