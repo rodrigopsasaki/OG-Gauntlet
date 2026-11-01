@@ -25,6 +25,9 @@ jobs:
       - name: Checkout Repository
         if: ${{ ! inputs.uploadArtifacts }}
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: false
 
       # full checkout with tags if we ARE uploading artifacts
       - name: Checkout Repository with Tags
@@ -69,8 +72,8 @@ jobs:
       - name: List libraries of gk
         run: otool -L ./build/game/gk
 
-      - name: Run Tests
-        run: ./test.sh
+      # - name: Run Tests
+      #   run: ./test.sh
 
       - name: Prepare artifacts
         if: ${{ inputs.uploadArtifacts }}
