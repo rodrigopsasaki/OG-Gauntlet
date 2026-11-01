@@ -7,6 +7,7 @@
 (require "engine/game/effect-control.gc")
 (require "engine/anim/joint-exploder.gc")
 (require "engine/camera/pov-camera-h.gc")
+(require "engine/game/projectiles.gc")
 
 ;; DECOMP BEGINS
 
@@ -439,7 +440,8 @@
 (deftype scarecrow-a (process-drawable)
   ((root                collide-shape :override)
    (incomming-attack-id uint64)
-   (intersection        vector :inline))
+   (intersection        vector :inline)
+   (sage                handle))
   (:state-methods
    idle
    (hit float vector symbol)))
@@ -448,11 +450,276 @@
 (deftype scarecrow-b (process-drawable)
   ((root                collide-shape :override)
    (incomming-attack-id uint64)
-   (intersection        vector :inline))
+   (intersection        vector :inline)
+   (sage                handle))
   (:state-methods
    idle
    (hit float vector symbol)))
 
+
+;; gauntlet: the training dummies turn on Jak. The knobs for how hard they shoot are globals, with their defaults, in
+;; pc/features/gauntlet-h.gc; the settings file steers them live.
+(defconstant GAUNTLET_HERALD_DUMMY "scarecrow-a-1") ;; entity name of the dummy that heralds the rest, which wakes from further away
+
+;; gauntlet: the shot the dummies' sage fires (gauntlet-shot) and the volley it fires it in (gauntlet-volley-*) are not this level's: the Forbidden
+;; Jungle's plant boss minions shoot them too, so the shot lives in engine/game/projectiles.gc and the volley in pc/features/gauntlet.gc.
+
+
+;; The sage's art group is made common (GAME.CGO, see common_art_groups in the decompiler config), so he is
+;; available on Geyser Rock even though yellowsage-ag.go originally ships in CIT.DGO only.
+;; Common art registers in the default level, so he must look there (texture-level 2), not in the
+;; level of the dummy's entity, or initialize-skeleton fails to find his art group.
+;; Sort 1 is the pris (character) draw group, as for Jak, the sidekick and the other common characters.
+;; No :shadow. His shadow mesh is the heaviest in the game (335 double edges, the next is 225). The EE writes the
+;; silhouette edge list for the shadow VU1 with an 8-bit VIF NUM field (shadow-add-double-edges), which wraps once
+;; 252 entries are listed; gk's ShadowRenderer then asserts offset + 16 == next.size_bytes. In his bind pose he
+;; already lists 166 to 215 entries whichever way the light points, so a posed body leaves little room.
+(defskelgroup *gauntlet-yellowsage-sg*
+  yellowsage
+  yellowsage-lod0-jg
+  yellowsage-yellowsage-idle-ja
+  ((yellowsage-lod0-mg (meters 20)) (yellowsage-lod1-mg (meters 999999)))
+  :bounds (static-spherem 0 0 0 3)
+  :texture-level 2
+  :sort 1)
+
+;; The sage is the brain: range, puff, volleys, leaving. His body is a manipy (see gauntlet-sage-init-by-other),
+;; the game's own way to put a character from code on screen, so the sage has no skeleton or draw-control of his own.
+(deftype gauntlet-sage (process-drawable)
+  ((volley       gauntlet-volley :inline)
+   (appear-range float)
+   (leave-range  float)
+   (body         handle))
+  (:states
+   gauntlet-sage-attack
+   gauntlet-sage-vanish))
+
+(defconstant GAUNTLET_SAGE_ORIGIN_JOINT 3) ;; every sage in the game is drawn and culled around his main joint (process-taskable-method-40)
+
+;; The telegraph. His three anims, measured from yellowsage-ag.go and the game log: idle 151 frames, attack-start 9,
+;; attack-loop 31, all playing at 15 frames a second. A 'play anim is done at its length minus 2, so the wind-up is
+;; 7 frames: 0.47 s.
+(defconstant GAUNTLET_SAGE_WINDUP (seconds 0.47)) ;; attack-start, from the moment it is asked for to its done
+(defconstant GAUNTLET_SAGE_PUFF_CLEAR (seconds 0.5)) ;; the smoke of his appearing hides him this long, so the first wind-up waits
+
+
+(defun gauntlet-puff ((where vector))
+  "A burst of yellow eco at chest height over where: the sage appearing and vanishing."
+  (let ((burst-at (new 'stack-no-clear 'vector)))
+    (set! (-> burst-at quad) (-> where quad))
+    (+! (-> burst-at y) 6144.0)
+    (process-spawn part-tracker :init part-tracker-init group-part-yellow-eco-fireball-hit -1 #f #f #f burst-at :to *entity-pool*))
+  0)
+
+;; His body. A manipy is how the game draws a character from code (finalboss spawns these very sages as manipys, with
+;; exactly these events); it carries the setup a hand-written process-drawable lacks: eye and blend-shape status, the
+;; origin joint, and a code loop that runs the joint math and animation channels.
+(defun gauntlet-sage-body ((body handle))
+  "The manipy that draws the sage, or #f once it is gone."
+  (let ((proc (handle->process body)))
+    (the-as manipy (if (and proc (type-type? (-> proc type) manipy)) proc))))
+
+(defbehavior gauntlet-sage-play gauntlet-sage ((anim string) (mode symbol) (blend time-frame))
+  "Have his body play anim through manipy's own events: mode 'play runs it once, 'loop runs it forever."
+  (let ((body (gauntlet-sage-body (-> self body))))
+    (when body
+      (send-event body 'anim-mode mode)
+      (send-event body 'art-joint-anim anim blend)))
+  0)
+
+(defbehavior gauntlet-sage-anim-done? gauntlet-sage ()
+  "True once the 'play anim he was last asked for has reached its end. The body takes a new anim up a frame
+   after being asked, so it must really be showing the anim asked for, or 'done would be answered for the previous one."
+  (let ((body (gauntlet-sage-body (-> self body))))
+    (and body
+         (> (-> body skel active-channels) 0)
+         (= (-> body skel root-channel 0 frame-group) (-> body new-joint-anim))
+         (send-event body 'query 'done))))
+
+(defbehavior gauntlet-sage-can-shoot? gauntlet-sage ()
+  "True while Jak is where this sage fires at him."
+  (and (gauntlet-jak-in-range? self (-> self appear-range)) (gauntlet-jak-shootable?)))
+
+(defbehavior gauntlet-sage-cane gauntlet-sage ((out vector))
+  "Where the cane's exhaust is in the world, which is where the volleys leave. Falls back to where he stands."
+  (set! (-> out quad) (-> self root trans quad))
+  (let ((body (gauntlet-sage-body (-> self body))))
+    (when body
+      (vector<-cspace! out (-> body node-list data (joint-node-index yellowsage-lod0-jg caneExhaust)))))
+  out)
+
+(defun gauntlet-sage-feet ((body manipy) (out vector))
+  "Where his feet are in the world: the lowest of his two toe-ball joints in height, and halfway between them
+   on the ground plane. Falls back to the body's own root while the skeleton is not up."
+  (set! (-> out quad) (-> body root trans quad))
+  (let ((nodes (-> body node-list))
+        (left (new 'stack-no-clear 'vector))
+        (right (new 'stack-no-clear 'vector)))
+    (when (and (< (joint-node-index yellowsage-lod0-jg Lball) (-> nodes length))
+               (< (joint-node-index yellowsage-lod0-jg Rball) (-> nodes length)))
+      (vector<-cspace! left (-> nodes data (joint-node-index yellowsage-lod0-jg Lball)))
+      (vector<-cspace! right (-> nodes data (joint-node-index yellowsage-lod0-jg Rball)))
+      (set! (-> out x) (* 0.5 (+ (-> left x) (-> right x))))
+      (set! (-> out y) (fmin (-> left y) (-> right y)))
+      (set! (-> out z) (* 0.5 (+ (-> left z) (-> right z))))))
+  out)
+
+(defbehavior gauntlet-sage-plant gauntlet-sage ()
+  "Stand his body on the spot he appears at. His attack anims come from the Citadel scene and are authored around a
+   different origin (his main joint plays about 7 m below the body's root), so his feet are read off the skeleton and the
+   body's root is moved by however far they are from the ground. The skeleton he is read from was posed from the root
+   as set last frame, so the correction is exact and stays put once he is planted, for either of his anims."
+  (let ((body (gauntlet-sage-body (-> self body))))
+    ;; was-drawn is the sign that the body has been posed at least once, so the joints are real
+    (when (and body (nonzero? (-> body draw)) (logtest? (-> body draw status) (draw-status was-drawn)))
+      (let ((feet (new 'stack-no-clear 'vector))
+            (planted (new 'stack-no-clear 'vector)))
+        (gauntlet-sage-feet body feet)
+        (vector-! planted (-> self root trans) feet)
+        (vector+! planted planted (-> body root trans))
+        (set! (-> planted w) 1.0)
+        (send-event body 'trans planted))))
+  0)
+
+(defstate gauntlet-sage-attack (gauntlet-sage)
+  :trans
+    (behavior ()
+      (let ((body (gauntlet-sage-body (-> self body))))
+        ;; no body, no sage
+        (if (or (not body) (not (gauntlet-jak-in-range? self (-> self leave-range))))
+          (go gauntlet-sage-vanish))
+        (seek-to-point-toward-point! (-> self root) (target-pos 0) 524288.0 (seconds 0.1))
+        (send-event body 'rot-quat (-> self root quat))
+        (gauntlet-sage-plant)))
+  :code
+    (behavior ()
+      ;; Every volley is announced. He stands in his idle, winds up with attack-start so that the wind-up ends on the
+      ;; volley's first shot, holds attack-loop while the shots fly and drops back to idle after the last one. The
+      ;; volley itself is the dummies' (gauntlet-volley-start and -fire-next, aimed and swept the same way); only the
+      ;; timing around it is the sage's own, because the telegraph has to come before the first shot.
+      (gauntlet-sage-play "yellowsage-yellowsage-idle" 'loop 0)
+      ;; his first volley is due as soon as the smoke has cleared
+      (set! (-> self volley start-time) (- (current-time) *gauntlet-dummy-volley-interval*))
+      (suspend-for GAUNTLET_SAGE_PUFF_CLEAR)
+      (loop
+        ;; The wind-up starts one wind-up early, so its end meets the moment the volley is due. When the interval is
+        ;; shorter than the wind-up it starts at once and the volley simply waits for it.
+        (until (and (gauntlet-sage-can-shoot?)
+                    (time-elapsed? (-> self volley start-time) (max 0 (- *gauntlet-dummy-volley-interval* GAUNTLET_SAGE_WINDUP))))
+          (suspend))
+        (gauntlet-sage-play "yellowsage-yellowsage-attack-start" 'play (seconds 0.1))
+        ;; one frame for the body to take the new anim up, so 'done is asked of the right one
+        (suspend)
+        (let ((asked-at (current-time)))
+          ;; the timeout is for an anim that is not there: he would otherwise wait for the wrong one to end
+          (until (or (gauntlet-sage-anim-done?) (time-elapsed? asked-at (seconds 2.0)))
+            (suspend)))
+        (cond
+          ((gauntlet-sage-can-shoot?)
+           (gauntlet-sage-play "yellowsage-yellowsage-attack-loop" 'loop 0)
+           ;; shots leave from his cane, where the Citadel beam starts
+           (gauntlet-volley-start (-> self volley) (gauntlet-sage-cane (new 'stack-no-clear 'vector)))
+           (gauntlet-volley-fire-next self (-> self volley))
+           (while (> (-> self volley shots-left) 0)
+             (gauntlet-volley-update self (-> self volley) (gauntlet-sage-cane (new 'stack-no-clear 'vector)) (-> self appear-range))
+             (suspend)))
+          ;; Jak was hit or left while he wound up: no volley, and the next wind-up waits its turn
+          (else (set-time! (-> self volley start-time))))
+        (gauntlet-sage-play "yellowsage-yellowsage-idle" 'loop (seconds 0.15)))))
+
+(defstate gauntlet-sage-vanish (gauntlet-sage)
+  :code
+    (behavior ()
+      (gauntlet-puff (-> self root trans))
+      (cleanup-for-death self)))
+
+(defbehavior gauntlet-sage-init-by-other gauntlet-sage ((dummy process-drawable) (appear-range float) (leave-range float))
+  "Appear where the dummy stands, facing Jak. He fires while Jak is within appear-range and leaves beyond leave-range."
+  (set! (-> self appear-range) appear-range)
+  (set! (-> self leave-range) leave-range)
+  (set! (-> self body) (the-as handle #f))
+  (set! (-> self root) (new 'process 'trsqv))
+  (set! (-> self root trans quad) (-> dummy root trans quad))
+  (quaternion-copy! (-> self root quat) (-> dummy root quat))
+  (vector-identity! (-> self root scale))
+  (point-toward-point! (-> self root) (target-pos 0))
+  ;; He is not a placed actor, and his body is not either: no entity, so his draw is filed under the default level
+  ;; (engine, light and shadow settings), where common art like Jak's lives.
+  (set! (-> self entity) #f)
+  (let ((body (manipy-spawn (-> self root trans) #f *gauntlet-yellowsage-sg* #f :to self)))
+    (when body
+      (set! (-> self body) (ppointer->handle body))
+      (send-event (ppointer->process body) 'rot-quat (-> self root quat))
+      ;; the same events finalboss sends its yellow sage: eye and blend-shape status, and the origin joint
+      (send-event (ppointer->process body) 'blend-shape #t)
+      (send-event (ppointer->process body) 'origin-joint-index GAUNTLET_SAGE_ORIGIN_JOINT)))
+  (gauntlet-puff (-> self root trans))
+  (go gauntlet-sage-attack)
+  (none))
+
+;; His body has no entity, so if initialize-skeleton ever failed for it, process-drawable-art-error would
+;; dereference (-> self entity extra perm) and fault the game. These two ask the questions initialize-skeleton asks,
+;; of the same art, so the dummy only spawns him when his init cannot take that path. Art groups from GAME.CGO are
+;; registered in level-default when they link (relocate in joint.gc runs with loading-level = level-default), under
+;; the name stored in the group itself ("yellowsage", which is the skelgroup's art-group-name, not "yellowsage-ag").
+(defun gauntlet-sage-art-complete? ((art art-group) (skel skeleton-group))
+  "True when the skelgroup's joint geometry and every lod mesh exist in the art group with the types the draw needs."
+  (when (or (>= (-> skel jgeo) (-> art length)) (!= (-> (-> art data (-> skel jgeo)) type) art-joint-geo))
+    (return #f))
+  (dotimes (lod (+ (-> skel max-lod) 1))
+    (when (or (>= (-> skel mgeo lod) (-> art length)) (!= (-> (-> art data (-> skel mgeo lod)) type) merc-ctrl))
+      (return #f)))
+  #t)
+
+(defun gauntlet-sage-art-ready? ()
+  "True when the sage's art group is already registered in level-default and complete, which is where
+   initialize-skeleton looks for a texture-level 2 skelgroup. Never loads anything."
+  (let ((art (art-group-get-by-name (-> *level* level-default) (-> *gauntlet-yellowsage-sg* art-group-name))))
+    (and art (gauntlet-sage-art-complete? art *gauntlet-yellowsage-sg*))))
+
+(defun gauntlet-dummy-herald? ((dummy process-drawable))
+  "True for the first dummy, the one that heralds the rest."
+  (name= (res-lump-struct (-> dummy entity) 'name basic) GAUNTLET_HERALD_DUMMY))
+
+(defun gauntlet-dummy-tick ((dummy process-drawable) (sage handle))
+  "Once per frame while a dummy idles. When Jak comes into range the dummy gives way to a sage, who
+   stays until Jak leaves; the dummy is hidden for exactly as long as its sage is attacking. Returns the sage.
+   With the dummies switched off (*gauntlet-dummies-enabled*) there is never a sage: one already out puffs away
+   and the dummy is the game's own."
+  (cond
+    ((not *gauntlet-dummies-enabled*)
+     (let ((sage-process (handle->process sage)))
+       (when sage-process
+         (gauntlet-puff (-> dummy root trans))
+         (deactivate sage-process)))
+     (logclear! (-> dummy draw status) (draw-status hidden))
+     (the-as handle #f))
+    (else
+     (let ((current-sage sage)
+           (appear-range (if (gauntlet-dummy-herald? dummy) *gauntlet-herald-range* *gauntlet-dummy-range*))
+           (leave-range (if (gauntlet-dummy-herald? dummy) *gauntlet-herald-leave-range* *gauntlet-dummy-leave-range*)))
+       ;; no sage without his art: his init would otherwise fault, and the dummy just stays a dummy
+       (when (and (not (handle->process sage))
+                  (gauntlet-jak-in-range? dummy appear-range)
+                  (gauntlet-sage-art-ready?))
+         (let ((spawned (process-spawn gauntlet-sage :init gauntlet-sage-init-by-other dummy appear-range leave-range :to dummy)))
+           (if spawned (set! current-sage (ppointer->handle spawned)))))
+       ;; hide the dummy only while its sage is really attacking, so a sage that never reached
+       ;; his attack state leaves the dummy standing instead of vanishing silently
+       (let ((sage-process (handle->process current-sage)))
+         (if (and sage-process (= (-> sage-process next-state name) 'gauntlet-sage-attack))
+           (logior! (-> dummy draw status) (draw-status hidden))
+           (logclear! (-> dummy draw status) (draw-status hidden))))
+       current-sage))))
+
+(defun gauntlet-dummy-dismiss-sage ((dummy process-drawable) (sage handle))
+  "The dummy was hit: the sage puffs away and the dummy shows again."
+  (let ((sage-process (handle->process sage)))
+    (when sage-process
+      (gauntlet-puff (-> dummy root trans))
+      (deactivate sage-process)))
+  (logclear! (-> dummy draw status) (draw-status hidden))
+  0)
 
 (defskelgroup *scarecrow-a-sg*
   scarecrow-a
@@ -485,7 +752,8 @@
                ((and (= (-> block param 1) 'punch) (= v1-2 1)) (save-reminder s4-0 2 0) 2)
                ((zero? v1-2))
                ((= v1-2 1)))
-             (let* ((s4-1 proc)
+             (let* ((sage-out? (if (handle->process (-> self sage)) #t #f)) ;; the sage is standing on this dummy right now
+                    (s4-1 proc)
                     (v1-14 (if (and (nonzero? s4-1) (type-type? (-> s4-1 type) process-drawable)) s4-1))
                     (f30-0 (cond
                              (v1-14
@@ -500,20 +768,26 @@
                (go-virtual hit
                            f30-0
                            (if a0-24 (get-middle-of-bsphere-overlap a0-24 (-> self intersection)) (target-pos 0))
+                           ;; While the sage stands on this dummy he is what the player sees and aims at, so any attack that
+                           ;; reaches the dummy breaks it and the sage dies with it. Without this, a pole dummy (scarecrow-b)
+                           ;; only broke from a jump hit on its top sphere (prim 2), far above where the sage stands. With no
+                           ;; sage out the vanilla rule is untouched.
                            (the-as symbol
-                                   (and ((method-of-type touching-shapes-entry prims-touching?)
-                                         (the-as touching-shapes-entry (-> block param 0))
-                                         (the-as collide-shape-moving (-> self root))
-                                         (the-as uint 2))
-                                        (or (= (-> self type) scarecrow-a)
-                                            (and (= (-> proc type) target)
-                                                 (logtest? (-> (the-as target proc) control mod-surface flags) (surface-flags jump))
-                                                 (not (logtest? (-> (the-as target proc) control status) (cshape-moving-flags onsurf))))))))))))
+                                   (or sage-out?
+                                       (and ((method-of-type touching-shapes-entry prims-touching?)
+                                             (the-as touching-shapes-entry (-> block param 0))
+                                             (the-as collide-shape-moving (-> self root))
+                                             (the-as uint 2))
+                                            (or (= (-> self type) scarecrow-a)
+                                                (and (= (-> proc type) target)
+                                                     (logtest? (-> (the-as target proc) control mod-surface flags) (surface-flags jump))
+                                                     (not (logtest? (-> (the-as target proc) control status) (cshape-moving-flags onsurf)))))))))))))
         (('touch) (send-shove-back (-> self root) proc (the-as touching-shapes-entry (-> block param 0)) 0.7 6144.0 16384.0))))
   :trans
     (behavior ()
       (if (and *target* (>= 40960.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-        (get-reminder (get-task-control (game-task training-gimmie)) 0)))
+        (get-reminder (get-task-control (game-task training-gimmie)) 0))
+      (set! (-> self sage) (gauntlet-dummy-tick self (-> self sage))))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.12))
@@ -526,6 +800,9 @@
 
 (defstate hit (scarecrow-a)
   :virtual #t
+  :enter
+    (behavior ((arg0 float) (arg1 vector) (arg2 symbol))
+      (gauntlet-dummy-dismiss-sage self (-> self sage)))
   :code
     (behavior ((arg0 float) (arg1 vector) (arg2 symbol))
       (when (not arg2)
@@ -617,6 +894,7 @@
     (set! (-> this root) s4-0))
   (process-drawable-from-entity! this arg0)
   (initialize-skeleton this *scarecrow-a-sg* '())
+  (set! (-> this sage) (the-as handle #f))
   (go (method-of-object this idle))
   (none))
 
@@ -639,6 +917,9 @@
   :event
     (-> (method-of-type scarecrow-a idle)
         event)
+  :trans
+    (behavior ()
+      (set! (-> self sage) (gauntlet-dummy-tick self (-> self sage))))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.12))
@@ -651,6 +932,9 @@
 
 (defstate hit (scarecrow-b)
   :virtual #t
+  :enter
+    (behavior ((arg0 float) (arg1 vector) (arg2 symbol))
+      (gauntlet-dummy-dismiss-sage self (-> self sage)))
   :code
     (behavior ((arg0 float) (arg1 vector) (arg2 symbol))
       (when (not arg2)
@@ -752,5 +1036,6 @@
     (set! (-> this root) s4-0))
   (process-drawable-from-entity! this arg0)
   (initialize-skeleton this *scarecrow-b-sg* '())
+  (set! (-> this sage) (the-as handle #f))
   (go (method-of-object this idle))
   (none))
