@@ -2,11 +2,21 @@
 (in-package goal)
 (bundles "JUB.DGO")
 (require "engine/common-obs/nav-enemy.gc")
+(require "pc/features/gauntlet-h.gc")
 
 ;; DECOMP BEGINS
 
+;; gauntlet: an aphid may wear eco, which the plant boss tells it by the round (see plant-boss.gc) and which it wears the way the babaks do ("the eco
+;; charge" in pc/features/gauntlet-h.gc): yellow shoots, red hits for two and throws Jak far, blue runs faster. It is told once, when it is born, and
+;; wears it for good. A red or blue aphid has an info of its own (own-info), a copy made once at birth, so the writes of aphid-burn! never touch the
+;; shared one, which is also why the process has to move it when it moves (relocate below). The strength is read live: the eco is stronger the
+;; weaker Jak is (gauntlet-desperation).
 (deftype aphid (nav-enemy)
-  ((try int32)))
+  ((try      int32)
+   (charge   gauntlet-eco)
+   (own-info symbol)
+   (run-pace float)
+   (volley   gauntlet-volley :inline)))
 
 (defskelgroup *aphid-sg*
   aphid-lurker
@@ -60,7 +70,7 @@
                 (s4-1 (- (the int (nav-enemy-rnd-float-range 900.0 1440.0)) gp-0)))
             (until (time-elapsed? s5-1 s4-1)
               (suspend)
-              (ja :num! (loop! f30-0))))
+              (ja :num! (loop! (* f30-0 (-> self run-pace))))))
           (aphid-vulnerable)
           (ja-channel-push! 1 (seconds 0.05))
           (sound-play "aphid-spike-in")
@@ -76,7 +86,7 @@
                 (s4-3 (+ (the int (nav-enemy-rnd-float-range 660.0 900.0)) gp-0)))
             (until (time-elapsed? s5-3 s4-3)
               (suspend)
-              (ja :num! (loop! f30-1))))))))
+              (ja :num! (loop! (* f30-1 (-> self run-pace))))))))))
 
 (defstate nav-enemy-stare (aphid)
   :virtual #t
@@ -210,9 +220,100 @@
   0
   (none))
 
+;; gauntlet: the eco of an aphid. Yellow shoots Jak in volleys from the aphid's mouth, the training dummies' own (gauntlet-volley-*, gauntlet.gc): the
+;; same cadence, size, fan and speed, so the dummy-* settings steer these too. It shoots only while it is chasing, with Jak in range and in a state
+;; worth shooting at, and the clock of the next volley starts over whenever any of that stops, so a volley is never the first thing a newly
+;; noticed Jak meets. For the last GAUNTLET_APHID_WINDUP before a volley the aphid flares and sparks thick, which is its telegraph.
+(defconstant GAUNTLET_APHID_WINDUP (seconds 0.5)) ;; the flare before a volley
+(defconstant GAUNTLET_APHID_JAW 12) ;; the joint of its mouth, where the shots leave from
+
+(defun aphid-burn! ((this aphid))
+  "One frame of an aphid's strength and pace, as the babak's is (babak-burn!). A blue one runs the blue speed times the desperation faster than a
+   plain one, and the info says the same of its run speed and acceleration, which the nav enemy reads; a red one throws Jak the red distance times
+   the desperation. Only an aphid with an info of its own has one to write in, the shared one is never touched."
+  (let ((strength (gauntlet-desperation)))
+    (set! (-> this run-pace) (if (= (-> this charge) (gauntlet-eco blue)) (* *gauntlet-babak-blue-speed* strength) 1.0))
+    (when (-> this own-info)
+      (set! (-> this nav-info run-travel-speed) (* (-> *aphid-nav-enemy-info* run-travel-speed) (-> this run-pace)))
+      (set! (-> this nav-info run-acceleration) (* (-> *aphid-nav-enemy-info* run-acceleration) (-> this run-pace)))
+      (case (-> this charge)
+        (((gauntlet-eco red))
+         (set! (-> this nav-info attack-shove-back) (* GAUNTLET_ECO_RED_SHOVE_BACK strength))
+         (set! (-> this nav-info attack-shove-up) (* GAUNTLET_ECO_RED_SHOVE_UP strength))))))
+  0)
+
+(defun aphid-telegraph! ((this aphid))
+  "The flare before a yellow aphid's volley: it burns bright yellow and sparks three times as thick as its usual aura."
+  (dotimes (i 3)
+    (gauntlet-eco-aura! this (gauntlet-eco yellow)))
+  (set-vector! (-> this draw color-emissive) 1.0 0.9 0.2 0.0)
+  0)
+
+(defun aphid-volley! ((this aphid))
+  "One frame of a yellow aphid's shooting: a volley every dummy-volley-interval, flared at for the last GAUNTLET_APHID_WINDUP of it, its shots leaving
+   from the mouth as it is now (the sage's leave from where he stood: this one runs)."
+  (let ((volley (-> this volley))
+        (mouth (vector<-cspace! (new 'stack-no-clear 'vector) (-> this node-list data GAUNTLET_APHID_JAW))))
+    (cond
+      ((not (and (= (-> this next-state name) 'nav-enemy-chase)
+                 (gauntlet-jak-in-range? this *gauntlet-dummy-range*)
+                 (gauntlet-jak-shootable?)))
+       (set! (-> volley shots-left) 0)
+       (set-time! (-> volley start-time)))
+      ((> (-> volley shots-left) 0)
+       (set! (-> volley muzzle quad) (-> mouth quad))
+       (gauntlet-volley-update this volley mouth *gauntlet-dummy-range*))
+      ((time-elapsed? (-> volley start-time) *gauntlet-dummy-volley-interval*)
+       (gauntlet-volley-start volley mouth)
+       (gauntlet-volley-fire-next this volley))
+      ((time-elapsed? (-> volley start-time) (max 0 (- *gauntlet-dummy-volley-interval* GAUNTLET_APHID_WINDUP)))
+       (aphid-telegraph! this))))
+  0)
+
+;; gauntlet: the info a red or blue aphid copied for itself lives on its own heap, so when the process moves the pointer to it moves with it.
+;; The shared info is static. (Only the process knows, as a babak's does: nav-enemy's relocate does the same for the neck and the random generator.)
+(defmethod relocate ((this aphid) (offset int))
+  (if (-> this own-info)
+    (set! (-> this nav-info) (the-as nav-enemy-info (+ (the-as int (-> this nav-info)) offset))))
+  (call-parent-method this offset))
+
+;; gauntlet: the strength, the aura and the shooting of a charged aphid, every frame it is posted.
+(defmethod common-post ((this aphid))
+  (when (!= (-> this charge) (gauntlet-eco none))
+    (aphid-burn! this)
+    (gauntlet-eco-aura! this (-> this charge))
+    (if (= (-> this charge) (gauntlet-eco yellow)) (aphid-volley! this)))
+  (call-parent-method this)
+  (none))
+
+(defun aphid-follow-through ((this aphid) (victim process) (landed object))
+  "Whether the hit a touch just tried landed on victim, handed back as it came; a red aphid's that did land costs a second hit."
+  (if (and landed (= (-> this charge) (gauntlet-eco red))) (gauntlet-eco-second-hit! victim))
+  landed)
+
+(defmethod touch-handler ((this aphid) (arg0 process) (arg1 event-message-block))
+  (aphid-follow-through this arg0 (call-parent-method this arg0 arg1)))
+
+(defmethod nav-enemy-touch-handler ((this aphid) (arg0 process) (arg1 event-message-block))
+  (aphid-follow-through this arg0 (call-parent-method this arg0 arg1)))
+
 (defmethod nav-enemy-method-48 ((this aphid))
   (initialize-skeleton this *aphid-sg* '())
-  (init-defaults! this *aphid-nav-enemy-info*)
+  (set! (-> this own-info) #f)
+  (set! (-> this run-pace) 1.0)
+  (set! (-> this volley shots-left) 0)
+  (set! (-> this volley sweep) 0.0)
+  (set-time! (-> this volley start-time))
+  ;; a red or blue aphid has an info of its own, a copy on its own heap, made here and now: a copy made later, in some other process's turn,
+  ;; would take memory from a heap that is full by then
+  (let ((info *aphid-nav-enemy-info*))
+    (when (or (= (-> this charge) (gauntlet-eco red)) (= (-> this charge) (gauntlet-eco blue)))
+      (set! info (copy info 'process))
+      (set! (-> this own-info) #t))
+    (init-defaults! this info))
+  (when (!= (-> this charge) (gauntlet-eco none))
+    (aphid-burn! this)
+    (gauntlet-eco-glow! this (-> this charge)))
   (set! (-> this neck up) (the-as uint 0))
   (set! (-> this neck nose) (the-as uint 1))
   (set! (-> this neck ear) (the-as uint 2))
@@ -230,6 +331,8 @@
     (forward-up->quaternion (-> self collide-info quat) s3-1 *up-vector*))
   (vector-identity! (-> self collide-info scale))
   (set! (-> self entity) (-> arg0 entity))
+  ;; gauntlet: the eco of the boss's round, which it asks for before anything is built from it (nav-enemy-method-48)
+  (set! (-> self charge) (the-as gauntlet-eco (send-event (ppointer->process (-> self parent)) 'eco)))
   (nav-enemy-method-48 self)
   (logclear! (-> self nav-enemy-flags) (nav-enemy-flags navenmf12))
   (set! (-> self try) (the-as int (send-event (ppointer->process (-> self parent)) 'try)))
