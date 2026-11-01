@@ -42,7 +42,8 @@
 ;; On Misty Island (level misty) the muse decides how the island behaves: caught, the island is calm, the lurkers it places and nothing
 ;; more, at their own pace and as charged as babak-charge-chance makes them; loose (not yet caught, or dropped by a hit, a bonk or a
 ;; death), it is mayhem: those lurkers with their company (the horde's clones) and the mayhem's extras, faster, babaks charged. A portrait of
-;; her face in a corner of the hud shows which. See "the muse" and "the muse's body" below.
+;; her face in a corner of the hud shows which. Once the game's muse has been caught and delivered, she is gone for good: every later visit
+;; is mayhem from the first frame to the last, with no muse to catch and no portrait. See "the muse" and "the muse's body" below.
 ;;
 ;; The bomb is the big dark eco bomb Gol and Maia's robot drops in the final
 ;; boss (darkecobomb, levels/finalboss/robotboss-weapon.gc), made available
@@ -624,15 +625,20 @@
 
 ;; Misty Island has one state that matters, and it is the muse's: is she with Jak or not. The island's muse (levels/misty/muse.gc)
 ;; is a power cell that runs; catching her ends a chase. Here catching her is the island calming down.
-;;   LOOSE    she is not with Jak: mayhem. The state on arrival, before the first catch: "you catch her and things behave
-;;            normally" makes not having caught her yet the abnormal one.
-;;   CARRIED  she is: the island is calm. The lurkers Misty places and nothing more: no clones of the horde, no extras, their own pace, and
-;;            as charged as babak-charge-chance makes a babak (it rolls once at birth, as everywhere).
-;; *gauntlet-muse-carried* is the one authority, for the icon and every effect below; nothing keeps a
-;; second copy. It flips in three places only, all below: gauntlet-muse-caught! (the muse's own state calls it as she is caught),
-;; gauntlet-muse-drop! (Jak is hit, bonks, or dies) and gauntlet-muse-poll! (Misty is entered or left). The first catch is the
-;; game's (the cell, the cutscene) and the muse is gone as the game makes her; the catches after it are over at once and give nothing.
-;; Dropping her pops a new muse out on her path where Jak lost her, to be chased and caught again (see "the muse's body").
+;;   LOOSE      she is not with Jak: mayhem. The state on arrival, before the first catch: "you catch her and things behave
+;;              normally" makes not having caught her yet the abnormal one.
+;;   CARRIED    she is: the island is calm. The lurkers Misty places and nothing more: no clones of the horde, no extras, their own pace, and
+;;              as charged as babak-charge-chance makes a babak (it rolls once at birth, as everywhere).
+;;   DELIVERED  the visit began with the game's muse already caught (her actor was dead as Jak arrived: her cell is in, the task closed).
+;;              The mayhem holds, as it does for LOOSE, for the whole visit, but there is no muse to be had on it: none is made, ever, and the
+;;              icon, which asks about a muse, is not drawn. The state is a fact of the visit and not of the island, so it is decided once, on
+;;              arrival; the visit on which she is first caught is a LOOSE one that becomes CARRIED, as always, and a hit or a death on it makes
+;;              her loose again and not delivered.
+;; *gauntlet-muse-state* is the one authority, for the icon and every effect below; nothing keeps a
+;; second copy. It changes in three places only, all below: gauntlet-muse-caught! (the muse's own state calls it as she is caught),
+;; gauntlet-muse-drop! (Jak is hit, bonks, or dies) and gauntlet-muse-poll! (Misty is entered, which decides LOOSE or DELIVERED, or left).
+;; The first catch is the game's (the cell, the cutscene) and the muse is gone as the game makes her; the catches after it are over at once
+;; and give nothing. Dropping her pops a new muse out on her path where Jak lost her, to be chased and caught again (see "the muse's body").
 ;;
 ;; While LOOSE, on Misty only (every effect asks gauntlet-mayhem-for? of its own process, whose entity says what level it is of):
 ;;   more enemies   each lurker Misty places has its company: lurker-multiplier's clones ("the horde") and misty-mayhem-extra more on top.
@@ -648,24 +654,39 @@
 
 (defconstant GAUNTLET_MUSE_FLASH_TIME (seconds 0.8)) ;; the icon's flash, and the burn of its glow, after a flip
 
-(define *gauntlet-muse-carried* #f) ;; THE authority: the muse is with Jak. Starts every visit to Misty #f
+(defenum gauntlet-muse-state
+  :type uint32
+  (loose 0)
+  (carried 1)
+  (delivered 2))
+
+(define *gauntlet-muse-state* (gauntlet-muse-state loose)) ;; THE authority: where the muse is for this visit to Misty (see above). Starts every visit LOOSE or DELIVERED, as the game's muse stands on arrival
 (define *gauntlet-muse-episode* 0) ;; counts the times she has gone loose (arriving counts), so a group of the horde tops itself up once for each
 (define *gauntlet-muse-flip-time* (- 0 (seconds 3600))) ;; when the state last flipped, long ago until it does: the icon's flash reads it
 (define *gauntlet-muse-was-here* #f) ;; Misty was active the last time the poll looked
 (define *gauntlet-muse-health* -1.0) ;; Jak's health the last time the poll looked, -1 with no Jak: a fall in it is a hit
 
+(defun gauntlet-muse-carried? ()
+  "True while the muse is with Jak."
+  (= *gauntlet-muse-state* (gauntlet-muse-state carried)))
+
+(defun gauntlet-muse-delivered? ()
+  "True on a visit that began with the game's muse already caught: there is no muse to be had on it."
+  (= *gauntlet-muse-state* (gauntlet-muse-state delivered)))
+
 (defun gauntlet-misty-active? ()
   "True while Misty Island is loaded and running, wherever Jak is: the muse's state lives exactly that long."
   (= (level-status *level* 'misty) 'active))
 
-(defun gauntlet-muse-loose? ()
-  "True while the mayhem is on: the setting is on, Misty is running and the muse is not with Jak."
-  (and *gauntlet-misty-muse-enabled* (not *gauntlet-muse-carried*) (gauntlet-misty-active?)))
+(defun gauntlet-mayhem-on? ()
+  "True while the mayhem is on: the setting is on, Misty is running and the muse is not with Jak, whether she is loose or the visit is a
+   delivered one, on which she never can be."
+  (and *gauntlet-misty-muse-enabled* (not (gauntlet-muse-carried?)) (gauntlet-misty-active?)))
 
 (defun gauntlet-mayhem-for? ((proc process))
   "True when the mayhem applies to proc: the muse is loose and proc is something Misty placed (its entity is of Misty's level),
    so a babak of the swamp is never rushed because a muse got away."
-  (and (gauntlet-muse-loose?) (-> proc entity) (= (-> proc entity extra level name) 'misty)))
+  (and (gauntlet-mayhem-on?) (-> proc entity) (= (-> proc entity extra level name) 'misty)))
 
 (defun gauntlet-misty-pace ((proc process))
   "How many times faster than its own pace proc moves now: *gauntlet-misty-mayhem-speed* in the mayhem, else 1.0."
@@ -742,7 +763,7 @@
    one process that lives as long as Misty does): while the muse is loose and Jak is on the island, Misty's battle music, the flavour of
    its tune the game keeps for the fight with the lurkers (gsound.gc, flava-table-add misty). The flavour is the level music's own,
    so it only changes how Misty's tune plays, and a flavour the player chose in the progress menu still wins (the game's own rule)."
-  (let ((want (and *gauntlet-misty-mayhem-music* (gauntlet-muse-loose?) (gauntlet-in-level? 'misty))))
+  (let ((want (and *gauntlet-misty-mayhem-music* (gauntlet-mayhem-on?) (gauntlet-in-level? 'misty))))
     (cond
       ((and want (not *gauntlet-mayhem-music*))
        (set! *gauntlet-mayhem-music* #t)
@@ -754,8 +775,8 @@
   "Make carried the muse's state and say so, once: an eco burst at Jak (blue and a green eco chime when she is his, red and the
    warning when he has lost her) beside the icon's flash, and the beat of the change (gauntlet-mayhem-onset!, gauntlet-mayhem-relief!). A flip
    to the state she is in already is nothing."
-  (when (!= carried *gauntlet-muse-carried*)
-    (set! *gauntlet-muse-carried* carried)
+  (when (!= carried (gauntlet-muse-carried?))
+    (set! *gauntlet-muse-state* (if carried (gauntlet-muse-state carried) (gauntlet-muse-state loose)))
     (set-time! *gauntlet-muse-flip-time*)
     (if (not carried) (+! *gauntlet-muse-episode* 1))
     (when *target*
@@ -795,7 +816,7 @@
   (cond
     ((not (gauntlet-misty-active?)) (set! *gauntlet-mayhem-blend* 0.0))
     ((paused?))
-    ((gauntlet-muse-loose?)
+    ((gauntlet-mayhem-on?)
      (set! *gauntlet-mayhem-blend* (seek *gauntlet-mayhem-blend* 1.0 (/ (seconds-per-frame) GAUNTLET_MAYHEM_FADE_IN))))
     (else
      (set! *gauntlet-mayhem-blend* (seek *gauntlet-mayhem-blend* 0.0 (/ (seconds-per-frame) GAUNTLET_MAYHEM_FADE_OUT)))))
@@ -3741,7 +3762,7 @@
   (when (= (-> horde level-name) 'misty)
     (cond
       ((not *gauntlet-misty-muse-enabled*) (gauntlet-horde-calm! horde #f))
-      ((gauntlet-muse-loose?)
+      ((gauntlet-mayhem-on?)
        (if (!= (-> horde episode) *gauntlet-muse-episode*) (gauntlet-horde-mayhem! horde)))
       (else (gauntlet-horde-calm! horde #t))))
   0)
@@ -3861,7 +3882,7 @@
                         (set! (-> horde clones born) twin)
                         (+! born 1)))))
                 ;; the muse loose: the company is born with the lurker, so one that comes up in the mayhem arrives in it
-                (if (and misty (gauntlet-muse-loose?)) (gauntlet-horde-mayhem! horde))
+                (if (and misty (gauntlet-mayhem-on?)) (gauntlet-horde-mayhem! horde))
                 (cond
                   ((> born 0))
                   (misty)
@@ -4482,8 +4503,9 @@
 ;; GAUNTLET_MUSE_GRACE, then the muse of the game again, chasing and run from, giving a catch that is over at once (muse-caught
 ;; tells a first catch, which closes the task, from the rest). The game's own muse is never the one, because by the time Jak can
 ;; lose her hers is gone and her actor marked dead, so no birth by the entity system will bring her back; that is the reason for
-;; the new one. The same new muse is also the one that stands on the island on a later visit (or after a death, which puts every
-;; process of the entity pool away, hers with them) when the actor is dead and the task closed: the mod makes her at her home.
+;; the new one. The same new muse is also the one that stands at her home after a death on the visit she was first caught on (a death puts
+;; every process of the entity pool away, hers with them) when the actor is dead and the task closed: the mod makes her there. It does not
+;; on a delivered visit, which began with her actor dead: there she is not made at all.
 
 (deftype gauntlet-muse-world (structure)
   ((muse handle) ;; the muse this mod made, until she is caught or put away
@@ -4529,7 +4551,7 @@
   "Jak has lost the muse he carries, why being 'hit, 'death or the name of a bonk (see *target-bonk-hook*, e.g. 'bonk-wall-roll). She pops out loose where he stands, unless he died: a death
    puts every process of the entity pool away, so the poll below makes her at her home once it has. Dropped once for a hit,
    however many frames of invulnerability follow, because the second finds her loose already."
-  (when (and *gauntlet-misty-muse-enabled* *gauntlet-muse-carried* (gauntlet-misty-active?))
+  (when (and *gauntlet-misty-muse-enabled* (gauntlet-muse-carried?) (gauntlet-misty-active?))
     (gauntlet-muse-flip! #f)
     (if (!= why 'death) (gauntlet-muse-spawn! #t)))
   (none))
@@ -4548,7 +4570,7 @@
    his death begins). Every way he can lose health is a fall in it (an attack, a hit of damage mode, the red babak's second hit),
    which is why this is where hits are seen and not a hook in the hit state; invulnerable frames let no hit land, so nothing falls."
   (let ((health (if *target* (-> *target* fact health) -1.0)))
-    (when (and *target* *gauntlet-muse-carried*)
+    (when (and *target* (gauntlet-muse-carried?))
       (cond
         ((or (logtest? (-> *target* state-flags) (state-flags dying)) (>= 0.0 health)) (gauntlet-muse-drop! 'death))
         ((and (<= 0.0 *gauntlet-muse-health*) (< health *gauntlet-muse-health*)) (gauntlet-muse-drop! 'hit))))
@@ -4557,11 +4579,13 @@
 
 (defun gauntlet-muse-body-poll! ()
   "Per-frame, on Misty, with the muse loose: if the game will not bring her back (her actor is dead and none of her is standing) and
-   the mod has not made one, make her at her home. That is every visit after the first catch, and every death."
+   the mod has not made one, make her at her home. That is every death after the first catch, on the visit of it. On a delivered visit
+   she is never made: the game's muse was caught before Jak came, and she stays caught."
   (let ((ent (gauntlet-muse-entity-find!)))
     (when (and ent
                *target*
-               (not *gauntlet-muse-carried*)
+               (not (gauntlet-muse-carried?))
+               (not (gauntlet-muse-delivered?))
                (not (-> ent extra process))
                (logtest? (-> ent extra perm status) (entity-perm-status bit-0 dead))
                (not (handle->process (-> *gauntlet-muse-world* muse))))
@@ -4692,9 +4716,11 @@
   0)
 
 (defun gauntlet-muse-icon-shown? ()
-  "True when the icon is to be seen: Jak is inside Misty and nothing else has the screen (a cutscene, the progress menu, a fade)."
+  "True when the icon is to be seen: Jak is inside Misty, on a visit with a muse to be had (not a delivered one), and nothing else has the
+   screen (a cutscene, the progress menu, a fade)."
   (and *target*
        (gauntlet-in-level? 'misty)
+       (not (gauntlet-muse-delivered?))
        (not (movie?))
        (not *progress-process*)
        (time-elapsed? (-> *game-info* letterbox-time) (seconds 0.1))
@@ -4739,7 +4765,7 @@
     (let* ((since (- (current-time) *gauntlet-muse-flip-time*))
            (flash (fmax 0.0 (- 1.0 (/ (the float since) (the float GAUNTLET_MUSE_FLASH_TIME)))))
            (size *gauntlet-misty-muse-icon-scale*))
-      (gauntlet-muse-portrait-look! *gauntlet-muse-carried* flash size)
+      (gauntlet-muse-portrait-look! (gauntlet-muse-carried?) flash size)
       (when (> (-> self part matrix) 0)
         (gauntlet-muse-portrait-place!)
         (spawn (-> self part) *null-vector*))
@@ -4755,14 +4781,14 @@
              (pulse (gauntlet-muse-wave GAUNTLET_MUSE_PULSE_PERIOD)))
         (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug-no-zbuf))
           ;; a loss flashes the whole screen violet, fading with the icon's flash (misty-mayhem-atmosphere scales it)
-          (when (and (not *gauntlet-muse-carried*) (< 0.0 flash))
+          (when (and (not (gauntlet-muse-carried?)) (< 0.0 flash))
             (draw-sprite2d-xy buf 0 0 512 224
                               (gauntlet-muse-rgba 150 20 170 (the int (* GAUNTLET_MAYHEM_FLASH_ALPHA flash *gauntlet-misty-mayhem-atmosphere*)))))
           (gauntlet-muse-frame-draw!
             buf cx cy half-w half-h thick-x
             (cond
               ((< 0.0 flash) (static-rgba 255 255 255 150))
-              (*gauntlet-muse-carried* (static-rgba 255 190 50 110))
+              ((gauntlet-muse-carried?) (static-rgba 255 190 50 110))
               (else (gauntlet-muse-rgba 200 40 120 (+ 45 (the int (* 80.0 pulse)))))))))))
   0)
 
@@ -4800,19 +4826,28 @@
             (process-spawn gauntlet-muse-portrait :init gauntlet-muse-portrait-init-by-other :to *active-pool*))))
   0)
 
+(defun gauntlet-muse-caught-before-arrival? ()
+  "True when the game's muse is caught: her actor's dead status is set, which the game does as she is caught and keeps in the
+   save with her cell (her actor has a task, and only the perms of actors with one are kept). Asked on arrival, it says whether the
+   visit is a delivered one; Misty is active by then and her perms have been copied into it, as the body poll counts on."
+  (let ((ent (gauntlet-muse-entity-find!)))
+    (and ent (logtest? (-> ent extra perm status) (entity-perm-status dead)))))
+
 (defun gauntlet-muse-poll! ()
-  "Per-frame: the muse's state follows Misty. Entering it, the muse is loose; leaving it, she is loose again for the next visit,
-   whatever the visit before ended with. While it is up, hits are watched for, her body is kept, and the icon is."
+  "Per-frame: the muse's state follows Misty. Entering it, the muse is delivered if the game's was caught before Jak came and loose
+   if not; leaving it, she is loose again for the next visit, whatever the visit before ended with. While it is up, hits are watched
+   for, her body is kept, and the icon is."
   (let ((here (gauntlet-misty-active?)))
     (cond
       ((and here (not *gauntlet-muse-was-here*))
        (set! *gauntlet-muse-was-here* #t)
-       (set! *gauntlet-muse-carried* #f)
+       (set! *gauntlet-muse-state*
+             (if (gauntlet-muse-caught-before-arrival?) (gauntlet-muse-state delivered) (gauntlet-muse-state loose)))
        (set! *gauntlet-muse-health* -1.0)
        (+! *gauntlet-muse-episode* 1))
       ((and (not here) *gauntlet-muse-was-here*)
        (set! *gauntlet-muse-was-here* #f)
-       (set! *gauntlet-muse-carried* #f)
+       (set! *gauntlet-muse-state* (gauntlet-muse-state loose))
        (set! *gauntlet-muse-entity* (the-as entity-actor #f))))
     (gauntlet-mayhem-blend-poll!)
     (gauntlet-lurker-tint-poll!)
