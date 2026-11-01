@@ -563,6 +563,9 @@
       (cond
         ((nonzero? (-> self respawn-delay))
          (let ((gp-0 (current-time))) (while (not (time-elapsed? gp-0 (-> self respawn-delay))) (suspend))))
+        ;; gauntlet: a pickup the mod marked one-off (the eco a carrier lurker spills, pc/features/gauntlet.gc) is not born again when Jak's
+        ;; eco runs out, as every other eco without a respawn delay is below: collected once, it is gone
+        ((logtest? (-> self fact options) (fact-options one-off)) (deactivate self))
         (else
          (while (let ((f30-0 0.0)) (< f30-0 (the-as float (send-event *target* 'query 'pickup (-> self fact pickup-type)))))
            (suspend))))

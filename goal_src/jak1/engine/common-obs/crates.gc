@@ -445,6 +445,28 @@
 (defpart 301
   :init-specs ((:scalevel-x (meters -0.0033333334)) (:scalevel-y :copy scalevel-x) (:fade-a -3.4)))
 
+;; gauntlet: whether a crate may be opened by an attack, or pulled open by Jak's blue eco, asked as it is about to break (the scout fly
+;; boxes of Sentinel Beach want an eco, pc/features/gauntlet.gc, "the scout fly boxes"). Given the crate, who attacked it, the attack's
+;; mode ('flop, 'eco-yellow, or 'eco-blue for the blue eco's pull, which is not an attack) and the attack's id. True lets the crate go on
+;; as the game made it. False is a refusal: the crate bounces as it does for an attack it does not break (crate-refuse below), and the
+;; hook has already played whatever else the refusal shows. It is asked only on the paths that would break the crate, so everything a
+;; crate does short of breaking is untouched. crates.gc links ahead of gauntlet.o (and ENGINE.CGO has no gauntlet.o at all), so this is
+;; a hook with a default that lets every crate break, for the reason *entity-born-hook* is one (engine/entity/entity.gc).
+(defun crate-attack-gate-open ((box crate) (attacker process) (mode symbol) (id uint))
+  #t)
+
+(define *crate-attack-gate-hook* crate-attack-gate-open)
+
+(defbehavior crate-refuse crate ((arg0 uint))
+  "gauntlet: the crate does not break, and bounces as it does for an attack it cannot break (once for each attack id, and only
+   while it is at rest on its base), with the iron crate's own thud."
+  (when (and (!= arg0 (-> self incomming-attack-id)) (= (-> self root trans y) (-> self base y)))
+    (set! (-> self incomming-attack-id) arg0)
+    (if (not (!= (-> self smush amp) 0.0)) (sound-play "icrate-nobreak"))
+    (activate! (-> self smush) 0.1 90 150 1.0 1.0)
+    (go-virtual bounce-on))
+  #f)
+
 (defbehavior crate-standard-event-handler crate ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (case arg2
     (('attack)
@@ -458,6 +480,9 @@
                       *target*
                       (not (logtest? (-> *target* control root-prim prim-core action) (collide-action racer))))
                (return #f))
+             ;; gauntlet: may this attack open the crate? (see *crate-attack-gate-hook*)
+             (if (not (*crate-attack-gate-hook* self arg0 (the-as symbol (-> arg3 param 1)) s4-0))
+               (return (crate-refuse s4-0)))
              (increment-success-for-hint (text-id sidekick-hint-crate-iron))
              (increment-success-for-hint (text-id training-ironcrate))
              (send-event arg0 'get-attack-count 1)
@@ -479,6 +504,9 @@
          (('steel)
           (case (-> arg3 param 1)
             (('explode 'darkeco 'eco-yellow 'bonk 'tube 'flut-bonk 'flut-attack 'racer)
+             ;; gauntlet: may this attack open the crate? (see *crate-attack-gate-hook*)
+             (if (not (*crate-attack-gate-hook* self arg0 (the-as symbol (-> arg3 param 1)) s4-0))
+               (return (crate-refuse s4-0)))
              (send-event arg0 'get-attack-count 1)
              (when (logtest? (-> self draw status) (draw-status was-drawn))
                (increment-success-for-hint (text-id sidekick-hint-crate-steel))
@@ -517,7 +545,12 @@
                (level-hint-spawn (text-id firecanyon-crate-darkeco2) "sksp0082" (the-as entity #f) *entity-pool* (game-task none))
                (level-hint-spawn (text-id firecanyon-crate-darkeco1) "sksp0081" (the-as entity #f) *entity-pool* (game-task none)))))
           (go-virtual die #f (the-as int s5-0)))
-         (else (send-event arg0 'get-attack-count 1) (go-virtual die #f (the-as int s5-0))))))
+         (else
+          ;; gauntlet: may this attack open the crate? (see *crate-attack-gate-hook*)
+          (if (not (*crate-attack-gate-hook* self arg0 (the-as symbol (-> arg3 param 1)) s4-0))
+            (return (crate-refuse s4-0)))
+          (send-event arg0 'get-attack-count 1)
+          (go-virtual die #f (the-as int s5-0))))))
     (('touch)
      (case (-> self defense)
        (('darkeco) (send-event arg0 'attack (-> arg3 param 0) (static-attack-info ((mode 'darkeco)))) (go-virtual die #f 0))))
@@ -531,6 +564,8 @@
        v0-0))
     (('eco-blue)
      (if (not (or (= (-> self defense) 'darkeco)
+                  ;; gauntlet: a crate that wants another eco is not pulled open by Jak's blue (see *crate-attack-gate-hook*)
+                  (not (*crate-attack-gate-hook* self arg0 'eco-blue (the-as uint 0)))
                   (or (= (-> self next-state name) 'notice-blue) (= (-> self next-state name) 'die))
                   (!= (-> self root trans y) (-> self base y))))
        (go-virtual notice-blue (process->handle arg0))))))
@@ -620,7 +655,7 @@
                  (set! (-> a1-5 param 0) (-> block param 0))
                  (set! (-> a1-5 param 1) (the-as uint 'darkeco))
                  (let ((v1-12 (+ *global-attack-id* 1))) (set! *global-attack-id* v1-12) (set! (-> a1-5 param 2) (the-as uint v1-12)))
-                 (set! (-> a1-5 param 3) (the-as uint 0))
+                 (set! (-> a1-5 param 3) (the-as uint64 0))
                  (send-event-function proc a1-5)))))))))
   :trans
     (behavior ()
@@ -772,7 +807,7 @@
     (set! (-> s4-0 reaction) default-collision-reaction)
     (set! (-> s4-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
     (alloc-riders s4-0 1)
-    (let ((s3-0 (new 'process 'collide-shape-prim-mesh s4-0 (the-as uint 0) (the-as uint 0))))
+    (let ((s3-0 (new 'process 'collide-shape-prim-mesh s4-0 (the-as uint64 0) (the-as uint64 0))))
       (set! (-> s3-0 prim-core collide-as) (collide-kind crate blue-eco-suck))
       (set! (-> s3-0 collide-with) (collide-kind target))
       (set! (-> s3-0 prim-core action) (collide-action solid rider-plat-sticky))

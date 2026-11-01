@@ -1596,6 +1596,9 @@
   :event target-standard-event-handler
   :enter
     (behavior ((arg0 float))
+      ;; gauntlet: a fall beyond fall-far onto the ground (target-hit-ground, or the butt slam in target-flop-hit-ground) ends here, in the painful
+      ;; landing: he hurts, stumbles and gets up
+      (*target-bonk-hook* 'bonk-fall)
       (set! (-> self control unknown-dword31) 0)
       (set! (-> self control last-attack-end-time) 0)
       (set-forward-vel (the-as float 0.0))

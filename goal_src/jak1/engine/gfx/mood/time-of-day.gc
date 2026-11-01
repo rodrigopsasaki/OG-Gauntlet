@@ -185,6 +185,11 @@
   (set! (-> arg0 title-light-group ambi levels x) 1.0)
   (none))
 
+;; gauntlet: called with each active level right after its mood function has run, to tint what that function just wrote (pc/features/gauntlet.gc,
+;; "the mayhem's world"). A hook, not a define-extern'd function: this file is in ENGINE.CGO, where gauntlet.gc is not, and a call to a function that is
+;; never defined crashes, while a hook that is never set is a call to nothing. Same shape as *entity-born-hook*.
+(define *mood-post-hook* (the (function level none) nothing))
+
 (defun update-time-of-day ((arg0 time-of-day-context))
   "Update the time of day context"
   ;; set defaults
@@ -219,6 +224,8 @@
              (set! (-> arg0 moods s3-0) (-> s2-0 mood))
              ;; run its mood callback
              ((-> s2-0 mood-func) (-> s2-0 mood) (-> arg0 time) s3-0)
+             ;; gauntlet: the mod's tint of that mood, before it is blended with the other level's below
+             (*mood-post-hook* s2-0)
              ;; sky count
              (if (and (= (-> s2-0 status) 'active) (-> s2-0 info sky)) (+! s5-0 1)))
             (else

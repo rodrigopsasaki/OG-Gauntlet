@@ -378,6 +378,11 @@
     (set! (-> this eco-pill) 0.0))
   (none))
 
+;; gauntlet: called when Jak collects a power cell, before the cell is counted, so the mod can heal him for it
+;; (pc/features/gauntlet.gc, "the power cell", sets it). It does nothing until then: this file links ahead of gauntlet.o in GAME.CGO,
+;; and ENGINE.CGO has no gauntlet.o at all. A hook, for the reason *entity-born-hook* is one (engine/entity/entity.gc).
+(define *fuel-cell-picked-hook* (the (function none) nothing))
+
 (declare-type vent process-drawable)
 
 (defmethod pickup-collectable! ((this fact-info-target) (kind pickup-type) (amount float) (source-handle handle))
@@ -455,7 +460,12 @@
          ;; og:preserve-this make sure any speedrun display is hidden
          (#when PC_PORT
            (hide-speedrun-display))
-         (set-time! (-> this fuel-cell-pickup-time))))
+         (set-time! (-> this fuel-cell-pickup-time))
+         ;; gauntlet: vanilla leaves health alone on a cell; the hook heals Jak up to 3. Only here, on a cell not yet
+         ;; counted: this branch also answers every 'query 'pickup for the cell count (with amount 0, a task that never
+         ;; passes this check), which the game asks many times a second, and a hook outside this when healed every hit
+         ;; away the moment after it landed.
+         (*fuel-cell-picked-hook*)))
      (adjust (-> (the-as target (-> this process)) game) 'fuel-cell amount source-handle))
     (((pickup-type buzzer))
      ;; buzzer

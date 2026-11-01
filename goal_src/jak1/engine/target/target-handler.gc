@@ -478,6 +478,15 @@
                       target-hit))
     (else (target-standard-event-handler arg0 arg1 arg2 arg3))))
 
+;; gauntlet: called whenever Jak bonks, which is any of the knock-back moments he visibly bounces or stumbles in, so the mod can drop the
+;; muse he carries (pc/features/gauntlet.gc, "the muse", sets it). It is given which bonk it is, a symbol:
+;;   'bonk-landing   a landing from beyond fall-far on something that hears 'bonk (a platform, an enemy), here in target-bonk-event-handler
+;;   'bonk-fall      a fall beyond fall-far onto the ground, the painful landing: :enter of target-hit-ground-hard (target2.gc)
+;;   'bonk-wall-lunge, 'bonk-wall-roll, 'bonk-wall-roll-jump   a smack into a wall in the running attack, the roll and the roll jump (target.gc)
+;; It does nothing until then: this file links ahead of gauntlet.o in GAME.CGO, and ENGINE.CGO has no gauntlet.o at all. A hook, for the
+;; reason *entity-born-hook* is one (engine/entity/entity.gc).
+(define *target-bonk-hook* (the (function symbol none) nothing))
+
 (defbehavior target-bonk-event-handler target ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (let ((s4-0 (new 'stack-no-clear 'vector)))
     (cond
@@ -493,7 +502,7 @@
               (vector-normalize! (vector-! s4-0 (-> self control unknown-sphere-array00 0 prim-core world-sphere) (-> self control actor-contact-pt))
                                  (the-as float 1.0))
               (< 0.01 (-> s4-0 y))))
-       (if (< 0.75 (-> s4-0 y))
+       (when (< 0.75 (-> s4-0 y))
          (send-event arg0
                      'bonk
                      (-> arg3 param 0)
@@ -502,6 +511,10 @@
        (let ((f0-7 (vector-dot (-> self control dynam gravity-normal)
                                (vector-! (new 'stack-no-clear 'vector) (-> self control highest-jump-mark) (-> self control trans)))))
          (when (< (-> *TARGET-bank* fall-far) f0-7)
+           ;; gauntlet: a landing from this high, the one Jak bounces off, is the bonk that drops a muse he is carrying
+           ;; (pc/features/gauntlet.gc, "the muse"). Not the 'bonk sent above: that goes out on any firm landing on an
+           ;; actor, every platform hop included, and the muse would be lost to ordinary jumping.
+           (*target-bonk-hook* 'bonk-landing)
            (when (and (target-send-attack arg0
                                           (the-as uint 'bonk)
                                           (the-as touching-shapes-entry (-> arg3 param 0))
