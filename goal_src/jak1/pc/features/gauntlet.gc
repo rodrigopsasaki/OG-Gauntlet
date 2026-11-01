@@ -5480,6 +5480,11 @@
     ((not (gauntlet-eco-mastered?)) #f)
     ((>= (-> *game-info* money) (the float *gauntlet-goggles-orb-cost*))
      (set! (-> *game-info* money) (- (-> *game-info* money) (the float *gauntlet-goggles-orb-cost*)))
+     ;; The counter is how the player learns that a shot has a price, and the goggles hide it: their hud (first-person-hud, hud-waiting in
+     ;; engine/target/target2.gc) calls disable-hud, which sets the disable flag on every hud part but the eco one, and a disabled hud never
+     ;; arrives on its own when its value changes (tally-value, engine/ui/hud.gc). 'show does not look at that flag, so it brings the orb count
+     ;; in, and each paid shot restarts its two seconds on screen. A free shot (a yellow charge) never reaches here, so it never shows it.
+     (when (-> *hud-parts* money) (send-event (ppointer->process (-> *hud-parts* money)) 'show))
      #t)
     (else
      ;; a press stays in the pad's history for 15 frames and the goggles ask each of them: one click for it
