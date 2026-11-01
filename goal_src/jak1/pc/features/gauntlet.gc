@@ -5,8 +5,10 @@
 ;; runtime; the tunables are in gauntlet-h.gc, and the pieces that live in a level's own file call in through the functions it declares.
 ;;
 ;; On Geyser Rock (level training) a bomb drops by itself, on a fixed spot of a table (see "the drop spots": the bridge, and
-;; the blue eco vent before the precursor door), the first time Jak walks within *gauntlet-bridge-trigger-radius* of it, and
-;; again only after he has been farther than *gauntlet-bridge-rearm-range* away. Only one bomb is alive at a time.
+;; the blue eco vent before the precursor door), the first time Jak walks within *gauntlet-bridge-trigger-radius* of its trigger, and
+;; again only after he has been farther than *gauntlet-bridge-rearm-range* away. Only one bomb is alive at a time. The vent's
+;; trigger is a gate across the bridge that leads to it, crossed heading for the vent, and the bomb comes a second after Gol's
+;; warning, never before it.
 ;;
 ;; The mod speaks in eco: the colour of a charge says what a hazard does, red strength and blue draw. See "the eco charge"
 ;; below; the bomb is blue, some of the stampede's yakows are red, and babaks (babak.gc, on every level) are born red or blue.
@@ -1330,23 +1332,36 @@
 ;; Row 1 is the blue eco vent before the precursor door, the only vent in the level (ecovent-245 of training-actors.json, with
 ;; the camera that introduces it, training-cam index 4, standing on it; the door, tra-iris-door-1, is 69 m east-southeast).
 ;; The lesson it teaches is the bomb's: Jak charges up with the blue eco, the circle goes up, and he runs out of it.
+;; Its trigger is not the vent: it is a gate across the bridge that leads to the vent, at the bridge's first orb (money-4354, at
+;; -1284.76 860.26, with money-4356 and money-4358 following it west at 3.3 m intervals along the bridge toward the vent, 24 m past the
+;; first). Jak comes from the door, in the east, heading west. The gate is a segment through that orb's spot at right angles to the
+;; bridge's line (the direction from the first orb to the third, -0.958 -0.288), 10 m to each side as row 0's is, so with the
+;; trigger radius to spare it covers the bridge and whatever he jumps on to from either bank. The trigger is the orb's place, not
+;; picking it up: orbs stay collected in a save, and a trigger that was the pickup would be dead after the first visit.
+;; Because the gate is in front of the vent and not on it, it is also crossed by Jak running back to the door with the blue
+;; eco he has just taken, so the vent's row fires only while Jak is closing on the vent (gauntlet-spot-closing?).
 (defmacro gauntlet-drop-spot-table (join row)
   "Expand row once per spot, (row index name enabled x y z ax az bx bz), under the form join (begin, to do something for each)."
   `(,join
      (,row 0 "bridge" *gauntlet-bridge-enabled* -1313.8 40.5 946.4 -1323.05 942.6 -1304.55 950.2)
-     (,row 1 "vent" *gauntlet-vent-enabled* -1307.98 29.55 854.21 -1307.98 854.21 -1307.98 854.21)))
+     (,row 1 "vent" *gauntlet-vent-enabled* -1307.98 29.55 854.21 -1287.64 869.84 -1281.88 850.68)))
 
 ;; The rows of the table, written out: deftype needs a literal array size. A row added above needs this raised with it.
 (defconstant GAUNTLET_DROP_SPOTS 2)
-(defconstant GAUNTLET_VENT_SPOT 1) ;; the row of the vent, whose first bomb of a session Gol announces
+(defconstant GAUNTLET_VENT_SPOT 1) ;; the row of the vent, whose bomb is announced: Gol's first line of a session, and the drop a second later
+(defconstant GAUNTLET_VENT_WARNING (seconds 1)) ;; from the gate being crossed (and Gol starting to speak) to the bomb appearing over the vent
 
 (deftype gauntlet-drop-world (structure)
-  ((armed   symbol GAUNTLET_DROP_SPOTS))) ;; false from a spot's drop until Jak has been far from it again
+  ((armed      symbol GAUNTLET_DROP_SPOTS) ;; false from a spot's drop until Jak has been far from it again
+   (fall-at    time-frame GAUNTLET_DROP_SPOTS) ;; when a bomb that has been announced falls on the spot, 0 while there is none
+   (jak-range  float GAUNTLET_DROP_SPOTS))) ;; how far Jak was from the spot itself (not its trigger), sideways, the last time the spot looked: closing on it is a fall in this
 
 (define *gauntlet-drop-world* (new 'global 'gauntlet-drop-world))
 
 (dotimes (i GAUNTLET_DROP_SPOTS)
-  (set! (-> *gauntlet-drop-world* armed i) #t))
+  (set! (-> *gauntlet-drop-world* armed i) #t)
+  (set! (-> *gauntlet-drop-world* fall-at i) 0)
+  (set! (-> *gauntlet-drop-world* jak-range i) 0.0))
 
 (define *gauntlet-vent-gol-told* #f) ;; true once Gol has had his say on a vent bomb: it is a lesson, said once per game session
 
@@ -1383,8 +1398,8 @@
 
 (defun gauntlet-vent-gol-line! ()
   "Gol, the Blue Sage's mad twin, calls FIRE! (GOL-AM04, his line from the Citadel's robot fight, a stream of VAGWAD like the mayor's CHI-AM01
-   and Daxter's lines, which already play this way) as the first bomb falls on the vent: the lesson of the bomb, said to a player who has
-   just taken the vent's blue eco and will not otherwise know what the circle on the ground means. Once per game session
+   and Daxter's lines, which already play this way) a second before the first bomb falls on the vent: the lesson of the bomb, said to a player who is
+   about to take the vent's blue eco and will not otherwise know what the circle on the ground means. Once per game session
    (*gauntlet-vent-gol-told*), as gauntlet-klaww-mayor-line! does the mayor's: an engine ambient hint, no position (the radio), and when
    another hint is playing (*hint-semaphore*) the spawn is refused and the line is lost."
   (cond
@@ -1395,25 +1410,57 @@
   0)
 
 (defun gauntlet-spot-bomb! ((index int) (spot vector))
-  "Drop the bomb on spot index of the table. If one came down, and the spot is the vent, Gol says his line."
-  (gauntlet-bomb-drop! spot)
-  (when (= index GAUNTLET_VENT_SPOT)
-    (if (gauntlet-bomb-alive?)
-      (gauntlet-vent-gol-line!)))
+  "Set off spot index of the table. The bridge's bomb is dropped on the spot now. The vent's is announced: Gol's line is said now
+   (once per session, as gauntlet-vent-gol-line! says) and the bomb is dropped by gauntlet-spot-fall-poll! GAUNTLET_VENT_WARNING
+   later, so the warning is never behind the fall. A vent whose bomb has no art to be drawn with says nothing and drops nothing."
+  (cond
+    ((!= index GAUNTLET_VENT_SPOT)
+     (gauntlet-bomb-drop! spot))
+    ((gauntlet-art-ready? *gauntlet-darkecobomb-sg*)
+     (gauntlet-vent-gol-line!)
+     (set! (-> *gauntlet-drop-world* fall-at index) (+ (current-time) GAUNTLET_VENT_WARNING))))
   0)
 
+(defun gauntlet-spot-fall-poll! ((index int) (spot vector))
+  "Per-frame, for one spot: the bomb that was announced falls on it once its time is up, wherever Jak is by then and whatever he
+   is doing, and then nothing is pending."
+  (let ((fall-at (-> *gauntlet-drop-world* fall-at index)))
+    (when (and (nonzero? fall-at) (>= (current-time) fall-at))
+      (set! (-> *gauntlet-drop-world* fall-at index) 0)
+      (gauntlet-bomb-drop! spot)))
+  0)
+
+(defun gauntlet-spot-closing? ((index int) (spot vector))
+  "True when Jak is nearer to spot itself, sideways, than he was the last time this was asked for spot index, which is
+   the last frame: he is heading for it. The vent's gate is crossed in both directions, and only the way toward the vent is the
+   bomb's. Standing still is not closing. This must be asked once a frame for every spot it is asked of, and remembers the distance for the
+   next, so it is asked before anything that might return early."
+  (let ((range (vector-vector-xz-distance (target-pos 0) spot))
+        (before (-> *gauntlet-drop-world* jak-range index)))
+    (set! (-> *gauntlet-drop-world* jak-range index) range)
+    (< range before)))
+
 (defun gauntlet-spot-poll! ((index int) (enabled symbol))
-  "Per-frame, for one spot while Jak is on Geyser Rock: drop one bomb on it when Jak comes within
+  "Per-frame, for one spot while Jak is on Geyser Rock: set it off (gauntlet-spot-bomb!) when Jak comes within
    *gauntlet-bridge-trigger-radius* of its trigger and no bomb is alive; do not again until he has been farther than
-   *gauntlet-bridge-rearm-range* from it. With its switch (enabled) off it never drops, though it keeps track of Jak coming
-   and going."
+   *gauntlet-bridge-rearm-range* from it. The vent's gate is the one trigger that has a way through it: it only sets
+   the vent off for a Jak who is closing on the vent, so that running back across the bridge to the door, blue eco in him,
+   does not. A bomb that was announced falls on its time, whatever else Jak does. With its switch (enabled) off it never
+   sets off, though it keeps track of Jak coming and going."
   (let* ((spot (gauntlet-drop-spot-at index (new 'stack-no-clear 'vector)))
-         (reach (gauntlet-drop-reach index)))
+         (reach (gauntlet-drop-reach index))
+         (closing (gauntlet-spot-closing? index spot))
+         (right-way (or (!= index GAUNTLET_VENT_SPOT) closing)))
+    (gauntlet-spot-fall-poll! index spot)
     (cond
       ((> reach *gauntlet-bridge-rearm-range*)
        (set! (-> *gauntlet-drop-world* armed index) #t))
       (else
-       (when (and enabled (-> *gauntlet-drop-world* armed index) (< reach *gauntlet-bridge-trigger-radius*) (not (gauntlet-bomb-alive?)))
+       (when (and enabled
+                  (-> *gauntlet-drop-world* armed index)
+                  (< reach *gauntlet-bridge-trigger-radius*)
+                  right-way
+                  (not (gauntlet-bomb-alive?)))
          (set! (-> *gauntlet-drop-world* armed index) #f)
          (gauntlet-spot-bomb! index spot)))))
   0)
@@ -1422,9 +1469,15 @@
   `(gauntlet-spot-poll! ,index ,enabled))
 
 (defun gauntlet-drop-spots-poll! ()
-  "Per-frame: every spot of the table is watched while Jak is on Geyser Rock, as gauntlet-spot-poll! says."
-  (if (and *target* (gauntlet-in-training?))
-    (gauntlet-drop-spot-table begin gauntlet-row-spot-poll))
+  "Per-frame: every spot of the table is watched while Jak is on Geyser Rock, as gauntlet-spot-poll! says. With Jak gone from
+   the rock (or from the game, as a death between lives has it) a bomb that was announced is called off, so it does not fall
+   on his next visit as if it had been waiting for him."
+  (cond
+    ((and *target* (gauntlet-in-training?))
+     (gauntlet-drop-spot-table begin gauntlet-row-spot-poll))
+    (else
+     (dotimes (i GAUNTLET_DROP_SPOTS)
+       (set! (-> *gauntlet-drop-world* fall-at i) 0))))
   0)
 
 ;; -------------------------------------------------------------- the stampede --

@@ -128,7 +128,7 @@
 (defconstant GAUNTLET_BOMB_DROP_HEIGHT_DEFAULT (meters 25)) ;; how high above Jak the bomb appears
 (defconstant GAUNTLET_BOMB_GRAVITY_DEFAULT (meters 30)) ;; its fall, in meters per second per second (about 1.3 s from 25 m)
 (defconstant GAUNTLET_BRIDGE_ENABLED_DEFAULT #t) ;; the bomb drops by itself on the bridge
-(defconstant GAUNTLET_VENT_ENABLED_DEFAULT #t) ;; and on the blue eco vent before the precursor door, where the player has just charged up with blue eco
+(defconstant GAUNTLET_VENT_ENABLED_DEFAULT #t) ;; and, a second after Gol's warning, on the blue eco vent before the precursor door, which the player walks toward across the bridge to charge up with blue eco
 (defconstant GAUNTLET_BRIDGE_TRIGGER_RADIUS_DEFAULT (meters 5)) ;; Jak this close to a drop spot of Geyser Rock (the bridge, the vent), sideways, sets its bomb off
 (defconstant GAUNTLET_BRIDGE_REARM_RANGE_DEFAULT (meters 60)) ;; and that spot will not drop again until he has been farther than this from it, which dying and respawning also does
 (defconstant GAUNTLET_DUMMIES_ENABLED_DEFAULT #t) ;; the training dummies turn into sages and shoot
