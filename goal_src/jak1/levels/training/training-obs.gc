@@ -864,7 +864,9 @@
                        self))
       (while (-> self child)
         (suspend))
-      (cleanup-for-death self))
+      (cleanup-for-death self)
+      ;; gauntlet: this dummy is dead for good now (its status is set), and with it gone Geyser Rock may be cleared
+      (gauntlet-scarecrow-broken! self))
   :post ja-post)
 
 (defmethod init-from-entity! ((this scarecrow-a) (arg0 entity-actor))
@@ -999,7 +1001,9 @@
                        self))
       (while (-> self child)
         (suspend))
-      (cleanup-for-death self))
+      (cleanup-for-death self)
+      ;; gauntlet: this dummy is dead for good now (its status is set), and with it gone Geyser Rock may be cleared
+      (gauntlet-scarecrow-broken! self))
   :post ja-post)
 
 (defmethod init-from-entity! ((this scarecrow-b) (arg0 entity-actor))

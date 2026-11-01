@@ -1201,3 +1201,63 @@ nav-enemy-default-event-handler
                  (f3-1 (- (-> a0-10 z) f1-2)))
             (if (>= (square (-> a0-10 w)) (+ (square f2-2) (square f3-1))) (return #t)))))))
   #f)
+
+;; gauntlet: the stun. A nav enemy that an eco blast has caught (pc/features/gauntlet.gc, "eco mastery") stands dazed where the blast
+;; threw it: it plays its idle animation, hurts nobody by touching, and can still be killed by an attack. Jak 1 has no stun of its own
+;; for nav enemies (the bonelurker's is its helmet: a state of its own, entered from a hit). The mod puts an enemy into this state
+;; from outside (go-process, after checking that it is in one of the ordinary states of a nav enemy and not, say, dying or in a jump)
+;; and describes the stun in event-param-point, which no state that can be interrupted by it is using: xyz is the velocity
+;; the blast throws the enemy with (game units a second, along the ground) and w is how long the stun lasts, in ticks.
+;; The throw is the first NAV_ENEMY_STUN_PUSH_TIME of it, slowing to nothing, and goes the way every nav enemy's movement goes, by
+;; pointing the nav control at a spot ahead of it (the bonelurker's push does the same), so the enemy stays on its mesh. Enemies
+;; whose nav info moves them by their animation's own motion (use-align: the hopper, the bonelurker) are stunned but not moved.
+;; When it is over the enemy chases Jak, which a blast has certainly woken it to.
+(defconstant NAV_ENEMY_STUN_PUSH_TIME (seconds 0.35))
+
+(defbehavior nav-enemy-stunned-post nav-enemy ()
+  "One frame of a stunned enemy: while the throw lasts, move toward a spot a few meters ahead along it at the speed the throw has left
+   (it falls off linearly), then hold still. The same movement as a chasing enemy's post, without turning it to face where it is going."
+  (let* ((age (- (current-time) (-> self state-time)))
+         (left (fmax 0.0 (- 1.0 (/ (the float age) (the float NAV_ENEMY_STUN_PUSH_TIME)))))
+         (throw (-> self event-param-point))
+         (speed (* left (vector-xz-length throw)))
+         (ahead (new 'stack-no-clear 'vector)))
+    (cond
+      ((< 0.0 speed)
+       (set! (-> ahead quad) (-> throw quad))
+       (set! (-> ahead y) 0.0)
+       (vector-xz-normalize! ahead 8192.0)
+       (vector+! (-> self nav target-pos) (-> self collide-info trans) ahead))
+      (else (set! (-> self nav target-pos quad) (-> self collide-info trans quad))))
+    (set! (-> self target-speed) speed)
+    (set! (-> self momentum-speed) speed)
+    (compute-alignment! (-> self align))
+    (nav-enemy-method-40 self)
+    (nav-enemy-method-41 self)
+    (nav-enemy-method-38 self)
+    (nav-enemy-common-post))
+  0
+  (none))
+
+(defstate nav-enemy-stunned (nav-enemy)
+  :event
+    (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
+      (case message
+        (('touch) #f)
+        (else (nav-enemy-default-event-handler proc argc message block))))
+  :enter
+    (behavior ()
+      (nav-enemy-neck-control-inactive)
+      (set-time! (-> self state-time))
+      (set! (-> self target-speed) 0.0)
+      (set! (-> self momentum-speed) 0.0))
+  :trans
+    (behavior ()
+      (if (time-elapsed? (-> self state-time) (the int (-> self event-param-point w))) (go-virtual nav-enemy-chase)))
+  :code
+    (behavior ()
+      (ja-channel-push! 1 (seconds 0.075))
+      (ja :group! (-> self draw art-group data (-> self nav-info idle-anim)))
+      (ja :num-func num-func-identity :frame-num 0.0)
+      (let ((f30-0 (nav-enemy-rnd-float-range 0.75 1.25))) (loop (suspend) (ja :num! (loop! f30-0)))))
+  :post nav-enemy-stunned-post)

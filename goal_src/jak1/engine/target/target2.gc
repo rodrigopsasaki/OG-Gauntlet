@@ -309,6 +309,15 @@
       ((the-as (function none :behavior target) (-> target-stance code))))
   :post target-post)
 
+;; gauntlet: whether the goggles may fire a shot that Jak has no yellow eco for. Asked only once everything else allows a shot (a press, the
+;; cooldown, no pause), so the answer may charge for it: #t means the shot is paid for and goes, #f that it does not go. The default is the
+;; game's: no charge, no shot. This file links ahead of gauntlet.o in GAME.CGO, which is why it is a hook (pc/features/gauntlet.gc, "eco mastery",
+;; sets it). Only the goggles of target-look-around ask; Billy's game (target-billy-game) does not.
+(defun target-goggles-shot-unpaid ()
+  #f)
+
+(define *target-goggles-shot-paid-hook* target-goggles-shot-unpaid)
+
 (defstate target-look-around (target)
   :event
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
@@ -347,9 +356,11 @@
         (init-vf0-vector)
         ;; og:preserve-this - High FPS Fix
         (when (and (recently-pressed? r2 circle square)
-                   (and (= (-> self fact eco-type) (pickup-type eco-yellow)) (>= (-> self fact eco-level) 1.0))
                    (time-elapsed? (-> self control unknown-dword82) (seconds 0.5))
-                   (not *pause-lock*))
+                   (not *pause-lock*)
+                   ;; gauntlet: a yellow charge is free, as in the game; without one the hook decides (and charges)
+                   (or (and (= (-> self fact eco-type) (pickup-type eco-yellow)) (>= (-> self fact eco-level) 1.0))
+                       (*target-goggles-shot-paid-hook*)))
           (let ((gp-1 (vector-float*! (new-stack-vector0)
                                       (-> *math-camera* inv-camera-rot vector 2)
                                       (the-as float (-> *TARGET-bank* yellow-projectile-speed))))

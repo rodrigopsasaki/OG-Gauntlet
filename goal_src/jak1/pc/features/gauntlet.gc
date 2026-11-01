@@ -1143,12 +1143,20 @@
 
 ;; ------------------------------------------------------------------ the pull --
 
+(defun gauntlet-jak-invulnerable? ((jak target))
+  "True while Jak cannot be hurt: the window a hit of any kind leaves him in (timed-invulnerable, the blinking), the debug
+   invulnerability and the powerup's. This is the very condition the game's own hit handler (target-attacked, engine/target/target-handler.gc)
+   refuses an attack by, so it is what spares a recently hit Jak from the bomb's blast as well, and from its pull."
+  (logtest? (-> jak state-flags) (state-flags invulnerable timed-invulnerable invuln-powerup)))
+
 (defun gauntlet-pullable? ((jak target))
   "True when Jak is moving of his own accord, on foot, in the air or in water, where a sideways step is safe. Not while
-   he is dying or something else has grabbed him (a cutscene, a sage, a warp gate), and not while he hangs from an
-   edge, where his own state holds him in place."
+   he is dying or something else has grabbed him (a cutscene, a sage, a warp gate), not while he hangs from an
+   edge, where his own state holds him in place, and not while he is invulnerable (gauntlet-jak-invulnerable?): the
+   window after any hit, the eco blast's included, is a way out of the bomb's gravity as it is out of its blast."
   (and (not (logtest? (-> jak state-flags) (state-flags dying grabbed)))
        (not (real-movie?))
+       (not (gauntlet-jak-invulnerable? jak))
        (!= (-> jak next-state name) 'target-edge-grab)))
 
 (defun gauntlet-jak-gripped? ((jak target))
@@ -5343,6 +5351,246 @@
          (set! (-> world next-flyer) (+ (current-time) (gauntlet-flyer-pause-time 1.0)))))))
   (none))
 
+;; ----------------------------------------------------------- eco mastery --
+
+;; Clearing Geyser Rock earns Jak a mastery of eco, two powers that are paid for in what the game already makes scarce, never in a new meter: orbs
+;; for the one and health for the other, and the health is a price that grows with the danger the game already has (a hit is a third of Jak, and
+;; the eco the mod's hazards are made of hits harder the weaker he is).
+;;
+;; The unlock. The rock is cleared when every scarecrow on it has been broken in one visit (the Yellow Sage takes each over as a sage that
+;; fires on Jak, so this is clearing the sages, who put themselves back on a new visit and on a new life: a death gives the scarecrows back,
+;; as reset-actors clears the dead status of an actor with no task). The scarecrow's own break calls gauntlet-scarecrow-broken! as its dead
+;; status is set (levels/training/training-obs.gc), and that looks over every scarecrow actor of the level for whether any is still standing.
+;; That check needs the level loaded and is made at the moment, never later: leaving Geyser Rock takes its actors' status with it
+;; (deactivate level clears it, and only actors with a task are copied out to *game-info* first, and the scarecrows have none).
+;;
+;; The record. A fact the world cannot keep is kept in the save: one synthetic entry of *game-info*'s perm-list, the list game-save writes and reads
+;; whole (the game-save-elt perm-list of save-game!), whose aid belongs to no actor of any level and whose task is nonzero, with the dead status as
+;; the fact. Read against the game: copy-perms-from-level! only adds the perms of actors with a task, to the entry of their own aid, and
+;; copy-perms-to-level! looks up each actor of a level by its aid, so neither touches an entry no actor has; reset-actors, for a death or a try,
+;; clears bits 0, 1 and 9 of an entry with a task (bit 2, dead, only with bit 4 set, which is not) and, for a new game, everything, and a new game
+;; also empties the list (initialize! of game-info, game-info.gc): the mastery lasts the life of the save and goes with a new game. A save made before it
+;; has no entry and so no mastery, and loading one over a session that had earned it takes it away, as the save says. The task is only there
+;; for reset-actors' sake; nothing reads the task of a perm-list entry otherwise.
+
+(defconstant GAUNTLET_ECO_MASTERY_AID #x6761756e) ;; "gaun": no actor of the game has an aid above 24579
+(defconstant GAUNTLET_ECO_BLAST_COOLDOWN (seconds 0.5)) ;; the history R2 is read from reaches back 15 frames, so one press must not be read twice
+(defconstant GAUNTLET_ECO_BLAST_RING_TIME (seconds 0.45)) ;; the blast's ring grows from Jak's feet to its radius in this long
+(defconstant GAUNTLET_DRY_CLICK_GAP (seconds 0.4)) ;; the click of a goggles shot that has no orb to pay for it, at most this often
+(defconstant GAUNTLET_MASTERY_BANNER_TIME (seconds 6)) ;; how long the words of the unlock stay on the screen
+(defconstant GAUNTLET_MASTERY_BANNER_X 256) ;; their middle, in the 2D space the Klaww bar uses (512 wide)
+(defconstant GAUNTLET_MASTERY_BANNER_Y 52) ;; the first line's top
+(defconstant GAUNTLET_MASTERY_BANNER_SCALE 0.7)
+
+(define *gauntlet-eco-blast-time* (- 0 (seconds 3600))) ;; when R2 last went off, long ago until it does
+(define *gauntlet-goggles-click-time* (- 0 (seconds 3600))) ;; when the empty goggles last clicked
+(define *gauntlet-mastery-time* (- 0 (seconds 3600))) ;; when the mastery was earned, for the words on the screen
+(define *gauntlet-eco-blast-center* (new 'global 'vector)) ;; where the blast in hand is, for the walk of the entity pool to read, and for its ring
+
+(defun gauntlet-eco-mastery-perm ()
+  "The entry of *game-info*'s perm-list that records the mastery, or #f when there is none."
+  (lookup-entity-perm-by-aid *game-info* (the-as actor-id GAUNTLET_ECO_MASTERY_AID)))
+
+(defun gauntlet-eco-mastery-recorded? ()
+  "True when the save holds the mastery, whatever the setting says."
+  (let ((perm (gauntlet-eco-mastery-perm)))
+    (and perm (logtest? (-> perm status) (entity-perm-status dead)))))
+
+(defun gauntlet-eco-mastered? ()
+  "True when Jak has the mastery of eco: it is earned (the save has it) and the setting is on."
+  (and *gauntlet-eco-mastery-enabled* (gauntlet-eco-mastery-recorded?)))
+
+(defun gauntlet-eco-mastery-record! ()
+  "Write the mastery into the save's perm-list as an entry of its own, once. There is always room for it: the list holds 4096 entries."
+  (let ((perms (-> *game-info* perm-list)))
+    (when (and (not (gauntlet-eco-mastery-perm)) (< (-> perms length) (-> perms allocated-length)))
+      (let ((perm (-> perms data (-> perms length))))
+        (set! (-> perm quad) (the-as uint128 0))
+        (set! (-> perm aid) (the-as actor-id GAUNTLET_ECO_MASTERY_AID))
+        (set! (-> perm task) (game-task training-gimmie))
+        (set! (-> perm status) (entity-perm-status dead)))
+      (+! (-> perms length) 1)))
+  0)
+
+(defun gauntlet-geyser-cleared? ()
+  "True when Geyser Rock is loaded and not one of its scarecrow actors (scarecrow-a and scarecrow-b, all eleven of them) is still
+   standing, by their dead status, which each sets as its break finishes."
+  (let ((seen 0)
+        (standing 0))
+    (dotimes (i (-> *level* length))
+      (let ((lev (-> *level* level i)))
+        (when (and (= (-> lev status) 'active) (= (-> lev name) 'training) (nonzero? (-> lev bsp actors)))
+          (let ((actors (-> lev bsp actors)))
+            (dotimes (j (-> actors length))
+              (let* ((ent (-> actors data j actor))
+                     (kind (-> ent etype)))
+                (when (and (nonzero? kind) (or (= (-> kind symbol) 'scarecrow-a) (= (-> kind symbol) 'scarecrow-b)))
+                  (+! seen 1)
+                  (if (not (logtest? (-> ent extra perm status) (entity-perm-status dead)))
+                    (+! standing 1)))))))))
+    (and (< 0 seen) (= 0 standing))))
+
+(defun gauntlet-mastery-banner-draw ()
+  "Draw this frame's words of the unlock, for GAUNTLET_MASTERY_BANNER_TIME after the moment: what was done and what it is worth."
+  (when (not (time-elapsed? *gauntlet-mastery-time* GAUNTLET_MASTERY_BANNER_TIME))
+    (let* ((font (new 'stack 'font-context *font-default-matrix* 0 0 0.0 (font-color white) (font-flags shadow kerning large)))
+           (title "GEYSER ROCK CLEARED")
+           (words "ECO MASTERY: R2 BLASTS FOR A HIT, THE GOGGLES SHOOT FOR ORBS")
+           (title-w (the int (* (get-string-length title font) GAUNTLET_MASTERY_BANNER_SCALE)))
+           (words-w (the int (* (get-string-length words font) GAUNTLET_MASTERY_BANNER_SCALE))))
+      (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug-no-zbuf))
+        (draw-string-xy-scaled title buf (- GAUNTLET_MASTERY_BANNER_X (/ title-w 2)) GAUNTLET_MASTERY_BANNER_Y
+                               (font-color yellow) (font-flags shadow kerning large) GAUNTLET_MASTERY_BANNER_SCALE)
+        (draw-string-xy-scaled words buf (- GAUNTLET_MASTERY_BANNER_X (/ words-w 2)) (+ GAUNTLET_MASTERY_BANNER_Y 18)
+                               (font-color white) (font-flags shadow kerning large) GAUNTLET_MASTERY_BANNER_SCALE))))
+  (none))
+
+(defun gauntlet-eco-mastery-cue! ()
+  "The moment the rock is cleared: the game's own yellow eco chime, a burst of yellow eco around Jak, and the words of the unlock on the
+   screen for a few seconds (a process in *active-pool* draws them, the way the Klaww bar is drawn)."
+  (sound-play "y-eco-pickup" :position #f)
+  (when *target*
+    (dotimes (i 8)
+      (gauntlet-eco-burst! *target* (gauntlet-eco yellow))))
+  (set-time! *gauntlet-mastery-time*)
+  (process-spawn-function process
+                          (lambda :behavior process ()
+                            (until (time-elapsed? *gauntlet-mastery-time* GAUNTLET_MASTERY_BANNER_TIME)
+                              (gauntlet-mastery-banner-draw)
+                              (suspend)))
+                          :to *active-pool*
+                          :name 'gauntlet-mastery-banner)
+  0)
+
+(defun gauntlet-scarecrow-broken! ((dummy process-drawable))
+  "A scarecrow's break has finished and its dead status is set (training-obs.gc calls this for each). If the mastery is not earned yet
+   and that was the last scarecrow standing, it is earned now: written into the save and cued."
+  (when (and *gauntlet-eco-mastery-enabled* (not (gauntlet-eco-mastery-recorded?)) (gauntlet-geyser-cleared?))
+    (gauntlet-eco-mastery-record!)
+    (gauntlet-eco-mastery-cue!))
+  (none))
+
+;; The goggles. With the mastery, the first-person view fires a yellow shot with no yellow eco in Jak, for GAUNTLET_GOGGLES_ORB_COST
+;; orbs (setting goggles-orb-cost): the count on the hud goes down by that. With yellow eco in him it is free, as it is in the game, and with too
+;; few orbs the goggles click and nothing fires. The third-person blast is the game's own and still needs a charge.
+(defun *target-goggles-shot-paid-hook* ()
+  "Asked by the goggles (target-look-around) when a shot is otherwise allowed and Jak has no yellow charge: with the mastery and the orbs, pay
+   and say #t; without the orbs, click and say #f; without the mastery, say #f and nothing else."
+  (cond
+    ((not (gauntlet-eco-mastered?)) #f)
+    ((>= (-> *game-info* money) (the float *gauntlet-goggles-orb-cost*))
+     (set! (-> *game-info* money) (- (-> *game-info* money) (the float *gauntlet-goggles-orb-cost*)))
+     #t)
+    (else
+     ;; a press stays in the pad's history for 15 frames and the goggles ask each of them: one click for it
+     (when (time-elapsed? *gauntlet-goggles-click-time* GAUNTLET_DRY_CLICK_GAP)
+       (set-time! *gauntlet-goggles-click-time*)
+       (sound-play "cursor-options" :position #f))
+     #f)))
+
+;; The blast. With the mastery, R2 (which nothing in normal play reads) sets off a blast around Jak: an expanding ring of yellow eco on the ground,
+;; the sound of his own yellow shot and a puff of the eco at him. Every nav enemy within *gauntlet-eco-blast-radius* of him that is in an ordinary
+;; state (idle, patrolling, noticing, chasing, stopping a chase, staring, giving up, attacking, celebrating, or stunned already) is thrown
+;; *gauntlet-eco-blast-push* away from him and stunned for *gauntlet-eco-blast-stun* (nav-enemy-stunned, engine/common-obs/nav-enemy.gc):
+;; stood in place, harmless to touch and killable. An enemy in another state (dying, jumping, hatching, appearing, a boss's own) is left alone, and so are
+;; the muse and everything that is not a nav enemy: crates, the plants, the spiders and bats, the bosses that are processes of their own, the
+;; mod's own hazards. Nothing is killed by it.
+;; It costs one hit, always, charged or not: an 'attack of mode 'damage, which target-attacked takes as a hit with none of a hit's reaction:
+;; one health fewer, the hurt flash and sound, and the timed invulnerability of any hit (the blinking), and no flinch, knockback or hit animation,
+;; so he keeps control. Jak with one hit left is killed by it, the normal death, as any hit would, by design. While he is still invulnerable from a
+;; hit the blast is not allowed (it could not be paid for), which is also what stops it being a free blast every few frames.
+;; The window is a way out of the bomb's gravity too (gauntlet-pullable?), so R2 is a deliberate, costly dodge of the bomb.
+
+(defun gauntlet-jak-can-blast? ((jak target))
+  "True when Jak is in one of his normal control states and the hit the blast costs can be taken: not dying, grabbed (a cutscene, a sage, a warp
+   gate), being hit, in first-person (the goggles, Billy's game, where R2 fires the shot) or in a vehicle; no movie, pause or menu; not invulnerable."
+  (and (not (logtest? (-> jak state-flags) (state-flags dying grabbed first-person-mode being-attacked)))
+       (not (gauntlet-jak-invulnerable? jak))
+       (not (logtest? (-> jak control root-prim prim-core action) (collide-action racer snowball tube flut)))
+       (not (movie?))
+       (not *pause-lock*)
+       (not *progress-process*)
+       (!= (-> jak next-state name) 'target-look-around)))
+
+(defun gauntlet-nav-enemy-stunnable? ((nav nav-enemy))
+  "True when nav is in one of the states a nav enemy ordinarily lives in, and is neither the muse nor in the middle of something of its own."
+  (and (!= (-> nav type symbol) 'muse)
+       (case (-> nav next-state name)
+         (('nav-enemy-idle 'nav-enemy-patrol 'nav-enemy-notice 'nav-enemy-chase 'nav-enemy-stop-chase 'nav-enemy-stare
+           'nav-enemy-give-up 'nav-enemy-attack 'nav-enemy-victory 'nav-enemy-stunned)
+          #t)
+         (else #f))))
+
+(defun gauntlet-nav-enemy-stun! ((nav nav-enemy) (center vector))
+  "Throw nav away from center and stun it. The throw covers *gauntlet-eco-blast-push* in all, the first NAV_ENEMY_STUN_PUSH_TIME of the
+   stun, slowing to nothing; so its first speed is twice the average, and the average is the distance over the time. An enemy
+   exactly on center is thrown some way, any way. The two go in the stun's own parameter, event-param-point: xyz the velocity, w the ticks."
+  (let ((away (new 'stack-no-clear 'vector)))
+    (vector-! away (-> nav collide-info trans) center)
+    (set! (-> away y) 0.0)
+    (if (< (vector-xz-length away) 1.0)
+      (set-vector! away 1.0 0.0 0.0 0.0))
+    (vector-xz-normalize! away (/ (* 2.0 *gauntlet-eco-blast-push*) (/ (the float NAV_ENEMY_STUN_PUSH_TIME) (the float (seconds 1)))))
+    (set! (-> away w) (the float *gauntlet-eco-blast-stun*))
+    (set! (-> nav event-param-point quad) (-> away quad))
+    (go-process nav nav-enemy-stunned))
+  0)
+
+(defun gauntlet-eco-blast-tally! ((proc process))
+  "One process of the entity pool in the walk: stunned and thrown, if it is a nav enemy that can be and is within *gauntlet-eco-blast-radius* of the blast."
+  (let ((nav (as-type proc nav-enemy)))
+    (when (and nav
+               (gauntlet-nav-enemy-stunnable? nav)
+               (>= *gauntlet-eco-blast-radius* (vector-vector-distance (-> nav collide-info trans) *gauntlet-eco-blast-center*)))
+      (gauntlet-nav-enemy-stun! nav *gauntlet-eco-blast-center*)))
+  (none))
+
+(defun gauntlet-eco-blast-show! ()
+  "The blast to see and hear: Jak's own yellow shot's sound, a puff of yellow eco at him, a little shake of the camera, and a ring on the ground that grows from
+   his feet to the blast's radius (the ring the bomb's clock draws, in the particle of its clock, orange going on yellow) in GAUNTLET_ECO_BLAST_RING_TIME."
+  (sound-play "yellow-fire" :position #f)
+  (activate! *camera-smush-control* 307.0 37 600 1.0 0.995)
+  (when *target*
+    (dotimes (i 6)
+      (gauntlet-eco-burst! *target* (gauntlet-eco yellow))))
+  (process-spawn-function process
+                          (lambda :behavior process ()
+                            (let ((began (current-time))
+                                  (radius *gauntlet-eco-blast-radius*))
+                              (until (time-elapsed? began GAUNTLET_ECO_BLAST_RING_TIME)
+                                (let ((reached (* radius (/ (the float (- (current-time) began)) (the float GAUNTLET_ECO_BLAST_RING_TIME)))))
+                                  (when (< (meters 1) reached)
+                                    (gauntlet-ring-circle *gauntlet-eco-blast-center*
+                                                          reached
+                                                          (gauntlet-ring-spots reached GAUNTLET_RING_CLOCK_SPACING GAUNTLET_RING_MAX_SPOTS)
+                                                          GAUNTLET_PART_RING_CLOCK
+                                                          *gauntlet-flat-rim*)))
+                                (suspend))))
+                          :to *active-pool*
+                          :name 'gauntlet-eco-blast-ring)
+  0)
+
+(defun gauntlet-eco-blast! ()
+  "R2 with the mastery: pay one hit, show the blast, and stun and throw the nav enemies around Jak. The price is taken first and
+   the blast goes whatever it cost him, so a Jak with one hit left dies from it and takes the enemies with him in their daze."
+  (set! (-> *gauntlet-eco-blast-center* quad) (-> (target-pos 0) quad))
+  (send-event *target* 'attack #f (static-attack-info ((mode 'damage))))
+  (gauntlet-eco-blast-show!)
+  (iterate-process-tree *entity-pool* (lambda ((proc process)) (gauntlet-eco-blast-tally! proc) (none)) *null-kernel-context*)
+  0)
+
+(defun gauntlet-eco-blast-poll! ()
+  "Per-frame: R2 pressed, with the mastery, in a normal control state, sets the blast off. The press is read from the pad's history, as the
+   game's own button reads are, so it is seen however the frames fall, and the cooldown keeps one press from being read for each frame it is in the history."
+  (when (and *target*
+             (gauntlet-eco-mastered?)
+             (recently-pressed? :pad-idx 0 r2)
+             (time-elapsed? *gauntlet-eco-blast-time* GAUNTLET_ECO_BLAST_COOLDOWN)
+             (gauntlet-jak-can-blast? *target*))
+    (set-time! *gauntlet-eco-blast-time*)
+    (gauntlet-eco-blast!))
+  0)
+
 ;; ------------------------------------------------------------------ the settings --
 
 ;; The mod can be tuned from a file, Mods/gauntlet-settings.gc, which the player (or a tool) writes and the game reads:
@@ -5428,7 +5676,12 @@
      (,row "fisher-flyer-eel-chance" count *gauntlet-fisher-flyer-eel-chance* GAUNTLET_FISHER_FLYER_EEL_CHANCE_DEFAULT 0.0 100.0)
      (,row "fisher-flyer-miss-loses" flag *gauntlet-fisher-flyer-miss-loses* GAUNTLET_FISHER_FLYER_MISS_LOSES_DEFAULT 0 0)
      (,row "fisher-jump-chance" count *gauntlet-fisher-jump-chance* GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT 0.0 100.0)
-     (,row "fisher-flyer-height" meters *gauntlet-fisher-flyer-height* GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT 1.0 8.0)))
+     (,row "fisher-flyer-height" meters *gauntlet-fisher-flyer-height* GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT 1.0 8.0)
+     (,row "eco-mastery-enabled" flag *gauntlet-eco-mastery-enabled* GAUNTLET_ECO_MASTERY_ENABLED_DEFAULT 0 0)
+     (,row "eco-blast-radius" meters *gauntlet-eco-blast-radius* GAUNTLET_ECO_BLAST_RADIUS_DEFAULT 1.0 60.0)
+     (,row "eco-blast-stun" seconds *gauntlet-eco-blast-stun* GAUNTLET_ECO_BLAST_STUN_DEFAULT 0.5 30.0)
+     (,row "eco-blast-push" meters *gauntlet-eco-blast-push* GAUNTLET_ECO_BLAST_PUSH_DEFAULT 0.0 30.0)
+     (,row "goggles-orb-cost" count *gauntlet-goggles-orb-cost* GAUNTLET_GOGGLES_ORB_COST_DEFAULT 0.0 100.0)))
 
 ;; ---- the settings file
 
@@ -5597,11 +5850,12 @@
 
 (defun gauntlet-poll! ()
   "Per-frame hook: the settings file is looked at first, so what it says holds for this frame; then Jak's health, for the
-   desperation; the muse, the drop spots, the Sandover spot, the beach and the TNT barrels are watched every frame."
+   desperation; the muse, the drop spots, the Sandover spot, the beach, the TNT barrels and R2 are watched every frame."
   (gauntlet-settings-poll!)
   (gauntlet-muse-poll!)
   (gauntlet-drop-spots-poll!)
   (gauntlet-stampede-poll!)
   (gauntlet-klaww-poll!)
   (gauntlet-tnt-poll!)
+  (gauntlet-eco-blast-poll!)
   (none))

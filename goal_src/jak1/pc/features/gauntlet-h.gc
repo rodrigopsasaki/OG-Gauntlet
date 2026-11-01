@@ -59,6 +59,12 @@
 ;; 1.0 the muse starts on the point of its path nearest the xyz, and puts the w back to 0.0; a muse born with w at 0.0 starts where the game puts it.
 (define *gauntlet-muse-start* (new 'global 'vector))
 
+;; Eco mastery (pc/features/gauntlet.gc, "eco mastery"), earned by clearing Geyser Rock of its scarecrows. levels/training/training-obs.gc (TRA.DGO,
+;; after this file and after gauntlet.gc) calls this as a scarecrow's break finishes, once its own dead status is set, and the mod looks over
+;; the others to see whether it was the last. The goggles' shot asks *target-goggles-shot-paid-hook* (engine/target/target2.gc) whether it
+;; may fire without a yellow charge; the mod sets it.
+(define-extern gauntlet-scarecrow-broken! (function process-drawable none))
+
 ;; ---------------------------------------------------------- the eco charge --
 
 ;; The mod speaks in eco, so that the colour of a charge tells the player what a hazard does. Red is strength: a red hazard
@@ -203,6 +209,15 @@
 (defconstant GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT 20) ;; the chance in a hundred that a river fish, the eels too, leaps out of the water once on its way down
 (defconstant GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT (meters 3.5)) ;; how far above the net's usual height the flying fish flies, and how far X lifts the net: clear of Jak's head, in the camera's view
 
+;; Eco mastery (pc/features/gauntlet.gc, "eco mastery"): clearing every scarecrow of Geyser Rock in one visit earns two powers, paid for in what the game
+;; already makes scarce. The goggles fire a shot with no yellow charge for orbs; R2 sets off a blast around Jak that pushes the enemies near him away and
+;; stuns them, for one hit of health.
+(defconstant GAUNTLET_ECO_MASTERY_ENABLED_DEFAULT #t) ;; the powers exist once earned; off, nothing is earned and nothing is paid
+(defconstant GAUNTLET_ECO_BLAST_RADIUS_DEFAULT (meters 12)) ;; R2's blast reaches nav enemies this far from Jak, sideways and up
+(defconstant GAUNTLET_ECO_BLAST_STUN_DEFAULT (seconds 4)) ;; and holds each of them for this long
+(defconstant GAUNTLET_ECO_BLAST_PUSH_DEFAULT (meters 6)) ;; and throws it about this far away from Jak first
+(defconstant GAUNTLET_GOGGLES_ORB_COST_DEFAULT 1) ;; orbs a goggles shot costs when Jak has no yellow eco in him; with it, as in the game, none
+
 ;; Times are in ticks (300 a second), lengths and speeds in game units, the spread in rotation units, a chance or a
 ;; multiplier a plain float.
 ;; Which of them apply to something already in the world varies by setting: a bomb in the air keeps
@@ -273,3 +288,8 @@
 (define *gauntlet-fisher-flyer-eel-chance* GAUNTLET_FISHER_FLYER_EEL_CHANCE_DEFAULT) ;; read as each flying fish is born
 (define *gauntlet-fisher-jump-chance* GAUNTLET_FISHER_JUMP_CHANCE_DEFAULT) ;; read as each river fish is born
 (define *gauntlet-fisher-flyer-height* GAUNTLET_FISHER_FLYER_HEIGHT_DEFAULT) ;; live: the net rises to it, the flying fish flies at it
+(define *gauntlet-eco-mastery-enabled* GAUNTLET_ECO_MASTERY_ENABLED_DEFAULT) ;; live: read as each power is asked for and as the last scarecrow breaks
+(define *gauntlet-eco-blast-radius* GAUNTLET_ECO_BLAST_RADIUS_DEFAULT) ;; read as each blast goes off
+(define *gauntlet-eco-blast-stun* (the int GAUNTLET_ECO_BLAST_STUN_DEFAULT)) ;; read as each blast goes off
+(define *gauntlet-eco-blast-push* GAUNTLET_ECO_BLAST_PUSH_DEFAULT) ;; read as each blast goes off
+(define *gauntlet-goggles-orb-cost* GAUNTLET_GOGGLES_ORB_COST_DEFAULT) ;; read as each shot is asked for
