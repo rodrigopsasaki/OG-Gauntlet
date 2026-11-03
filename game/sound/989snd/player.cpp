@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: ISC
 #include "player.h"
 
+#include <algorithm>
 #include <fstream>
 
 #include "sfxblock.h"
@@ -18,6 +19,14 @@
 namespace snd {
 
 u8 g_global_excite = 0;
+
+// The whole sound system, and everything waiting on it, runs off this stream's callback: the 240hz
+// handler tick, the position of streamed audio and with it every spooled cutscene, the boot logo
+// included. cubeb_get_min_latency answers 128 frames on a Bluetooth output device, and on macOS 27
+// that buffer size starts the stream without error and then often never calls back: no sound, the
+// tick stuck at zero, the logo intro frozen. At 512 frames and above it called back every time.
+// 512 frames is 10.7ms at 48khz, which nobody can hear.
+constexpr u32 kMinStreamLatencyFrames = 512;
 
 Player::Player() : mVmanager(mSynth) {
   InitCubeb();
@@ -54,6 +63,7 @@ void Player::InitCubeb() {
     lg::error("Cubeb init failed");
     return;
   }
+  latency = std::max(latency, kMinStreamLatencyFrames);
 
   err = cubeb_stream_init(mCtx, &mStream, "OpenGOAL", nullptr, nullptr, nullptr, &outparam, latency,
                           &sound_callback, &state_callback, this);
