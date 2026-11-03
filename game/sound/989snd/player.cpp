@@ -63,7 +63,7 @@ void Player::InitCubeb() {
     lg::error("Cubeb init failed");
     return;
   }
-  latency = std::max(latency, kMinStreamLatencyFrames);
+  latency = (std::max)(latency, kMinStreamLatencyFrames);
 
   err = cubeb_stream_init(mCtx, &mStream, "OpenGOAL", nullptr, nullptr, nullptr, &outparam, latency,
                           &sound_callback, &state_callback, this);
