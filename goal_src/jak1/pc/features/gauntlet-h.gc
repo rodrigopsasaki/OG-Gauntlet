@@ -172,7 +172,7 @@
 (defconstant GAUNTLET_MISTY_MAYHEM_MUSIC_DEFAULT #t) ;; Misty's battle music (its sound-flava misty-battle) plays while she is loose
 (defconstant GAUNTLET_MISTY_MAYHEM_VOICE_DEFAULT #t) ;; Daxter says a line when she is lost and another when she is caught again, at most one in a few seconds
 (defconstant GAUNTLET_MUSE_GRACE (seconds 1.5)) ;; a muse Jak has just dropped cannot be caught for this long, or she would be caught where she lands
-(defconstant GAUNTLET_MUSE_ICON_SCALE_DEFAULT 1.0) ;; how many times the portrait's usual size (about 47 px tall of the hud's 448, GAUNTLET_MUSE_ICON_SCALE) it is drawn
+(defconstant GAUNTLET_MUSE_ICON_SCALE_DEFAULT 1.0) ;; how many times its usual size the checkbox is drawn
 ;; The lurkerworms of Sentinel Beach pull Snowy Mountain's ice cubes up out of the sand when they rise (levels/beach/lurkerworm.gc).
 (defconstant GAUNTLET_WORM_CUBES_ENABLED_DEFAULT #t) ;; a worm that rises raises ice cubes around it
 (defconstant GAUNTLET_WORM_CUBE_COUNT_DEFAULT 2) ;; ice cubes per rise, evenly around the worm; a worm raises a new wave only once the last is gone
