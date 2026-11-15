@@ -134,8 +134,7 @@
   (none))
 
 (defbehavior pelican-birth-cell pelican ((where vector))
-  "Birth the stolen power cell at where, on the pelican's own task, unless Jak already has it. True when a cell was born.
-   The explosion's way of giving the cell back, shared with the gauntlet's Klaww so there is one way."
+  "Birth the stolen power cell at where unless Jak already has it; true when born. Shared by the explosion and Klaww."
   (when (not (task-complete? *game-info* (-> self entity extra perm task)))
     (let ((cell (birth-pickup-at-point where
                                        (pickup-type fuel-cell)
@@ -147,9 +146,8 @@
       #t)))
 
 (defbehavior pelican-release-cell pelican ()
-  "Klaww has been beaten and the cell he took from the crushed pelican falls out of him at the nest. Only now does the
-   pelican count as blown up for good (a counter of 5), so a level reload births the cell if Jak has not picked it up.
-   Until then the counter stays at 2, the pelican holding the cell, and a reload puts the pelican and Klaww's fall back."
+  "Klaww is beaten: the cell falls out of him at the nest. Only now is the pelican blown up for good (counter 5);
+   until then the counter stays 2, so a reload puts the pelican and Klaww's fall back."
   (let ((perm (-> self entity extra perm)))
     (logior! (-> perm status) (entity-perm-status user-set-from-cstage))
     (set! (-> perm user-int8 0) 5))
@@ -345,8 +343,7 @@
                    (s4-0 (-> (the-as process-drawable v1-13) root trans)))
               (if (< f30-0 (fabs (deg-diff (y-angle gp-1) (vector-y-angle (vector-! (new 'stack-no-clear 'vector) s4-0 (-> gp-1 trans))))))
                 (go pelican-spit))))))
-        ;; gauntlet: Klaww has landed on the nest. The cannon's explosion, but the cell is not born: Klaww holds it now, and
-        ;; pelican-release-cell hands it over when he dies. See "Klaww" in pc/features/gauntlet.gc.
+        ;; gauntlet: Klaww landed on the nest. Explode, but no cell: pelican-release-cell hands it over when he dies.
         (('gauntlet-crush) (go pelican-explode 'gauntlet))
         (('touch) (send-shove-back (-> self root) proc (the-as touching-shapes-entry (-> block param 0)) 0.7 6144.0 16384.0))))
   :enter
@@ -404,8 +401,7 @@
            (ja :num! (seek!)))
          (ja-channel-push! 1 (seconds 0.5))))
       (send-event (handle->process (-> self cam-tracker)) 'message 'release)
-      ;; gauntlet: the pelican is at its nest with the stolen cell, which is where Klaww falls onto it. This is reached on
-      ;; landing, and at once when the level loads with the pelican already there.
+      ;; gauntlet: at the nest with the cell, where Klaww falls onto it. Reached on landing, or at load if already there.
       (gauntlet-klaww-pelican-at-nest! self)
       (loop
         (ja-no-eval :group! pelican-sleep-ja :num! (seek!) :frame-num 0.0)
@@ -553,8 +549,7 @@
         (else #f)))
   :code
     (behavior ((arg0 symbol))
-      ;; arg0 is #f for the cannon's explosion, #t for the silent one a level reload runs, and 'gauntlet for Klaww landing
-      ;; on the pelican: the explosion is the cannon's, but the counter stays 2 and the cell is not born (see pelican-release-cell)
+      ;; arg0: #f cannon explosion, #t silent one on level reload, 'gauntlet Klaww landing (counter stays 2, no cell)
       (let ((v1-2 (-> self entity extra perm)))
         (logior! (-> v1-2 status) (entity-perm-status user-set-from-cstage))
         (if (!= arg0 'gauntlet) (set! (-> v1-2 user-int8 0) 5)))

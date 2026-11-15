@@ -145,9 +145,8 @@ nav-enemy-default-event-handler
         (logior! (-> self nav-enemy-flags) (nav-enemy-flags navenmf6))))
   :code
     (behavior ()
-      ;; gauntlet: the charge cycles play misty-pace times faster, which a bonelurker that walks by its animation's own motion
-      ;; (use-align in its info) covers as ground: 1.0 unless the muse is loose on Misty. Read on every frame of the cycle, so
-      ;; catching her calms them at once, and it multiplies the random 0.8 to 1.2 each one is given.
+      ;; gauntlet: charge cycles play misty-pace times faster (1.0 unless the muse is loose on Misty). The bonelurker
+      ;; moves by its anim (use-align), so this covers ground. Read every frame, and it scales the random 0.8 to 1.2.
       (set! (-> self rotate-speed) 524288.0)
       (set! (-> self turn-time) (seconds 0.1))
       (set! (-> self speed-scale) 1.0)

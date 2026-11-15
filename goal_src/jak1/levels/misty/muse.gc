@@ -60,8 +60,7 @@
   0
   (none))
 
-;; gauntlet: the point of this muse's path nearest where, written to out. A muse that Jak dropped starts there, so that she is always on
-;; her own path (and so on the nav mesh she runs on), as near the place he lost her as the path comes.
+;; gauntlet: the point of this muse's path nearest where, written to out. A dropped muse starts there so she is on her nav mesh.
 (defun muse-path-point-nearest ((this muse) (where vector) (out vector))
   (let ((info (new 'stack-no-clear 'point-on-path-segment-info))
         (best 4096000.0))
@@ -137,7 +136,7 @@
   :bounds (static-spherem 0 2 0 3)
   :shadow muse-shadow-mg)
 
-;; gauntlet: a muse Jak has just dropped cannot be caught for GAUNTLET_MUSE_GRACE, or she would be caught where she lands
+;; gauntlet: a just-dropped muse cannot be caught for GAUNTLET_MUSE_GRACE, or she would be caught on landing
 (defmethod touch-handler ((this muse) (arg0 process) (arg1 event-message-block))
   (if (time-elapsed? (-> this dropped-time) GAUNTLET_MUSE_GRACE) (go muse-caught)))
 
@@ -252,8 +251,7 @@ nav-enemy-default-event-handler
   :code
     (behavior ()
       (sound-play "money-pickup")
-      ;; gauntlet: the task is closed by the first catch only. Every later one (a muse Jak dropped and caught again) is over at once:
-      ;; no cell, no cutscene, no blackout, and the mod told which kind it was
+      ;; gauntlet: only the first catch closes the task; a re-catch of a dropped muse ends at once (no cell, no cutscene)
       (when (task-closed? (game-task misty-muse) (task-status need-reminder))
         (process-entity-status! self (entity-perm-status dead) #t)
         (gauntlet-muse-caught! 'again)
@@ -314,7 +312,7 @@ nav-enemy-default-event-handler
            (send-event *target* 'trans 'restore (-> self old-target-pos))
            (set-blackout-frames 0)
            (set-blackout-frames (seconds 0.1)))))
-      ;; gauntlet: she is Jak's now, the cell and the cutscene having been the game's own
+      ;; gauntlet: she is Jak's now
       (gauntlet-muse-caught! 'first))
   :post
     (behavior ()
@@ -406,8 +404,8 @@ nav-enemy-default-event-handler
   (eval-path-curve-div! (-> this path) (-> this dest-point) (-> this current-path-index) 'interp)
   (set! (-> this collide-info trans quad) (-> this dest-point quad))
   (set! (-> this dropped-time) (- (current-time) GAUNTLET_MUSE_GRACE))
-  ;; gauntlet: a muse Jak dropped (pc/features/gauntlet.gc asks by *gauntlet-muse-start*) starts on her path where he lost her, loose
-  ;; and uncatchable for a moment, the nav mesh told where she is as the other nav enemies that are moved are
+  ;; gauntlet: a dropped muse (*gauntlet-muse-start*) starts on her path where he lost her, uncatchable for a moment;
+  ;; the nav mesh is told where she is, as for other moved nav enemies
   (when (!= 0.0 (-> *gauntlet-muse-start* w))
     (muse-path-point-nearest this *gauntlet-muse-start* (-> this collide-info trans))
     (set! (-> *gauntlet-muse-start* w) 0.0)

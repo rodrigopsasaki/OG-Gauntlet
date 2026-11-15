@@ -799,8 +799,7 @@
     (set! (-> gp-0 w) 1.0)
     (vector-normalize! gp-0 (* 2.0 (+ -0.5 (-> self offset)) (-> *FISHER-bank* width)))
     (vector+! (-> self root trans) (-> self root trans) gp-0))
-  ;; gauntlet: a fish in its leap rides the arc above its swimming line, its nose to the slope of it, and stirs no water and
-  ;; leaves no bubbles while it is out of the water
+  ;; gauntlet: a leaping fish rides the arc above its line, nose to the slope; no ripples or bubbles while airborne
   (+! (-> self root trans y) (-> self lift))
   (when (-> self jumper)
     (let ((yaw (quaternion-y-angle (-> self root quat))))
@@ -813,8 +812,7 @@
   (none))
 
 (defbehavior fisher-fish-jump fisher-fish ()
-  "gauntlet: one frame of a leaping fish's arc (pc/features/gauntlet.gc): where it is in it, and a splash where it leaves the water
-   and where it comes back to it."
+  "gauntlet: one frame of a leaping fish's arc (gauntlet.gc), with a splash where it leaves and re-enters the water."
   (let ((was-lift (-> self lift)))
     (set! (-> self lift) (gauntlet-fisher-jump-lift (-> self root trans) (-> self dir)))
     (seek! (-> self pitch)
@@ -822,7 +820,7 @@
            (* (seconds-per-frame) (degrees 450)))
     (when (or (and (= was-lift 0.0) (> (-> self lift) 0.0))
               (and (> was-lift 0.0) (= (-> self lift) 0.0)))
-      ;; the water's own ripple, three times over at three turns
+      ;; the water's own ripple, three turns of it
       (dotimes (turn 3)
         (fisher-fish-water (-> self root trans) (+ (y-angle (-> self root)) (* (the float turn) 21845.334))))))
   0
@@ -838,8 +836,7 @@
         (until (ja-done? 0)
           (if (-> self jumper) (fisher-fish-jump))
           (fisher-fish-move)
-          ;; gauntlet: the net catches the fish that is where it is, a lowered net one in the water and a raised net one that leapt, so a
-          ;; fish the net is not at the height of (the river's with the net up, a leaping one with it down) passes uncaught and is missed as usual
+          ;; gauntlet: a lowered net catches fish in the water, a raised net ones that leapt; the rest pass and count as missed
           (if (and (gauntlet-fisher-net-catches? (-> self lift))
                    (< (vector-vector-xz-distance (-> self root trans) (-> (the-as fisher (-> self parent 0)) paddle-pos))
                       (+ (-> *FISHER-bank* net-radius) (* (-> self size) (-> self root scale x)))))
@@ -1219,7 +1216,7 @@
   (+! (-> self paddle) (* (-> self paddle-vel) (seconds-per-frame)))
   (set! (-> self paddle) (fmax 0.0 (fmin 1.0 (-> self paddle))))
   (vector-lerp! (-> self paddle-pos) (-> self paddle-end 0) (the-as vector (&-> self stack 288)) (-> self paddle))
-  ;; gauntlet: X lifts the net to the flying fish, and the flying fish is sent now and then (pc/features/gauntlet.gc)
+  ;; gauntlet: X lifts the net to the flying fish, which is sent now and then (gauntlet.gc)
   (gauntlet-fisher-update! self (-> self paddle-pos) (-> *FISHER-bank* width) (-> *FISHER-bank* net-radius) (-> self missed) (-> *FISHER-bank* max-missed))
   0
   (none))
@@ -1625,7 +1622,7 @@
                       (set! (-> self joint 1) (new 'process 'joint-mod (joint-mod-handler-mode joint-set*) self 5))
                       (none)))
         (let ((v1-35 (-> self manipy 0 node-list data)))
-          ;; gauntlet: the net's root joint is Jak's hand, as the game had it, plus the rise X gives it
+          ;; gauntlet: the net's root joint is Jak's hand plus the rise X gives it
           (set! (-> v1-35 0 param0) gauntlet-fisher-net-cspace!)
           (set! (-> v1-35 0 param1) (the-as basic (joint-node eichar-lod0-jg sk_rhand)))
           (set! (-> v1-35 0 param2) (the-as basic (-> self control quat)))))

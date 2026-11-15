@@ -312,6 +312,6 @@
   "entity-debug.o" ;; added
   "subtitle.o" ;; added
   "default-menu-pc.o" ;; added
-  "gauntlet.o" ;; added (gauntlet drops, after generic-obs and shadow whose symbols its states read at link time)
+  "gauntlet.o" ;; added: after generic-obs and shadow, whose symbols its states read at link time
  ))
 

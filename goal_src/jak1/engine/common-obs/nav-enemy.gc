@@ -1202,21 +1202,14 @@ nav-enemy-default-event-handler
             (if (>= (square (-> a0-10 w)) (+ (square f2-2) (square f3-1))) (return #t)))))))
   #f)
 
-;; gauntlet: the stun. A nav enemy that an eco blast has caught (pc/features/gauntlet.gc, "eco mastery") stands dazed where the blast
-;; threw it: it plays its idle animation, hurts nobody by touching, and can still be killed by an attack. Jak 1 has no stun of its own
-;; for nav enemies (the bonelurker's is its helmet: a state of its own, entered from a hit). The mod puts an enemy into this state
-;; from outside (go-process, after checking that it is in one of the ordinary states of a nav enemy and not, say, dying or in a jump)
-;; and describes the stun in event-param-point, which no state that can be interrupted by it is using: xyz is the velocity
-;; the blast throws the enemy with (game units a second, along the ground) and w is how long the stun lasts, in ticks.
-;; The throw is the first NAV_ENEMY_STUN_PUSH_TIME of it, slowing to nothing, and goes the way every nav enemy's movement goes, by
-;; pointing the nav control at a spot ahead of it (the bonelurker's push does the same), so the enemy stays on its mesh. Enemies
-;; whose nav info moves them by their animation's own motion (use-align: the hopper, the bonelurker) are stunned but not moved.
-;; When it is over the enemy chases Jak, which a blast has certainly woken it to.
+;; gauntlet: the stun. An enemy caught by an eco blast ("eco mastery" in gauntlet.gc) stands dazed: idle animation, harmless to touch, still killable.
+;; The mod enters it with go-process from an ordinary state. event-param-point carries the throw: xyz is the velocity
+;; (game units/s along the ground), w the stun time in ticks. The throw lasts NAV_ENEMY_STUN_PUSH_TIME and slows to nothing.
+;; It aims the nav control at a spot ahead, so the enemy stays on its mesh; use-align enemies (hopper, bonelurker) are stunned but not moved.
 (defconstant NAV_ENEMY_STUN_PUSH_TIME (seconds 0.35))
 
 (defbehavior nav-enemy-stunned-post nav-enemy ()
-  "One frame of a stunned enemy: while the throw lasts, move toward a spot a few meters ahead along it at the speed the throw has left
-   (it falls off linearly), then hold still. The same movement as a chasing enemy's post, without turning it to face where it is going."
+  "One frame of a stunned enemy: while the throw lasts, move toward a spot ahead at the remaining speed (linear falloff), then hold still."
   (let* ((age (- (current-time) (-> self state-time)))
          (left (fmax 0.0 (- 1.0 (/ (the float age) (the float NAV_ENEMY_STUN_PUSH_TIME)))))
          (throw (-> self event-param-point))

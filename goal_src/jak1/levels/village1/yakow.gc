@@ -137,8 +137,7 @@
        (cond
          ((!= v1-9 (-> self player-attack-id))
           (set! (-> self player-attack-id) (the-as int v1-9))
-          ;; gauntlet: a punched cow has a consequence, whether or not it is in a state to be kicked. Every state that listens
-          ;; for attacks (idle, notice, walk-to, graze, run-away) shares this handler; the kicked and dying states ignore events.
+          ;; gauntlet: a punched cow has a consequence in any state that listens for attacks (this handler is shared)
           (gauntlet-stampede-yakow-hit! self)
           (if (-> self vulnerable) (go yakow-kicked)))
          (else 'push))))))

@@ -131,13 +131,10 @@
 
 (define *sound-bank-2* 'empty2)
 
-;; gauntlet: Snow is the resident bank because it carries two sets of sounds the mod needs on every level: the sage's
-;; yellow eco sounds (yellow-fire, yellow-buzz, yellow-explode, yellow-fizzle), which otherwise ship only in the banks of
-;; levels with yellow eco, and the ice cubes' (ice-stop, ice-explode), which the beach's worms now raise. It loads right
-;; after empty1 and empty2, so it takes the overlord slot behind the two level slots, which level banks keep reusing, and
-;; a level's own bank still wins a sound name both carry (the overlord looks names up in slot order). update-sound-banks
-;; treats it as always present, so a level asking for it, Snowy Mountain itself, never loads or unloads it or claims a
-;; level slot for it.
+;; gauntlet: Snow is the resident bank because it holds sounds the mod needs on every level: the sage's yellow eco sounds
+;; (yellow-fire, yellow-buzz, yellow-explode, yellow-fizzle) and the ice cubes' (ice-stop, ice-explode).
+;; It loads after empty1 and empty2, in the overlord slot behind them; a level's own bank wins a shared sound name.
+;; update-sound-banks treats it as always present, so a level asking for it (Snowy Mountain) never loads it or claims a slot.
 (define *sound-bank-resident* 'snow)
 
 (sound-bank-load (static-sound-name "snow"))

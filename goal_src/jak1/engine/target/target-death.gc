@@ -19,10 +19,8 @@
 
 (define *auto-continue* #f)
 
-;; gauntlet: called when a bite of the Forbidden Jungle's plant boss has landed on Jak (the hit below, mode 'plant-boss), once the game has taken its
-;; one hit from him, so the mod can take the rest and let the bite eat him whatever his health was (pc/features/gauntlet.gc, "the plant boss").
-;; It does nothing until then: this file links ahead of gauntlet.o in GAME.CGO, and ENGINE.CGO has no gauntlet.o at all. A hook, for the
-;; reason *target-bonk-hook* is one (engine/target/target-handler.gc).
+;; gauntlet: called when a plant boss bite lands on Jak (mode 'plant-boss), after the game took its one hit, so the mod can
+;; take the rest ("the plant boss" in gauntlet.gc). A hook because this file links ahead of gauntlet.o; see *target-bonk-hook*.
 (define *plant-boss-bite-hook* (the (function none) nothing))
 
 (defun next-level ((arg0 symbol))

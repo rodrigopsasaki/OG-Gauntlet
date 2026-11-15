@@ -933,9 +933,8 @@
     (behavior ()
       (go-virtual projectile-die)))
 
-;; gauntlet: Jak's yellow eco shot, turned around. It flies straight along the heading it was
-;; fired on and hits Jak (plus walls). Jak's own projectile-yellow is untouched. The training dummies' sage fires it (levels/training/
-;; training-obs.gc) and so do the plant boss's yellow minions (levels/jungleb/aphid.gc), so it lives here, in every level's reach.
+;; gauntlet: Jak's yellow eco shot turned around: it flies straight along its launch heading and hits Jak and walls.
+;; Fired by the training sage and the plant boss minions (levels/jungleb/aphid.gc), so it lives here, in every level's reach.
 (deftype gauntlet-shot (projectile-yellow)
   ())
 

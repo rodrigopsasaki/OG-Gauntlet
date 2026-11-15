@@ -142,13 +142,10 @@
             :top-plane
             (new 'static 'plane :y 1.0 :w 4096.0))))
 
-;; gauntlet: the rounds. The boss has three hits (health 3, 2, 1) and every hit that lands ends a round and starts the next, so the round he is in
-;; is 4 minus his health, and the minions of a round (the aphids that plant-boss-spawn sends, one more each round: want-aphid-count) wear the eco
-;; of the round. The aphids ask for it as they are born ('eco, below), and the boss answers with what he settled on as the round began.
-;; The eco language is the babaks' ("the eco charge" in pc/features/gauntlet-h.gc): yellow shoots Jak, red hits for two and throws him far, blue runs faster.
+;; gauntlet: the rounds. Each hit ends a round (health 3, 2, 1), so the round is 4 minus health. The aphids that
+;; plant-boss-spawn sends wear the round's eco; they ask for it at birth ('eco, below). Eco meanings: gauntlet-h.gc.
 (defun plant-boss-round-eco ((health float))
-  "The eco the minions wear in the round the boss is in with this health: yellow in the first, red in the second, blue in the third. None with the
-   rework off."
+  "The minions' eco for this health: yellow, red, blue by round. None with the rework off."
   (cond
     ((not *gauntlet-plant-boss-rework*) (gauntlet-eco none))
     ((>= health 3.0) (gauntlet-eco yellow))
@@ -191,8 +188,7 @@
     (let ((gp-0 (-> *target* control root-prim prim-core)))
       (set-target! (-> self neck) (the-as vector gp-0))
       (set-target! (-> self body) (the-as vector gp-0))))
-  ;; gauntlet: the head wears the eco of the round, yellow, then red, then blue, as the minions do (the aphids' aura keeps theirs up the same
-  ;; way), so the colour holds through his animations. The burn is the minions' too: it rises as Jak weakens, which is the eco's rule everywhere.
+  ;; gauntlet: the head wears the round's eco like the minions, re-applied each frame so it holds through animations
   (if (and *gauntlet-plant-boss-rework* (!= (-> self eco) (gauntlet-eco none)))
     (gauntlet-eco-glow! self (-> self eco)))
   (transform-post)
@@ -869,7 +865,7 @@
                    ((>= (-> self try) 15) 1)
                    ((>= (-> self try) 10) 2)
                    (else 3))))
-      ;; gauntlet: the round has begun, and so has its eco, which the boss's head wears like the minions of the round (plant-boss-post keeps it up)
+      ;; gauntlet: the round's eco starts with the round (plant-boss-post keeps the head glowing)
       (set! (-> self eco) (plant-boss-round-eco (-> self health)))
       (if (!= (-> self eco) (gauntlet-eco none))
         (gauntlet-eco-glow! self (-> self eco))))

@@ -445,21 +445,17 @@
 (defpart 301
   :init-specs ((:scalevel-x (meters -0.0033333334)) (:scalevel-y :copy scalevel-x) (:fade-a -3.4)))
 
-;; gauntlet: whether a crate may be opened by an attack, or pulled open by Jak's blue eco, asked as it is about to break (the scout fly
-;; boxes of Sentinel Beach want an eco, pc/features/gauntlet.gc, "the scout fly boxes"). Given the crate, who attacked it, the attack's
-;; mode ('flop, 'eco-yellow, or 'eco-blue for the blue eco's pull, which is not an attack) and the attack's id. True lets the crate go on
-;; as the game made it. False is a refusal: the crate bounces as it does for an attack it does not break (crate-refuse below), and the
-;; hook has already played whatever else the refusal shows. It is asked only on the paths that would break the crate, so everything a
-;; crate does short of breaking is untouched. crates.gc links ahead of gauntlet.o (and ENGINE.CGO has no gauntlet.o at all), so this is
-;; a hook with a default that lets every crate break, for the reason *entity-born-hook* is one (engine/entity/entity.gc).
+;; gauntlet: may a crate be opened by this attack, or pulled open by Jak's blue eco ("the scout fly boxes" in gauntlet.gc)?
+;; Args: crate, attacker, mode ('flop, 'eco-yellow, 'eco-blue for the pull) and attack id. #f makes the crate bounce (crate-refuse).
+;; It is only asked on paths that would break the crate. A hook because crates.gc links ahead of gauntlet.o
+;; (and ENGINE.CGO has none), so the default lets every crate break; see *entity-born-hook* in entity.gc.
 (defun crate-attack-gate-open ((box crate) (attacker process) (mode symbol) (id uint))
   #t)
 
 (define *crate-attack-gate-hook* crate-attack-gate-open)
 
 (defbehavior crate-refuse crate ((arg0 uint))
-  "gauntlet: the crate does not break, and bounces as it does for an attack it cannot break (once for each attack id, and only
-   while it is at rest on its base), with the iron crate's own thud."
+  "gauntlet: the crate does not break; it bounces once per attack id, only at rest, with the iron crate thud."
   (when (and (!= arg0 (-> self incomming-attack-id)) (= (-> self root trans y) (-> self base y)))
     (set! (-> self incomming-attack-id) arg0)
     (if (not (!= (-> self smush amp) 0.0)) (sound-play "icrate-nobreak"))
@@ -564,7 +560,7 @@
        v0-0))
     (('eco-blue)
      (if (not (or (= (-> self defense) 'darkeco)
-                  ;; gauntlet: a crate that wants another eco is not pulled open by Jak's blue (see *crate-attack-gate-hook*)
+                  ;; gauntlet: a crate that wants another eco is not pulled open by Jak's blue
                   (not (*crate-attack-gate-hook* self arg0 'eco-blue (the-as uint 0)))
                   (or (= (-> self next-state name) 'notice-blue) (= (-> self next-state name) 'die))
                   (!= (-> self root trans y) (-> self base y))))

@@ -145,8 +145,8 @@
    nav-enemy-stare
    nav-enemy-stop-chase
    nav-enemy-victory)
-  ;; gauntlet: the stun of an eco blast (pc/features/gauntlet.gc, "eco mastery"); nav-enemy.gc has the state. A state of its own and not a virtual
-  ;; one, because a type's method count is fixed in engine/entity/entity-table.gc for every enemy that derives from this one
+  ;; gauntlet: the stun of an eco blast (state in nav-enemy.gc). Not a virtual method: a type's method count
+  ;; is fixed in engine/entity/entity-table.gc for every derived enemy
   (:states nav-enemy-stunned)
   (:methods
    (nav-enemy-method-34 (_type_) none)
